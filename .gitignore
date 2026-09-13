@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+build/
+artifacts/
+backups/
+vendor/
+**/conrad-connection.js
+**/codex-connection.js
+**/wallpaper-token.txt
+**/auth.json
+**/*.user
+private/

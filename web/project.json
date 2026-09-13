@@ -1,0 +1,175 @@
+{
+  "title": "GTA VI — Vice City is calling",
+  "description": "Fond GTA VI avec effets lumineux en surimpression : particules, halos, rayons et traînées. Composition adaptée à deux écrans 2560 × 1440 côte à côte (5120 × 1440 étendu), personnages à gauche, compteur à droite. Également compatible avec un seul écran. Date cible réglable.",
+  "file": "index.html",
+  "general": {
+    "properties": {
+      "theme": {
+        "order": 1,
+        "text": "Ambiance",
+        "type": "combo",
+        "value": "sunset",
+        "options": [
+          {
+            "label": "Coucher de soleil",
+            "value": "sunset"
+          },
+          {
+            "label": "Nuit néon",
+            "value": "night"
+          }
+        ]
+      },
+      "targetdate": {
+        "order": 2,
+        "text": "Date cible avec fuseau horaire (minuit à Paris par défaut)",
+        "type": "textinput",
+        "value": "2026-11-19T00:00:00+01:00"
+      },
+      "screenlayout": {
+        "order": 3,
+        "text": "Disposition des écrans",
+        "type": "combo",
+        "value": "auto",
+        "options": [
+          {
+            "label": "Automatique — simple ou double écran",
+            "value": "auto"
+          },
+          {
+            "label": "Un écran — 2560 × 1440",
+            "value": "single"
+          },
+          {
+            "label": "Deux écrans côte à côte — 5120 × 1440",
+            "value": "dual"
+          }
+        ]
+      },
+      "positionx": {
+        "order": 4,
+        "text": "Position horizontale",
+        "type": "slider",
+        "value": 80,
+        "min": 15,
+        "max": 85,
+        "step": 1
+      },
+      "positiony": {
+        "order": 5,
+        "text": "Position verticale",
+        "type": "slider",
+        "value": 50,
+        "min": 25,
+        "max": 75,
+        "step": 1
+      },
+      "scale": {
+        "order": 6,
+        "text": "Taille du logo et du compteur",
+        "type": "slider",
+        "value": 100,
+        "min": 65,
+        "max": 125,
+        "step": 1
+      },
+      "darkness": {
+        "order": 7,
+        "text": "Assombrissement",
+        "type": "slider",
+        "value": 14,
+        "min": 0,
+        "max": 70,
+        "step": 1
+      },
+      "showseconds": {
+        "order": 8,
+        "text": "Afficher les secondes",
+        "type": "bool",
+        "value": true
+      },
+      "showlogo": {
+        "order": 9,
+        "text": "Afficher le logo",
+        "type": "bool",
+        "value": true
+      },
+      "showdate": {
+        "order": 10,
+        "text": "Afficher la date",
+        "type": "bool",
+        "value": true
+      },
+      "motion": {
+        "order": 11,
+        "text": "Mouvement lent et lueurs",
+        "type": "bool",
+        "value": true
+      },
+      "parallax": {
+        "order": 12,
+        "text": "Profondeur avec la souris",
+        "type": "bool",
+        "value": true
+      },
+      "particles": {
+        "order": 13,
+        "text": "Particules lumineuses",
+        "type": "bool",
+        "value": true
+      },
+      "bokeh": {
+        "order": 14,
+        "text": "Halos flous au premier plan",
+        "type": "bool",
+        "value": true
+      },
+      "lightbeams": {
+        "order": 15,
+        "text": "Rayons lumineux mobiles",
+        "type": "bool",
+        "value": true
+      },
+      "lightstreaks": {
+        "order": 16,
+        "text": "Traînées lumineuses",
+        "type": "bool",
+        "value": true
+      },
+      "fxintensity": {
+        "order": 17,
+        "text": "Intensité des effets en surimpression",
+        "type": "slider",
+        "value": 70,
+        "min": 0,
+        "max": 100,
+        "step": 1
+      },
+      "particledensity": {
+        "order": 18,
+        "text": "Densité des particules",
+        "type": "slider",
+        "value": 65,
+        "min": 0,
+        "max": 100,
+        "step": 1
+      },
+      "fxspeed": {
+        "order": 19,
+        "text": "Vitesse des effets",
+        "type": "slider",
+        "value": 65,
+        "min": 10,
+        "max": 150,
+        "step": 1
+      }
+    }
+  },
+  "preview": "preview.jpg",
+  "tags": [
+    "Game"
+  ],
+  "type": "web",
+  "version": 0,
+  "contentrating": "Everyone"
+}
