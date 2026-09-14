@@ -4,7 +4,7 @@ Bureau Windows modulable en .NET 10 / WPF, avec fond animé Direct2D, panneaux
 liquid glass et terminal natif ConPTY. Les widgets restent au niveau du bureau,
 derrière les applications ordinaires.
 
-Onze blocs indépendants : horloge, météo, applications, lecteur, projets, terminal,
+Douze blocs indépendants : horloge, météo, applications, lecteur, projets, terminal,
 compteur Vice City, matériel, compteurs Codex, vidéo et audio. Le compteur Vice City peut être
 retiré sans toucher au reste.
 
@@ -21,7 +21,10 @@ retiré sans toucher au reste.
 - **×** retire un bloc. **+ Ajouter** le replace dans un espace libre.
 - L'icône Battlestation dans la zone de notification permet de réorganiser ou
   réafficher les blocs, même lorsque tous sont masqués.
-- **Terminer** quitte l'édition. La disposition est sauvegardée automatiquement.
+- **Terminer** quitte l’édition. La disposition est sauvegardée automatiquement.
+- **Sauver sous…** dans la barre de réorganisation crée une disposition personnelle.
+  Les dispositions personnelles se gèrent ensuite dans **Réglages → Bureau** ; les
+  six setups intégrés restent fixes.
 - **Dispositions**, dans Réorganiser, propose six setups prêts à l’emploi :
   **Jeu**, **Création**, **Cinéma**, **Focus**, **Multimédia** et **Double écran**.
   Ils sont fixes et reviennent toujours à leur plan par défaut ; **Personnel** est
@@ -54,9 +57,7 @@ retiré sans toucher au reste.
   la migration glass peuvent rester dans une fenêtre séparée sur le premier écran.
 
 ```powershell
-npm ci
 .\scripts\Build-Battlestation.ps1
-.\scripts\Validate.ps1
 .\scripts\Start-Battlestation.ps1
 ```
 
@@ -70,10 +71,9 @@ la surface du bureau puis se termine ; il ne reste pas de PowerShell de lancemen
 Pour réinstaller cette tâche, exécuter `scripts/Install-Startup.ps1` dans un
 PowerShell administrateur du même utilisateur. Rainmeter a été désinstallé.
 
-Lire [la validation courante](docs/VALIDATION.md) avant de reprendre le travail.
-Voir aussi [l'architecture](docs/ARCHITECTURE.md) et [les crédits](docs/PROVENANCE.md).
+Voir [l'architecture](docs/ARCHITECTURE.md), [l'intégration vidéo](docs/VIDEO.md)
+et [les crédits](docs/PROVENANCE.md).
 
-Le build d'essai vidéo réunit aussi le [cockpit audio, fond musical, dispositions,
-états projets et réserve de liens](docs/COCKPIT.md). Les validations encore à faire
-sont distinguées dans `docs/VALIDATION.md`. Les builds avec `-NoActivate` ne
-modifient pas la version ciblée par le lancement Windows.
+Le build courant réunit aussi le [cockpit audio, fond musical, dispositions,
+états projets et réserve de liens](docs/COCKPIT.md). Les builds avec `-NoActivate`
+ne modifient pas la version ciblée par le lancement Windows.

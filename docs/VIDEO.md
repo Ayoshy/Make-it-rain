@@ -40,16 +40,14 @@ compteurs reçus/dessinés ne prouvent pas à eux seuls une vidéo en mouvement.
 La redécouverte couvre la reconnexion, les onglets déjà ouverts et l'arrivée des
 données après les métadonnées. Le diagnostic n'expose que des étapes et noms
 d'erreurs bornés ; aucun texte de page ou message d'exception complet n'est transmis.
-Voir VALIDATION.md pour distinguer le test synthétique du lecteur YouTube réel.
+Une capture synthétique ne remplace pas un essai utilisateur de YouTube réel.
 
 Le content script transfère des ImageBitmap redimensionnés par un MessageChannel
 privé vers la page interne et son worker. Il ne crée plus de worker `blob:` dans
 la page YouTube : ses règles CSP restent intactes. Les VideoFrame ne franchissent
 pas la frontière entre origines, et chaque image est fermée après utilisation.
 
-L'extension chargée pendant les essais vient de
-`.worktrees/video-dock/browser/video-dock` ; conserver ce dossier tant que Brave
-le référence. La copie dans `browser/video-dock` contient les mêmes sources.
+L'extension chargée vient de `browser/video-dock`.
 Son identifiant public est `bbbkiomcecimmpndgliccmeagfhbednp`.
 
 `scripts/Install-VideoBridge.ps1 -Build <dossier-build>` enregistre l'hôte local.
@@ -78,24 +76,11 @@ exposé par Stremio WebView2, pas une touche envoyée à l'application au premie
 Une absence de commande reste indisponible ; elle n'est pas remplacée par une
 commande multimédia globale.
 
-## Vérification et état actif
+## État actif
 
-Lire `docs/VALIDATION.md` pour les builds réellement chargés et les preuves.
-`-NoActivate` construit sans changer `build/current.txt` ni le lancement Windows.
-
-- `scripts/Validate.ps1` : contrats, placement, terminal, commandes, audio,
-  expériences, sélection vidéo et transport navigateur isolé.
-- `tests/Battlestation.Video.Tests.csproj`, avec le chemin de `Battlestation.Video.dll` :
-  vraies images WGC de fenêtres de test, recouvrement, redimensionnement,
-  réduction/restauration, focus et nettoyage de la capture.
-- `--live-docked` sur cette suite : essai Stremio réel borné, avec restauration
-  vérifiée de la géométrie et de l'état. Seuls des compteurs sont conservés.
-- `npm ci` installe la version verrouillée de Playwright utilisée par la validation.
-- `tests/browser-video.test.cjs` et `tests/browser-extension.test.cjs` : lecteur
-  synthétique, véritable content script et worker dans un profil Brave vierge,
-  fenêtre minimisée, résolution HD/adaptive, redécouverte et arrêt. Le port natif
-  de ce profil est simulé pour ne jamais se connecter au bureau utilisateur.
-  Ces tests ne remplacent pas la validation de YouTube réel avec son navigateur réduit.
+Le build courant est indiqué par `build/current.txt`. Le bridge vidéo est enregistré
+pour le build actif par `scripts/Install-VideoBridge.ps1` ; aucun démarrage Windows
+supplémentaire n'est ajouté par cette association.
 
 Références : [capture Windows](https://learn.microsoft.com/en-us/windows/apps/develop/media-authoring-processing/screen-capture),
 [capture depuis un élément média](https://www.w3.org/TR/mediacapture-fromelement/),

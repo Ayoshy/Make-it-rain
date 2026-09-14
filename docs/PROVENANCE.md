@@ -1,14 +1,9 @@
 # Provenance et droits
 
-Sauvegarde de l'état de travail : `backups/20260913-115800/`.
-113 fichiers copiés et vérifiés par SHA-256 ; `manifest.json` donne leur chemin,
-taille et empreinte. `provenance.json` conserve les trois emplacements d'origine.
-Les deux fichiers `*-git-status.txt` et `*-head.txt` consignent les modifications
-et les commits de référence. Les originaux n'ont pas été nettoyés ni réinitialisés.
+Les sauvegardes historiques ne font pas partie de la livraison courante.
 
-Les sources, intégrations non suivies et captures ont été récupérées depuis les
-répertoires réels. `.git`, les sorties bin/obj, distributions compilées et dépendances
-reproductibles sont exclus. Les fichiers privés conrad-connection.js,
+Les sources et intégrations suivies viennent des répertoires réels. `.git`, les
+sorties bin/obj et distributions compilées sont exclus. Les fichiers privés conrad-connection.js,
 codex-connection.js et wallpaper-token.txt sont exclus de toute copie et ignorés par
 Git. Aucun fichier d'authentification Codex n'a été récupéré. La configuration globale
 Wallpaper Engine n'est pas copiée intégralement : seuls les réglages effectifs du

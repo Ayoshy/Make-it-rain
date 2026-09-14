@@ -30,7 +30,7 @@ $action = $task.Actions.Create(0)
 $action.Path = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 $action.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $PSScriptRoot 'Start-Battlestation.ps1') + '" -AtLogon'
 $action.WorkingDirectory = $root
-$proofDirectory = Join-Path $root 'artifacts/validation'
+$proofDirectory = Join-Path $env:LOCALAPPDATA 'Battlestation/inspection'
 New-Item -ItemType Directory -Path $proofDirectory -Force | Out-Null
 $registered = $service.GetFolder('\').RegisterTaskDefinition('Battlestation', $task, 6, $sid, $null, 3, $null)
 $registered.Xml | Set-Content (Join-Path $root 'artifacts/validation/battlestation-startup.xml') -Encoding Unicode

@@ -16,7 +16,14 @@ internal static class Program
         if(args.Length==2&&args[0]=="--preview-terminal-tabs"){TerminalTabsPreview.Run(args[1]);return;}
         if(args.Length==2&&args[0]=="--terminal-host"){TerminalHost.Run(Path.GetFullPath(args[1]));return;}
         if(args.Length==2&&args[0]=="--command"){Console.WriteLine(ControlPipe.Send(args[1]));return;}
-        using var single=new Mutex(true,"Local\\Battlestation.Desktop",out bool created);if(!created)return;
+        bool waitingReload=args.Contains("--reload",StringComparer.Ordinal);
+        using var single=new Mutex(true,"Local\\Battlestation.Desktop",out bool created);
+        if(!created&&!waitingReload)return;
+        if(!created)
+        {
+            try{if(!single.WaitOne(TimeSpan.FromSeconds(5)))return;}
+            catch(AbandonedMutexException){}
+        }
         var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};
         app.Resources.MergedDictionaries.Add(new GlassMenus());
         Station? station=null;DesktopWorkspace? runtime=null;

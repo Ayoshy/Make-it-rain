@@ -1,6 +1,0 @@
-{
-  "name": "battlestation-validation",
-  "private": true,
-  "scripts": { "test": "node tests/browser-extension.test.cjs" },
-  "devDependencies": { "playwright-core": "1.63.0" }
-}

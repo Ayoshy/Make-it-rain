@@ -1,7 +1,0 @@
-<Project>
-  <PropertyGroup>
-    <BaseIntermediateOutputPath>obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
-    <BaseOutputPath>bin/$(MSBuildProjectName)/</BaseOutputPath>
-    <DefaultItemExcludes>$(DefaultItemExcludes);bin/**;obj/**</DefaultItemExcludes>
-  </PropertyGroup>
-</Project>

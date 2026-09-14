@@ -20,6 +20,50 @@
         <Setter Property="BorderBrush" Value="{StaticResource MenuRim}"/>
         <Setter Property="BorderThickness" Value="1"/>
     </Style>
+    <Style TargetType="ScrollBar">
+        <Setter Property="MinWidth" Value="14"/>
+        <Setter Property="MinHeight" Value="14"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Grid Background="Transparent">
+                        <Border x:Name="Rail" Margin="3" CornerRadius="4" Background="#18E8D9F6"/>
+                        <Track x:Name="PART_Track" IsDirectionReversed="True" Orientation="{TemplateBinding Orientation}">
+                            <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Background="Transparent" BorderThickness="0"/></Track.DecreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Cursor="Hand">
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Border x:Name="Thumb" Margin="2" CornerRadius="5" BorderThickness="1" BorderBrush="#9CDDD0EE" Background="#9A9F85BC" Opacity=".78"/>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Thumb" Property="Opacity" Value="1"/></Trigger>
+                                                <Trigger Property="IsDragging" Value="True"><Setter TargetName="Thumb" Property="BorderBrush" Value="#E6E9DDF5"/></Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                            <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Background="Transparent" BorderThickness="0"/></Track.IncreaseRepeatButton>
+                        </Track>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="Orientation" Value="Horizontal">
+                            <Setter TargetName="Rail" Property="Height" Value="6"/>
+                            <Setter TargetName="Rail" Property="VerticalAlignment" Value="Center"/>
+                            <Setter TargetName="Rail" Property="Margin" Value="3,0"/>
+                        </Trigger>
+                        <Trigger Property="Orientation" Value="Vertical">
+                            <Setter TargetName="Rail" Property="Width" Value="6"/>
+                            <Setter TargetName="Rail" Property="HorizontalAlignment" Value="Center"/>
+                            <Setter TargetName="Rail" Property="Margin" Value="0,3"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
     <Style TargetType="ContextMenu">
         <Setter Property="FontFamily" Value="{x:Static local:DockAppearance.UiFont}"/>
         <Setter Property="FontSize" Value="14"/>

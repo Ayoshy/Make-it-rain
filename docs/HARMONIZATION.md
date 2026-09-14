@@ -32,5 +32,5 @@ applications externes ne sont pas des menus WPF et ne reçoivent pas ce template
 Les anciens hôtes terminal en cours ne sont jamais fermés pour mettre à jour leur
 habillage interne.
 
-Les rendus isolés et les preuves du bureau chargé sont distingués dans
-`artifacts/validation/harmonization/` et dans `VALIDATION.md`.
+Les rendus historiques ne font plus partie du dossier de livraison ; l'état actif
+est celui du build indiqué par `build/current.txt`.

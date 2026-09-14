@@ -35,7 +35,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
         surfaces=new(){["clock"]=new DeskSurface(station,DeskWidget.Clock),["weather"]=new DeskSurface(station,DeskWidget.Weather),
             ["apps"]=new DockSurface(station),["music"]=new DeskSurface(station,DeskWidget.Music),["projects"]=new DeskSurface(station,DeskWidget.Projects),
             ["terminal"]=new TerminalSurface(station),["countdown"]=new CountdownSurface(station),
-            ["hardware"]=new DashboardSurface(station,true),["usage"]=new DashboardSurface(station,false),["reminders"]=new ReminderSurface(station),["video"]=new VideoSurface(station),["audio"]=new AudioSurface(station)};
+            ["hardware"]=new DashboardSurface(station,true),["usage"]=new DashboardSurface(station,false),["reminders"]=new ReminderSurface(station),["video"]=new VideoSurface(station),["audio"]=new AudioSurface(station),["bluetooth"]=new BluetoothSurface(station)};
         Native.BackgroundStart(Native.DesktopParent(),Path.Combine(station.Assets,"Images"));
         Native.BackgroundAppearance(station.Settings.AnimateBackground?1:0,(float)station.Settings.GlassOpacity);
         CreateEditGrids();
@@ -54,6 +54,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
         var add=new Forms.ToolStripMenuItem("Ajouter un bloc");
         add.DropDownOpening+=(_,_)=>{add.DropDownItems.Clear();foreach(var b in station.Layout.Blocks.Where(b=>!b.Visible))add.DropDownItems.Add(b.Title,null,(_,_)=>ShowBlock(b.Id));};
         menu.Items.Add(add);menu.Items.Add("Disposition initiale",null,(_,_)=>Reset());
+        menu.Items.Add("Recharger",null,(_,_)=>Reload());
         menu.Items.Add("Quitter",null,(_,_)=>app.Shutdown());tray.ContextMenuStrip=menu;tray.DoubleClick+=(_,_)=>SetEditing(!editing);
         ApplyAll();
         station.Terminal.HeaderChanged+=()=>Apply("terminal");
@@ -88,7 +89,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
                 var item=new MenuItem{Header=name,IsCheckable=true,IsChecked=profiles.Current==name};item.Click+=(_,_)=>SelectProfile(name);menu.Items.Add(item);
             }
             menu.IsOpen=true;
-        });row.Children.Add(layouts);
+        });row.Children.Add(layouts);row.Children.Add(OverlayStyle.Button("Sauver sous…",SaveUserProfile));
         row.Children.Add(OverlayStyle.Button("Réglages",ShowSettings));row.Children.Add(done);
         bar.PreviewKeyDown+=EditKey;UpdateHistory();
         bar.Closing+=(_,e)=>{if(!disposed){e.Cancel=true;SetEditing(false);}};
@@ -115,6 +116,9 @@ internal sealed partial class DesktopWorkspace : IDisposable
             var hide=new MenuItem{Header="Retirer ce bloc"};hide.Click+=(_,_)=>HideBlock(block.Id);menu.Items.Add(hide);
             var settings=new MenuItem{Header="Réglages"};settings.Click+=(_,_)=>ShowSettings();menu.Items.Add(settings);
             var add=new MenuItem{Header="Ajouter un bloc"};foreach(var missing in station.Layout.Blocks.Where(b=>!b.Visible)){var item=new MenuItem{Header=missing.Title};item.Click+=(_,_)=>ShowBlock(missing.Id);add.Items.Add(item);}add.IsEnabled=add.Items.Count>0;menu.Items.Add(add);
+            menu.Items.Add(new Separator());
+            var reload=new MenuItem{Header="Recharger"};reload.Click+=(_,_)=>Reload();menu.Items.Add(reload);
+            var quit=new MenuItem{Header="Quitter"};quit.Click+=(_,_)=>app.Shutdown();menu.Items.Add(quit);
         };window.ContextMenu=menu;
         WireEdit(block.Id,overlay,header);
         window.Show();placement.Add(window);windows[block.Id]=window;overlays[block.Id]=overlay;
@@ -206,6 +210,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
         if(ticks%4==0)UpdateVisibility();
         if(exposed.Contains("projects"))station.Projects.Poll(((DeskSurface)surfaces["projects"]).VisibleProjects());
         if(exposed.Contains("audio")&&!editing)((AudioSurface)surfaces["audio"]).Poll();
+        if(exposed.Contains("bluetooth")&&!editing)((BluetoothSurface)surfaces["bluetooth"]).Poll();
         if(++ticks%4==0){if(station.Layout["music"].Visible){var revision=Native.DeskRevision(3);if(revision!=coverRevision){coverRevision=revision;station.RefreshCover();}}station.Terminal?.Update();}
         placement.SetExternalWindow(station.Terminal?.RemoteHandle??0,new WindowInteropHelper(windows["terminal"]).Handle);
         foreach(var pair in surfaces)
@@ -248,7 +253,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
         disposed=true;placement.VisibilityChanged-=UpdateVisibility;Microsoft.Win32.SystemEvents.SessionSwitch-=SessionSwitch;control.Dispose();timer.Stop();audio.Stop();palette?.Dismiss(false);settingsWindow?.Close();paletteHotkey.Dispose();tray.Dispose();toolbar.Close();
         placement.Dispose();foreach(var desk in surfaces.Values.OfType<DeskSurface>())desk.Audio.Dispose();
         ((VideoSurface)surfaces["video"]).Dispose();
-        ((AudioSurface)surfaces["audio"]).Dispose();
+        ((AudioSurface)surfaces["audio"]).Dispose();((BluetoothSurface)surfaces["bluetooth"]).Dispose();
         mediaClipboard.Dispose();reserveWindow?.Close();
         Native.BackgroundStop();station.Terminal?.Detach();
     }

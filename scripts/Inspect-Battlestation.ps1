@@ -37,7 +37,7 @@ $dpi=[StationWindowAudit]::SetThreadDpiAwarenessContext([IntPtr](-4))
 try {
     $windows=[StationWindowAudit]::Snapshot($ids)
     $report=[pscustomobject]@{timestamp=(Get-Date).ToString('o');processes=@($selected | Select-Object Name,ProcessId,ParentProcessId,ExecutablePath);windows=$windows}
-    $dir=Join-Path $root 'artifacts/validation'
+$dir=Join-Path $env:LOCALAPPDATA 'Battlestation/inspection'
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     $report | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $dir "dotnet-$Label-windows.json") -Encoding UTF8
     if($WatchSeconds -gt 0){

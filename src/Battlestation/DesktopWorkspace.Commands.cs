@@ -23,6 +23,15 @@ internal sealed partial class DesktopWorkspace
         if(reserveWindow is not null){reserveWindow.Activate();return;}
         reserveWindow=new MediaReserveWindow(station);reserveWindow.Closed+=(_,_)=>reserveWindow=null;OverlayStyle.Reveal(reserveWindow,station.Settings.AnimateBackground);
     }
+    void Reload()
+    {
+        var executable=Environment.ProcessPath;
+        if(string.IsNullOrWhiteSpace(executable)){app.Shutdown();return;}
+        var start=new ProcessStartInfo(executable){UseShellExecute=true,WorkingDirectory=station.Root};
+        start.ArgumentList.Add("--root");start.ArgumentList.Add(station.Root);start.ArgumentList.Add("--reload");
+        Process.Start(start);
+        app.Shutdown();
+    }
     bool ChangeVisibility(string id,bool visible)
     {
         ClearEditHistory();
@@ -33,7 +42,7 @@ internal sealed partial class DesktopWorkspace
     {
         palette?.Dismiss(false);
         if(settingsWindow is not null){if(settingsWindow.WindowState==WindowState.Minimized)settingsWindow.WindowState=WindowState.Normal;settingsWindow.Activate();return;}
-        settingsWindow=new SettingsWindow(station,paletteHotkey,ChangeVisibility,()=>SetEditing(true),owner=>((DockSurface)surfaces["apps"]).OpenEditor(owner),SelectProfile,profiles.Current);
+        settingsWindow=new SettingsWindow(station,paletteHotkey,ChangeVisibility,()=>SetEditing(true),owner=>((DockSurface)surfaces["apps"]).OpenEditor(owner),SelectProfile,SaveUserProfile,DeleteUserProfile,()=>profiles.UserNames,profiles.Current);
         settingsWindow.Closed+=(_,_)=>settingsWindow=null;
         OverlayStyle.Reveal(settingsWindow,station.Settings.AnimateBackground);
     }

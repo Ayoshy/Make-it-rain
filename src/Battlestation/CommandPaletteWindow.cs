@@ -51,7 +51,7 @@ internal sealed class CommandPaletteWindow : Window
     {
         var card=new Border{Width=188,Height=104,Margin=new Thickness(0,0,8,0),Padding=new Thickness(8),CornerRadius=new CornerRadius(12),BorderThickness=new Thickness(1),Background=Brush("#241A30D8"),BorderBrush=Brush("#3C334A80")};
         var stack=new StackPanel();var title=OverlayStyle.Text(entry.ProfileName!,13,"#E6D9F0");title.Margin=new Thickness(2,0,0,4);stack.Children.Add(title);
-        var plan=new Border{Height=62,Background=Brush("#160F20CC"),CornerRadius=new CornerRadius(7),Child=MiniMap(entry.ProfileName!)};stack.Children.Add(plan);card.Child=stack;
+        var plan=new Border{Height=62,Background=Brush("#33253FCC"),CornerRadius=new CornerRadius(7),Child=MiniMap(entry.ProfileName!)};stack.Children.Add(plan);card.Child=stack;
         card.MouseLeftButtonUp+=(_,e)=>{entry.Execute();UpdateProfileSelection();e.Handled=true;};
         profileCards[entry.ProfileName!]=card;return card;
     }
@@ -61,7 +61,7 @@ internal sealed class CommandPaletteWindow : Window
         foreach(var block in catalog.First(e=>e.ProfileName==name).Preview??[])
         {
             var x=block.X/5120*162+2;var y=block.Y/1440*50+4;var w=Math.Max(3,block.Width/5120*162);var h=Math.Max(3,block.Height/1440*50);
-            canvas.Children.Add(new Border{Width=Math.Min(160-x,w),Height=Math.Min(50-y,h),Background=Brush("#9B7FB04A"),BorderBrush=Brush("#D7C6E888"),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(2),Margin=new Thickness(x,y,0,0)});
+            canvas.Children.Add(new Border{Width=Math.Min(160-x,w),Height=Math.Min(50-y,h),Background=Brush("#A8D5B58C"),BorderBrush=Brush("#F3E7D7E8"),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(2),Margin=new Thickness(x,y,0,0)});
         }
         return canvas;
     }

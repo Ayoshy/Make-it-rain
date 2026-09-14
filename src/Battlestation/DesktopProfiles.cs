@@ -10,24 +10,26 @@ internal sealed class DesktopProfiles
     Dictionary<string,DesktopProfile> profiles=[];
     internal string Current {get;private set;}="Personnel";
     internal static readonly string[] Presets=["Jeu","Création","Cinéma","Focus","Multimédia","Double écran"];
-    internal static readonly string[] Names=["Personnel","Jeu","Création","Cinéma",..Presets];
+    internal static readonly string[] Names=["Personnel",..Presets];
+    internal IReadOnlyList<string> UserNames=>profiles.Keys.Where(name=>name!="Personnel"&&!Presets.Contains(name)).OrderBy(name=>name,StringComparer.CurrentCultureIgnoreCase).ToArray();
+    internal IReadOnlyList<string> AllNames=>Names.Concat(UserNames).ToArray();
     internal DesktopProfiles(string file)
     {
         path=file;
         try
         {
-            if(File.Exists(file)&&JsonSerializer.Deserialize<ProfileFile>(File.ReadAllText(file)) is {} saved&&Names.Contains(saved.Current))
-            {Current=saved.Current;profiles=(saved.Profiles??[]).Where(p=>Names.Contains(p.Key)&&p.Value?.Blocks is not null).ToDictionary(p=>p.Key,p=>p.Value);}
+            if(File.Exists(file)&&JsonSerializer.Deserialize<ProfileFile>(File.ReadAllText(file)) is {} saved&&((Names.Contains(saved.Current))||saved.Profiles?.ContainsKey(saved.Current)==true))
+            {Current=saved.Current;profiles=(saved.Profiles??[]).Where(p=>(Names.Contains(p.Key)||!string.IsNullOrWhiteSpace(p.Key))&&p.Value?.Blocks is not null).ToDictionary(p=>p.Key,p=>p.Value);}
         }
         catch(Exception e) when(e is JsonException or IOException){}
     }
     internal DesktopProfile Switch(string name,DesktopLayout layout,DesktopSettings settings)
     {
-        if(!Names.Contains(name))throw new ArgumentException("Disposition inconnue.");
+        if(!AllNames.Contains(name))throw new ArgumentException("Disposition inconnue.");
         var current=new DesktopProfile(layout.Blocks.ToList(),settings.AnimateBackground,settings.ReactiveAudio,settings.AudioIntensity,settings.GlassOpacity);
         var destination=name=="Personnel"
             ? (name==Current?current:profiles.GetValueOrDefault(name)??Create(name,current))
-            : Create(name,current);
+            : Presets.Contains(name)?Create(name,current):profiles[name];
         _=(settings with{AnimateBackground=destination.Animate,ReactiveAudio=destination.Reactive,AudioIntensity=destination.Intensity,GlassOpacity=destination.Glass}).Validate(false);
         if(!layout.Restore(destination.Blocks))throw new InvalidOperationException("Cette disposition ne tient plus. Ajuste les blocs avant de la réutiliser.");
         var next=new Dictionary<string,DesktopProfile>(profiles);
@@ -37,6 +39,24 @@ internal sealed class DesktopProfiles
         catch{layout.Restore(current.Blocks);throw;}
         profiles=next;Current=name;return destination;
     }
+    internal void SaveUser(string name,DesktopLayout layout,DesktopSettings settings)
+    {
+        name=NormalizeUserName(name);var snapshot=new DesktopProfile(layout.Blocks.ToList(),settings.AnimateBackground,settings.ReactiveAudio,settings.AudioIntensity,settings.GlassOpacity);
+        if(Current=="Personnel"||!profiles.ContainsKey("Personnel"))profiles["Personnel"]=snapshot;
+        profiles[name]=snapshot;Current=name;Write();
+    }
+    internal void DeleteUser(string name)
+    {
+        if(!UserNames.Contains(name))throw new ArgumentException("Disposition personnelle inconnue.");
+        profiles.Remove(name);if(Current==name)Current="Personnel";Write();
+    }
+    static string NormalizeUserName(string name)
+    {
+        name=name.Trim();if(name.Length is <2 or >40||name.Any(char.IsControl))throw new ArgumentException("Le nom doit contenir entre 2 et 40 caractères.");
+        if(Names.Contains(name,StringComparer.CurrentCultureIgnoreCase))throw new ArgumentException("Ce nom est réservé à une disposition intégrée.");
+        return name;
+    }
+    void Write()=>DesktopSettings.Write(path,JsonSerializer.Serialize(new ProfileFile(Current,profiles),new JsonSerializerOptions{WriteIndented=true}));
     static DesktopProfile Create(string name,DesktopProfile baseline)
     {
         if(Presets.Contains(name))return baseline with{Blocks=Preset(name,baseline.Blocks),Reactive=name!="Cinéma",Intensity=name=="Jeu"?.35:name=="Création"?.55:.15};

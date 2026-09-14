@@ -21,10 +21,13 @@ internal sealed class SettingsWindow : Window
     readonly TextBlock feedback=OverlayStyle.Text("",12,"#F4B7CA");
     readonly TextBlock hotkeyStatus=OverlayStyle.Text("",12,"#BCAACD");
     readonly PaletteHotkey hotkey;
+    readonly Action saveProfile;
+    readonly Action<string> deleteProfile;
+    readonly Func<IReadOnlyList<string>> userProfiles;
     bool ready;
-    internal SettingsWindow(Station state,PaletteHotkey shortcut,Func<string,bool,bool> visibility,Action organize,Action<Window> editApps,Action<string> selectProfile,string currentProfile)
+    internal SettingsWindow(Station state,PaletteHotkey shortcut,Func<string,bool,bool> visibility,Action organize,Action<Window> editApps,Action<string> selectProfile,Action saveProfile,Action<string> deleteProfile,Func<IReadOnlyList<string>> userProfiles,string currentProfile)
     {
-        station=state;hotkey=shortcut;Title="Battlestation · Réglages";Width=760;Height=660;ShowInTaskbar=true;OverlayStyle.Apply(this);
+        station=state;hotkey=shortcut;this.saveProfile=saveProfile;this.deleteProfile=deleteProfile;this.userProfiles=userProfiles;Title="Battlestation · Réglages";Width=760;Height=660;ShowInTaskbar=true;OverlayStyle.Apply(this);
         var root=new DockPanel();var header=new DockPanel{Margin=new Thickness(0,0,0,18)};DockPanel.SetDock(header,Dock.Top);root.Children.Add(header);
         var close=OverlayStyle.Button("×",Close);close.ToolTip="Fermer";DockPanel.SetDock(close,Dock.Right);header.Children.Add(close);var title=OverlayStyle.Text("Réglages",25);title.FontWeight=FontWeights.SemiBold;header.Children.Add(title);
         header.MouseLeftButtonDown+=(_,e)=>{if(e.OriginalSource is TextBlock){DragMove();e.Handled=true;}};
@@ -52,7 +55,14 @@ internal sealed class SettingsWindow : Window
         gridStep=Field(desktop,"Pas de grille · 4 à 64",state.Settings.GridStep.ToString(CultureInfo.InvariantCulture));
         linkDocks=new CheckBox{Content="Lier les docks · redimensionnement partagé et poussée",IsChecked=state.Settings.LinkDocks,Margin=new Thickness(0,14,0,8)};desktop.Children.Add(linkDocks);
         Heading(desktop,"Disposition · "+currentProfile);var modes=new WrapPanel();desktop.Children.Add(modes);
-        foreach(string name in DesktopProfiles.Names)modes.Children.Add(OverlayStyle.Button(name,()=>{Close();selectProfile(name);}));
+        foreach(string name in DesktopProfiles.Names.Concat(userProfiles()))modes.Children.Add(OverlayStyle.Button(name,()=>{Close();selectProfile(name);}));
+        Heading(desktop,"Dispositions personnelles");desktop.Children.Add(OverlayStyle.Text("Les setups intégrés restent fixes. Les dispositions personnelles sont sauvegardées séparément.",12,"#BCAACD"));
+        desktop.Children.Add(OverlayStyle.Button("Sauver la disposition actuelle",saveProfile));
+        foreach(string name in userProfiles())
+        {
+            var row=new DockPanel{Margin=new Thickness(0,5,0,0)};var select=OverlayStyle.Button(name,()=>{Close();selectProfile(name);});DockPanel.SetDock(select,Dock.Left);row.Children.Add(select);
+            var remove=OverlayStyle.Button("Supprimer",()=>deleteProfile(name));DockPanel.SetDock(remove,Dock.Right);row.Children.Add(remove);desktop.Children.Add(row);
+        }
         var look=Page("Apparence");Heading(look,"Verre et mouvement");look.Children.Add(OverlayStyle.Text("Transparence des panneaux",14));
         var percentage=OverlayStyle.Text("",12,"#BCAACD");transparency=new Slider{Minimum=15,Maximum=95,Value=(1-state.Settings.GlassOpacity)*100,TickFrequency=5,IsSnapToTickEnabled=true,Margin=new Thickness(0,14,0,5)};look.Children.Add(transparency);look.Children.Add(percentage);
         animation=new CheckBox{Content="Animer le fond du bureau",IsChecked=state.Settings.AnimateBackground,Margin=new Thickness(0,25,0,0)};look.Children.Add(animation);

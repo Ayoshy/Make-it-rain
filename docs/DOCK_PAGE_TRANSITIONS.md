@@ -1,7 +1,8 @@
 # Pages internes de Conrad et Codex
 
 Comportement et implémentation des transitions internes des deux docks.
-Consulter VALIDATION.md pour le build réellement chargé et les limites des essais.
+Le build réellement chargé est indiqué par `build/current.txt` ; les clics physiques
+restent la validation d'usage à faire sur le bureau réel.
 
 ## Utilisation
 
@@ -63,22 +64,6 @@ jusqu’à sa fin accélérée. Aucun réglage ou menu supplémentaire n’est n
 
 ## Vérification
 
-`DashboardPageTests.cs` est exécuté dans la suite Responsive avec les vraies
-surfaces WPF et un backend factice incapable de lancer une application, un terminal
-ou une écriture GPU. Il vérifie les déplacements des deux dessins, l’absence de
-  redessin par image, les clics rapprochés, le retour, les dimensions, les contrôles
-neutralisés, le brouillon, les listes et l’arrêt des animations. Les PNG sont des
-rendus isolés ; ils ne constituent pas une preuve du bureau docké ou de clics réels.
-Les quatre variantes sont aussi exercées de façon déterministe sur un hôte WPF :
-pixels intermédiaires distincts sur des cartes avec du texte, image finale complète,
-quatre effets par cycle sans répétition à la jonction, flou visible et borné,
-cellules partageant leurs horloges, suppression des effets et masques temporaires.
-
-```powershell
-dotnet run --project tests/Battlestation.Responsive.Tests.csproj -c Release
-.\scripts\Build-Battlestation.ps1 -OutputDirectory build/battlestation-dock-variants-distinct -NoActivate
-```
-
-Le build ci-dessus ne change pas le pointeur de démarrage et ne recharge pas le
-bureau. Une activation doit suivre les vérifications des sessions terminal et des
-consignes GPU/Canicule du contrat projet.
+Les transitions sont vectorielles et les clics physiques restent la validation
+d'usage à faire sur le bureau réel. Une activation recharge le build indiqué par
+`build/current.txt` sans fermer les hôtes terminal séparés.

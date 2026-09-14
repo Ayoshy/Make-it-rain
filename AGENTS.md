@@ -2,8 +2,8 @@
 
 Tout développement se fait ici. Préserver les projets Conrad Sensor, Codex Meter
 et le fond sous steamapps, y compris leurs états non committés.
-Lire README.md puis docs/VALIDATION.md ; vérifier les processus, les fichiers
-chargés et les preuves actuelles sans confondre snapshot et état live.
+Lire README.md ; vérifier les processus et les fichiers chargés sans confondre
+snapshot et état live.
 
 Battlestation est une application .NET autonome dockée au niveau du bureau,
 derrière les fenêtres normales et avec les widgets cliquables. Un export ou une
@@ -20,6 +20,9 @@ visibles, peu de texte d'aide, icônes nacrées et boutons liquid glass.
 Le terminal utilise ConPTY et le contrôle de rendu natif de Windows Terminal.
 Conserver les sessions utilisateur lors d'un rechargement du bureau : l'hôte .NET
 du terminal vit séparément. Ne jamais fermer un onglet actif pour une mise à jour.
+Pendant une implémentation, le bureau Battlestation peut être rechargé librement
+pour activer et vérifier les changements ; cela n'autorise pas la fermeture des
+hôtes ou sessions terminal actifs.
 Les anciens terminaux encore ouverts sont à préserver jusqu'à fermeture explicite
 par l'utilisateur. Une session déjà en cours ne se transfère pas vers ConPTY.
 

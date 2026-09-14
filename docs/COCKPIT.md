@@ -69,14 +69,10 @@ complet ; seul un lien média reconnu entre dans `media-reserve.json`.
   Enregistrement transparent, ouverture d'un média uniquement sur clic.
   La surveillance est désactivable dans Réglages → Liens médias.
 
-## Vérifications
+## État de livraison
 
-```powershell
-.\scripts\Build-Battlestation.ps1 -OutputDirectory build/battlestation-cockpit -NoActivate
-.\scripts\Validate.ps1
-dotnet run --project tests/Battlestation.Audio.Tests.csproj -c Release -- --live
-dotnet run --project tests/Battlestation.Audio.Tests.csproj -c Release -- --render build/battlestation-cockpit/Battlestation.Graphics.dll assets/Images artifacts/validation
-```
+Le cockpit est intégré au build courant. Les réglages audio ne sont pas modifiés
+au démarrage et le microphone n'est jamais capturé.
 
 Audio : bandes séparées, silence, échantillons invalides, préférences et migration.
 Le test WASAPI live ne modifie que sa propre session silencieuse, puis vérifie
