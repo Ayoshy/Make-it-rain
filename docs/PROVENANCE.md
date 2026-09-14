@@ -25,10 +25,38 @@ positionx=85 et scale=104 ; les autres valeurs viennent du config.js récupéré
 | Illustration Jason and Lucia, logo, police Art Deco | Rockstar Games / Take-Two Interactive ; assets de fan, droits réservés aux ayants droit, crédits du LIRE-MOI original conservés dans la sauvegarde |
 | HTML/CSS/JS du fond | Sources locales de personnalisation ; provenance exacte conservée, aucune licence libre déduite |
 | LibreHardwareMonitorLib 0.9.6 | MPL-2.0, paquet NuGet officiel ; sources upstream référencées dans le manifeste NuGet |
-| WebView2 SDK 1.0.3800.47 | Microsoft ; LICENSE-WebView2.txt conservé |
-| .NET / nethost | Runtime et SDK Microsoft locaux, MIT pour dotnet/runtime ; aucune distribution du runtime |
-| Rainmeter | Installation existante, GPL-2.0 ; ABI utilisée par un plugin natif, pas de copie du code du chargeur |
+| .NET 10 / WPF | Runtime et SDK Microsoft, MIT pour dotnet/runtime |
 | MSI / NVIDIA | DLL et pilote déjà installés, non copiés dans les assets |
+| Simple Icons | Silhouettes des cinq applications ; licence conservée dans `dock/icons/source/LICENSE.md`, déclinaison nacrée générée localement |
+| Open-Meteo | Prévisions publiques pour Aix-en-Provence, [API et attribution](https://open-meteo.com/en/docs), marque et heure de mesure affichées dans le widget |
 
 Les sorties ne sont pas publiées. Une distribution devra inclure et vérifier les
 notices des dépendances transitives et les droits sur les assets propriétaires.
+
+## Terminal et application autonomes
+
+Le code de connexion ConPTY appartient au projet Battlestation. Le contrôle de
+rendu vient de [Windows Terminal](https://github.com/microsoft/terminal), sous MIT.
+Le binaire de contrôle est fourni par `CI.Microsoft.Terminal.Wpf` 1.25.260303002,
+paquet de préversion : ce n'est pas une intégration WPF officiellement stabilisée.
+La connexion utilise les API système Windows, sans dépendance à un autre terminal.
+
+NAudio 2.2.1, sous MIT, fournit l'analyse de la sortie audio. Les crédits artistiques,
+les notices Codex Meter et Simple Icons restent conservés. Le renommage des projets
+ne change pas les droits sur les illustrations, logos ou dépendances.
+
+Références : [ConPTY](https://learn.microsoft.com/windows/console/creating-a-pseudoconsole-session),
+[héritage des handles standard](https://github.com/microsoft/terminal/discussions/15814).
+
+## Palette de commandes
+
+Référence fonctionnelle locale consultée à la demande de l’utilisateur :
+`../Neon Launcher/CommandPaletteWindow.cs`,
+`../Neon Launcher/ViewModels/CommandPaletteViewModel.cs` et `App.xaml.cs`.
+Battlestation reprend la recherche tolérante, le raccourci global, le préfixe `>`
+et la navigation clavier avec sa propre implémentation WPF. Le projet Neon Launcher
+et sa copie stable n’ont pas été modifiés. Aucun service IA ou mécanisme de
+transmission de prompts de Neon n’a été intégré.
+
+Raccourci système : [RegisterHotKey](https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-registerhotkey),
+[activation du premier plan](https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-setforegroundwindow).

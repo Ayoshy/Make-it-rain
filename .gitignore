@@ -10,3 +10,4 @@ vendor/
 **/auth.json
 **/*.user
 private/
+**/__pycache__/

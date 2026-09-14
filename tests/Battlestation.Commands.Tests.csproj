@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><EnableDefaultCompileItems>false</EnableDefaultCompileItems><NoWarn>$(NoWarn);WFO0003</NoWarn></PropertyGroup>
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms"/><Using Remove="System.Drawing"/>
+    <Compile Include="CommandsTests.cs"/>
+    <Compile Include="../src/Battlestation/PaletteSearch.cs"/>
+    <Compile Include="../src/Battlestation/DesktopSettings.cs"/>
+    <Compile Include="../src/Battlestation/CommandPaletteWindow.cs"/>
+    <Compile Include="../src/Battlestation/OverlayStyle.cs"/>
+    <Compile Include="../src/Battlestation/PaletteHotkey.cs"/>
+    <Compile Include="../src/Battlestation/Native.cs"/>
+  </ItemGroup>
+</Project>

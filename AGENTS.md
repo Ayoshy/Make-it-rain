@@ -1,29 +1,40 @@
-# Contrat du projet Rainmeter
+# Contrat du projet Battlestation
 
-Tout développement se fait ici. Les projets Conrad Sensor, Codex Meter et le fond
-sous steamapps sont des références à préserver, y compris leur état non committé.
-Lire README.md puis docs/VALIDATION.md avant de reprendre ; vérifier les processus,
-les fichiers installés et les preuves actuelles, sans confondre snapshot et état live.
+Tout développement se fait ici. Préserver les projets Conrad Sensor, Codex Meter
+et le fond sous steamapps, y compris leurs états non committés.
+Lire README.md puis docs/VALIDATION.md ; vérifier les processus, les fichiers
+chargés et les preuves actuelles sans confondre snapshot et état live.
 
-Objectif phase 1 : remplacer les trois applications indépendantes par Rainmeter.
-Ne pas commencer la phase 2 (applications/raccourcis). Pas de façade Rainmeter
-alimentée par les anciens exécutables ou leurs ports 19187/19188.
+Battlestation est une application .NET autonome dockée au niveau du bureau,
+derrière les fenêtres normales et avec les widgets cliquables. Un export ou une
+fenêtre de comparaison ne valide pas cette cible. Préserver Win+D, le focus, les
+effets animés et la disposition physique 2 × 2560 × 1440.
 
-Préserver le rendu animé et la disposition 2 × 2560 × 1440. La cible de countdown
-est un réglage utilisateur conservé, pas une assertion nouvellement vérifiée.
-Ne pas changer les fonctionnalités ou sacrifier les effets sans expliquer un
-obstacle concret. Un export hors écran ne valide pas l'intégration au bureau.
+Le bureau est modulaire : chaque bloc peut être déplacé sur la grille, retiré puis
+réajouté dans un espace libre. La disposition est sauvegardée. Le compteur Vice
+City est indépendant du monitoring et peut être supprimé après la sortie du jeu.
+La date du compteur est un réglage utilisateur conservé, pas une assertion vérifiée.
+Journal, sessions de suivi et minuteur restent supprimés. Interface sobre : effets
+visibles, peu de texte d'aide, icônes nacrées et boutons liquid glass.
 
-Ne jamais lire/copier/afficher d'identifiants Codex. Les associations privées
-conrad-connection.js, codex-connection.js et wallpaper-token.txt ne vont pas dans
-les sources ou Git. Les caches ne conservent que des compteurs. Aucun appel de
-consommation de crédit. Absence != zéro ; modèle inconnu != tarif de substitution.
+Le terminal utilise ConPTY et le contrôle de rendu natif de Windows Terminal.
+Conserver les sessions utilisateur lors d'un rechargement du bureau : l'hôte .NET
+du terminal vit séparément. Ne jamais fermer un onglet actif pour une mise à jour.
+Les anciens terminaux encore ouverts sont à préserver jusqu'à fermeture explicite
+par l'utilisateur. Une session déjà en cours ne se transfère pas vers ConPTY.
 
-Avant de fermer Conrad ou un helper GPU, capturer les consignes et le mode Canicule.
+Ne jamais lire, copier ou afficher d'identifiants Codex. Les associations privées
+conrad-connection.js, codex-connection.js et wallpaper-token.txt restent hors des
+sources et de Git. Les caches d'usage ne conservent que des compteurs. Les sorties
+du terminal ne sont pas journalisées. Aucun appel consommant du crédit ; ne jamais
+envoyer automatiquement un prompt ou une image pour tester le terminal.
+Absence != zéro ; modèle inconnu != tarif de substitution.
+
+Avant de fermer Conrad ou un helper GPU, capturer les consignes et Canicule.
 Les tests de bornes ne remplacent pas un essai matériel et sa restauration vérifiée.
-Les tests DOM ne remplacent pas les clics réels dans Rainmeter.
+Les commandes internes et tests WPF ne remplacent pas les clics réels.
 
-N'effectuer la bascule ou le démarrage Windows qu'après parité vérifiée. Mesurer
-Rainmeter et tous ses processus techniques ; ne pas annoncer un gain à partir du
-nombre d'icônes. Ne jamais déclarer la migration terminée tant que l'ancien bureau
-reste nécessaire. À la fin d'une séance bloquée, décharger la sonde et son rendu.
+Pas de bascule au démarrage Windows avant validation complète. Mesurer tous les
+processus techniques ; ne pas déduire un gain du nombre d'icônes. Les sauvegardes
+historiques et les preuves locales ne sont pas les sources actives. Aucun nettoyage
+de l'historique Git ni des dossiers de référence sans demande explicite.

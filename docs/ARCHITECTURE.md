@@ -1,72 +1,71 @@
-# Architecture active
+# Architecture de Battlestation
 
-`Rainmeter.exe` charge `ViceCityNative.dll` pour les données et `ViceCityGlass.dll`
-pour le rendu Direct2D. Les plugins exposent l'ABI native
-Initialize/Reload/Update/GetString/ExecuteBang/Finalize et charge .NET 10 par
-`nethost`/`hostfxr`. `ViceCity.Core.dll` contient les lecteurs et commandes issus des
-sources réelles Conrad et Codex Meter. Aucune interface WPF ou application de tray
-n'est lancée, et aucun serveur HTTP de migration n'est ouvert.
+`Battlestation.exe` compose le bureau WPF et appelle directement
+`Battlestation.Core.dll`, `Battlestation.Graphics.dll` et `Battlestation.Desk.dll`.
+Le fond Direct2D est attaché au bureau Windows et dessine le verre aux coordonnées
+des blocs. Aucun navigateur ni serveur HTTP local ne sert de façade.
 
-Le fond est dessiné par Direct2D dans le processus Rainmeter, sur un thread de rendu
-distinct. Sa fenêtre technique est attachée à WorkerW derrière les icônes. Son cycle
-de vie appartient au skin Background : décharger ce skin arrête le thread et ferme
-la fenêtre. Ce n'est ni un exécutable de fond autonome, ni un service.
+`DesktopLayout` gère neuf identifiants de blocs, leurs positions, les collisions,
+la recherche d'un emplacement libre et la persistance atomique de `layout.json`.
+`DesktopWorkspace` relie ce modèle aux fenêtres, aux gestes de déplacement et au
+menu de notification. Horloge, météo, lecteur, projets, compteur, matériel et
+compteurs Codex ne partagent plus une fenêtre indissociable.
 
-Les images, particules, halos, rayons, traînées et parallaxe sont calculés nativement.
-Les compteurs et panneaux utilisent des meters Rainmeter ; Lua gère les volets
-exclusifs, leur transition flou/glissement, les curseurs et le défilement. Conrad
-s'étend vers le bas en masquant Codex ; Codex vers le haut en masquant Conrad.
-Logo, compteur et positions de base restent fixes. Le verre adoucit et décale
-légèrement le fond sous les deux blocs, avec un reflet sur leurs contours.
+`DashboardBounds` calcule les volets temporaires sur le même écran, sans appeler
+`DesktopLayout.Resize`. Le résumé garde sa position physique ; le volet pousse
+vers le haut si nécessaire. `DesktopPlacement.RaiseWithinDesktop` et l’ordre des
+panneaux natifs placent le volet devant les autres widgets, toujours dans la
+couche du bureau. Le matériau local du volet évite la superposition des textes.
 
-La première tentative utilisant de nombreux meters pour repeindre tout le fond
-surchargeait la file d'interface (jusqu'à 36 % CPU mesurés) et a été retirée. La
-version Direct2D sépare ce travail des clics du tableau de bord. WebView2 est retiré
-du projet actif et de ses dépendances ; il n'est pas une solution finale cachée.
+`PaletteHotkey` possède son propre HWND de messages et enregistre Ctrl+Espace
+avec `RegisterHotKey` et `MOD_NOREPEAT`. Un conflit est exposé dans les réglages
+et l’inspection ; le raccourci d’une autre application n’est pas retiré.
+`CommandPaletteWindow` est une fenêtre temporaire activable, hors du placement
+des widgets. Elle se ferme sur perte de focus ; Échap rend le focus précédent.
+`PaletteSearch` normalise les accents et classe les correspondances par nom,
+type et sous-séquence. Le mode `>` filtre les commandes. Les projets supplémentaires
+viennent d’une énumération asynchrone des noms de sous-dossiers, sans lecture de
+contenus. Aucun historique de recherche ni saisie de palette n’est enregistré.
 
-## Processus et services résiduels
+`SettingsWindow` est une fenêtre normale, unique. `DesktopSettings` conserve
+`preferences.json` dans les données utilisateur ; `desk/settings.json` reste
+la valeur initiale du projet. La date garde son fichier personnel `target.txt`.
+L’aperçu d’apparence appelle directement le moteur natif et se restaure à la
+fermeture. Modifier le lieu météo ou le dossier réinitialise uniquement le lecteur
+Desk ; ni le backend matériel ni les hôtes terminal ne sont redémarrés.
 
-| Composant | Rôle |
-|---|---|
-| Rainmeter.exe | Unique application de personnalisation, avec rendu natif et logique métier |
-| .NET 10 / nethost / hostfxr | Bibliothèques chargées dans Rainmeter, pas d'application supplémentaire |
-| codex.exe app-server --stdio | Processus technique enfant pour les lectures de quotas et d'usage |
-| conhost.exe | Peut être associé au lecteur console Codex ; inclus dans les mesures |
-| ViceCity.GpuHelper.exe | Helper élevé à la demande d'une écriture GPU, après confirmation Windows, fermé avec sa session |
-| MSI_Center_Service, MSI_Case_Service | Services existants nécessaires à la lecture CPU via CS_CommonAPI.dll |
-| Pilote NVIDIA / NVAPI | Mesures et commandes de la RTX 2060 SUPER |
+`DesktopPlacement` compare l'hôte des icônes à une référence basse invisible pour
+suivre Win+D. Le terminal autorise l'activation et la saisie ; les autres widgets
+restent utilisables sans voler le focus. Aucun parentage interprocessus du terminal.
 
-Le helper GPU n'a ni tray, ni autostart, ni service installé. Il capture les réglages
-antérieurs et les restaure lors de la fermeture du pipe. Le mode Canicule conserve
-aussi son état de restauration dans le service du plugin. Tant qu'un ancien
-ConradSensor est détecté, une écriture native est refusée pour éviter deux contrôleurs.
+Le terminal utilise un second processus `Battlestation.exe --terminal-host` :
 
-## Données et garanties
+- `ConPtySession` crée les pipes, la pseudo-console Windows et les processus shell.
+  Les lectures, écritures et fermetures sont hors du fil d'interface.
+- `TerminalView` utilise le moteur natif de Windows Terminal pour l'ANSI/VT,
+  le défilement, la sélection, les couleurs et le rendu accéléré.
+- `NativeTerminalWindow` possède les onglets et leurs surfaces. Masquer ou
+  réorganiser le bloc ne détruit pas les sessions.
+- Le pipe `Battlestation.NativeTerminal.v1`, limité à l'utilisateur courant,
+  transporte position et actions. Il ne transporte pas les transcriptions.
+- Une relance du bureau détache puis retrouve le même hôte. Aucun onglet n'est
+  fermé pour mettre à jour le rendu du bureau.
 
-Seules les méthodes Codex initialize, initialized, account/rateLimits/read et
-account/usage/read sont appelées. Aucun reset de crédit n'est possible dans cette
-interface. Le plugin ne lit ni ne copie les identifiants ; Codex utilise sa connexion
-existante. Les sessions locales fournissent uniquement des agrégats de compteurs ;
-prompts et réponses ne sont pas persistés ni envoyés à un tiers.
+L'ancien hôte sans protocole glass peut subsister dans une fenêtre détachée avec
+ses sessions, sur le pipe historique `Battlestation.NativeTerminal`. Son mutex
+ne bloque pas le nouvel hôte. Le bureau ne s'y rattache plus. Fermer explicitement
+le dernier onglet du nouvel hôte termine celui-ci ; une ouverture ultérieure
+utilise l'exécutable du bureau courant. Masquer le bloc ne termine jamais l'hôte.
 
-Les fenêtres/valeurs absentes restent absentes ou « — ». Les modèles sans prix
-conservent leurs tokens et un prix inconnu. Les prix de substitution Spark et
-auto-review sont retirés. Les tarifs connus proviennent du tableau récupéré, sans
-extrapolation du prix aux tokens non tarifés. L'estimation n'est pas une facture.
-Le calcul local du jour utilise les deltas horodatés et couvre le passage de minuit.
+Les données multimédias viennent de GSMTC, la météo d'Open-Meteo, le spectre audio
+de NAudio. La pochette reste en mémoire. Les six projets récents sont classés par
+modifications de sources, en excluant les dossiers générés.
 
-La cible du compte à rebours reste le réglage récupéré
-`2026-11-19T00:00:00+01:00`, sans nouvelle assertion sur la sortie du jeu.
+Les lecteurs matériels et de compteurs sont issus des projets locaux Conrad et
+Codex Meter. Les écritures GPU restent protégées contre un autre Conrad actif.
+`Battlestation.GpuHelper.exe` est lancé à la demande, pas au démarrage de Windows.
+Les lectures Codex utilisent l'app-server existant sans demander de génération.
 
-## Références techniques
-
-- ABI : https://raw.githubusercontent.com/rainmeter/rainmeter/master/Plugins/API/RainmeterAPI.h
-- Chargeur : https://raw.githubusercontent.com/rainmeter/rainmeter/master/Library/MeasurePlugin.cpp
-- Hébergement .NET : https://learn.microsoft.com/en-us/dotnet/core/tutorials/netcore-hosting
-- Parentage Win32 : https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setparent
-- Lecture Codex : https://learn.chatgpt.com/docs/app-server
-
-WorkerW utilise un comportement du shell Windows à vérifier sur cette installation ;
-la présence d'une fenêtre attachée ne prouve pas à elle seule les clics et Afficher
-le bureau. La pause actuelle porte sur le fond lorsqu'une fenêtre au premier plan
-couvre un moniteur ; les données du tableau de bord continuent d'être actualisées.
+Les sources et assets utilisent des chemins relatifs au projet. Les réglages
+utilisateur sont dans `%LOCALAPPDATA%\Battlestation` ; la date cible déjà choisie
+reste prioritaire sur la valeur initiale de `desk/settings.json`.

@@ -1,0 +1,7 @@
+[
+  { "name": "Steam", "path": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Steam\\Steam.lnk" },
+  { "name": "Brave", "path": "%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\Brave.lnk" },
+  { "name": "Discord", "path": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Discord Inc\\Discord.lnk" },
+  { "name": "Stremio", "path": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Stremio.lnk" },
+  { "name": "League of Legends", "path": "%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\Riot Games\\League of Legends.lnk" }
+]

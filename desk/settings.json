@@ -1,0 +1,11 @@
+{
+  "projectRoot": "%USERPROFILE%\\Documents\\Project",
+  "projectCount": 6,
+  "codex": "%LOCALAPPDATA%\\Programs\\OpenAI\\Codex\\bin\\codex.exe",
+  "weather": {
+    "city": "Aix-en-Provence",
+    "latitude": 43.5283,
+    "longitude": 5.44973
+  },
+  "targetDate": "2026-11-19T00:00:00+01:00"
+}

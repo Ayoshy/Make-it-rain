@@ -1,7 +1,7 @@
 using System.Text.Json;
 using ConradSensor;
 using CodexUsageTray;
-using ViceCity;
+using Battlestation.Core;
 
 int checks = 0;
 void Check(bool passed, string name) { if (!passed) throw new Exception(name); checks++; Console.WriteLine("PASS " + name); }
@@ -19,7 +19,7 @@ Check(low.FanPercent == 38 && low.ThermalLimitCelsius == 65, "GPU lower hardware
 Check(high.FanPercent == 100 && high.ThermalLimitCelsius == 88, "GPU upper hardware limits");
 var heat = NativeGpuControlService.CreateHeatwaveRequest(state);
 Check(heat.FanManual && heat.FanPercent == 100 && heat.ThermalLimitCelsius == 65, "heatwave uses reported hardware limits");
-var folder = Path.Combine(Path.GetTempPath(), "ViceCity-test-" + Guid.NewGuid().ToString("N"));
+var folder = Path.Combine(Path.GetTempPath(), "Battlestation-test-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(Path.Combine(folder, "sessions"));
 var fixture = Path.Combine(folder, "sessions", "rollout-2026-09-13-test.jsonl");
 await File.WriteAllTextAsync(fixture,

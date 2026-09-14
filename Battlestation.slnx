@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Battlestation.Core/Battlestation.Core.csproj" />
+    <Project Path="src/Battlestation.GpuHelper/Battlestation.GpuHelper.csproj" />
+    <Project Path="src/Battlestation/Battlestation.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Battlestation.Core.Tests.csproj" />
+    <Project Path="tests/Battlestation.Desktop.Tests.csproj" />
+    <Project Path="tests/Battlestation.Layout.Tests.csproj" />
+    <Project Path="tests/Battlestation.Terminal.Tests.csproj" />
+    <Project Path="tests/Battlestation.Commands.Tests.csproj" />
+  </Folder>
+</Solution>
