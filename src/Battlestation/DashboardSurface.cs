@@ -110,7 +110,7 @@ internal sealed class DashboardSurface : Surface
             double chartX = right + 64, chartWidth = Math.Max(1, w - chartX);
             double laneHeight = Math.Max(1, (h - 20) / 2);
             Sparkline(coolingHistory.Select(sample => sample.Fan), new Rect(chartX, 4, chartWidth, laneHeight));
-            Sparkline(coolingHistory.Select(sample => sample.Power), new Rect(chartX, 16 + laneHeight, chartWidth, laneHeight), power: true);
+            Sparkline(coolingHistory.Select(sample => sample.Power), new Rect(chartX, Math.Max(0, laneHeight), chartWidth, laneHeight), power: true);
         }
         else
         {
