@@ -15,9 +15,14 @@ internal sealed class ReminderSurface : Surface
     protected override void Paint()
     {
         Text("NUDGE",24,16,11,"#D8C8E3",bold:true);
-        D.DrawEllipse(B("#EBC5D5"),null,new Point(78,49),18,18);
-        D.DrawEllipse(B("#BFE3D6"),null,new Point(72,45),7,7);
-        D.DrawEllipse(B("#F8DFC5"),null,new Point(84,54),7,7);
+        // Pearl-like reminder mark: a soft volume replaces the old flat trio
+        // of circles while keeping the same compact footprint.
+        D.DrawEllipse(B("#26101625"),null,new Point(79,53),19,6);
+        var pearl=new RadialGradientBrush(Color.FromArgb(255,255,247,252),Color.FromArgb(255,207,177,216)){Center=new Point(.32,.26),GradientOrigin=new Point(.25,.18),RadiusX=.9,RadiusY=.9};
+        pearl.Freeze();D.DrawEllipse(pearl,null,new Point(78,48),18,18);
+        D.DrawEllipse(B("#BEE8D9"),null,new Point(72,44),7,8);
+        D.DrawEllipse(B("#F7D9C5"),null,new Point(84,53),7,8);
+        D.DrawEllipse(B("#B8F1E2"),null,new Point(74,39),3,3);
 
         if(Station.Reminders.Count==0)
         {

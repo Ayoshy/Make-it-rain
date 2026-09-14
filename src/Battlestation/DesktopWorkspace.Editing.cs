@@ -14,6 +14,7 @@ internal sealed partial class DesktopWorkspace
     LayoutGesture? gesture;
     Border? gestureCapture;
     Point? pendingPointer;
+    bool? lastGestureBlocked;
     void CreateEditGrids()
     {
         foreach(var screen in DesktopLayout.Screens)
@@ -25,9 +26,9 @@ internal sealed partial class DesktopWorkspace
             Native.SetWindowLongPtr(handle,-20,Native.GetWindowLongPtr(handle,-20)|0x20|0x08000000);
             placement.Add(grid);editGrids.Add(grid);
         }
-        station.SettingsChanged+=UpdateEditGrids;
+        station.SettingsChanged+=()=>UpdateEditGrids();
     }
-    void UpdateEditGrids()
+    void UpdateEditGrids(bool arrange=true)
     {
         if(linkDocksToggle is not null)linkDocksToggle.IsChecked=station.Settings.LinkDocks;
         foreach(var window in editGrids)
@@ -36,7 +37,7 @@ internal sealed partial class DesktopWorkspace
             drawing.Occupied=station.Layout.Blocks.Where(b=>b.Visible).Select(b=>new Rect(b.X-window.Left,b.Y-window.Top,b.Width,b.Height)).ToArray();drawing.InvalidateVisual();
             if(editing&&station.Settings.GridEnabled){if(!window.IsVisible)window.Show();}else if(window.IsVisible)window.Hide();
         }
-        placement.Arrange();
+        if(arrange)placement.Arrange();
     }
     static LayoutEdge Handle(Point p,double w,double h)
     {
@@ -67,6 +68,7 @@ internal sealed partial class DesktopWorkspace
             EndGesture(false);var p=e.GetPosition(overlay);
             bool linked=station.Settings.LinkDocks^Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
             gesture=new(station.Layout.Blocks,id,Handle(p,overlay.ActualWidth,overlay.ActualHeight),DesktopPointer(overlay),station.Settings.GridEnabled,station.Settings.GridStep,linked);
+            lastGestureBlocked=null;
             gestureCapture=overlay;toolbar.Activate();if(!overlay.CaptureMouse()){gesture=null;gestureCapture=null;return;}
             e.Handled=true;
         };
@@ -83,17 +85,26 @@ internal sealed partial class DesktopWorkspace
         if(gesture is null||pendingPointer is not {} pointer)return;pendingPointer=null;
         var preview=gesture.Preview(pointer);
         var old=station.Layout.Blocks.ToArray();
-        if(station.Layout.Restore(preview.Blocks))
+        bool changed=!preview.Blocks.SequenceEqual(old);
+        if(changed&&station.Layout.Restore(preview.Blocks))
         {
-            foreach(var block in station.Layout.Blocks)if(block!=old.Single(b=>b.Id==block.Id))Apply(block.Id,false);
-            UpdateEditGrids();
+            foreach(var block in station.Layout.Blocks)
+            {
+                var previous=old.Single(b=>b.Id==block.Id);
+                if(block!=previous)Apply(block.Id,false,block.Width!=previous.Width||block.Height!=previous.Height);
+            }
+            UpdateEditGrids(false);
         }
-        foreach(var (id,overlay) in overlays)overlay.BorderBrush=Brush(preview.Affected.Contains(id)?preview.Blocked?"#FFF0B77E":"#FFF1DCFF":"#706F6082");
+        if(changed||lastGestureBlocked!=preview.Blocked)
+        {
+            lastGestureBlocked=preview.Blocked;
+            foreach(var (id,overlay) in overlays)overlay.BorderBrush=Brush(preview.Affected.Contains(id)?preview.Blocked?"#FFF0B77E":"#FFF1DCFF":"#706F6082");
+        }
     }
     void EndGesture(bool commit)
     {
         var active=gesture;if(active is null)return;
-        gesture=null;pendingPointer=null;var capture=gestureCapture;gestureCapture=null;capture?.ReleaseMouseCapture();
+        gesture=null;pendingPointer=null;lastGestureBlocked=null;var capture=gestureCapture;gestureCapture=null;capture?.ReleaseMouseCapture();
         if(commit)
         {
             if(!active.Start.SequenceEqual(station.Layout.Blocks)){undo.Push(active.Start.ToArray());redo.Clear();station.Layout.Save();}

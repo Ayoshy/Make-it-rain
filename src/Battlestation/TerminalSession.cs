@@ -16,6 +16,7 @@ internal sealed class TerminalSession : IDisposable
     ConsoleTitleInfo[] titles=[];
     int x=2700,y=760,w=1464,h=660;
     bool visible=true,starting,polling,disposed,placing,placementDirty,detached;
+    bool? sentExternalChrome;
     nint remoteHost;
     public int Pid {get;private set;}
     public nint RemoteHandle=>remoteHost;
@@ -47,12 +48,13 @@ internal sealed class TerminalSession : IDisposable
     public void Place(nint owner,int left,int top,int width,int height)
     {
         detached=false;
+        if(remoteHost!=0&&x==left&&y==top&&w==width&&h==height)return;
         x=left;y=top;w=width;h=height;if(remoteHost!=0)_=PlaceAsync();
     }
     async Task PlaceAsync()
     {
         if(placing){placementDirty=true;return;}placing=true;
-        try{do{placementDirty=false;if(UseGlassTabs)await Send("chrome:external");await Send($"place:{x}:{y}:{w}:{h}");await Send(visible?"show":"hide");}while(placementDirty&&!disposed);}catch(Exception e){Status=e.Message;}
+        try{do{placementDirty=false;bool external=UseGlassTabs;if(sentExternalChrome!=external){await Send(external?"chrome:external":"chrome:internal");sentExternalChrome=external;}await Send($"place:{x}:{y}:{w}:{h}");}while(placementDirty&&!disposed);}catch(Exception e){Status=e.Message;}
         finally{placing=false;}
     }
     public void SetVisible(bool show){if(visible==show)return;visible=show;if(remoteHost!=0)_=VisibilityAsync();}
@@ -91,7 +93,7 @@ internal sealed class TerminalSession : IDisposable
             using var json=JsonDocument.Parse(await Send("inspect"));
             if(disposed)return;
             var root=json.RootElement;var handle=(nint)root.GetProperty("hwnd").GetInt64();bool changed=remoteHost!=handle;
-            remoteHost=handle;Pid=root.GetProperty("pid").GetInt32();Status=root.GetProperty("status").GetString()??"Terminal natif";
+            remoteHost=handle;if(changed)sentExternalChrome=null;Pid=root.GetProperty("pid").GetInt32();Status=root.GetProperty("status").GetString()??"Terminal natif";
             var sessions=root.GetProperty("sessions").EnumerateArray().ToArray();
             rawTabs=sessions.Select(tab=>new TerminalTabInfo(tab.GetProperty("id").GetGuid(),tab.GetProperty("title").GetString()??"Terminal",tab.GetProperty("active").GetBoolean())).ToArray();
             shellPids=sessions.ToDictionary(tab=>tab.GetProperty("id").GetGuid(),tab=>tab.GetProperty("pid").GetInt32());

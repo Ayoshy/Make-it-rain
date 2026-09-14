@@ -124,14 +124,14 @@ internal sealed partial class DesktopWorkspace : IDisposable
         int[] slots=id switch{"clock"=>[0],"weather"=>[1],"apps"=>[2],"music"=>[3],"projects"=>[4,8],"terminal"=>[5],"hardware"=>[6],"usage"=>[7],"video"=>[9],"audio"=>[10],"reminders"=>[11],_=>[]};
         foreach(int slot in slots)Native.BackgroundPanel(slot,0,0,0,0);
     }
-    void Apply(string id,bool arrange=true)
+    void Apply(string id,bool arrange=true,bool refresh=true)
     {
         renderRevisions.Remove(id);
         var block=station.Layout[id];var window=windows[id];var surface=surfaces[id];
         surface.SetDisplayed(block.Visible);
         window.Left=surface.DesktopX=block.X;window.Top=surface.DesktopY=block.Y;
         window.Width=surface.Width=block.Width;window.Height=surface.Height=block.Height;
-        if(block.Visible){if(!window.IsVisible)window.Show();surface.Refresh();}else{window.Hide();ClearGlass(id);}
+        if(block.Visible){if(!window.IsVisible)window.Show();if(refresh)surface.Refresh();else surface.UpdateGlassBounds();}else{window.Hide();ClearGlass(id);}
         if(surface is VideoSurface video)video.SetActive(block.Visible,editing);
         if(surface is AudioSurface mixer)mixer.SetActive(block.Visible&&!editing);
         if(id=="projects"){Native.DeskProjectsActive(block.Visible?1:0);station.Projects.Watch(station.ProjectRoot,block.Visible,name=>Native.DeskCommand("ProjectChanged:"+name));}

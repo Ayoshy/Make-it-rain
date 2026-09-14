@@ -40,6 +40,7 @@ internal abstract class Surface : FrameworkElement
     protected const string Ink=DockAppearance.Ink,Muted=DockAppearance.Muted,Pink="#FF6FD3",Purple="#BE81FF";
     public Surface(Station station,int dockSlot=-1){Station=station;this.dockSlot=dockSlot;artDeco=new FontFamily(new Uri("pack://application:,,,/"),"./Assets/Fonts/#GTAArtDeco Condensed");SnapsToDevicePixels=true;FocusVisualStyle=null;TextOptions.SetTextFormattingMode(this,TextFormattingMode.Display);}
     public void Refresh()=>InvalidateVisual();
+    internal void UpdateGlassBounds(){if(dockSlot>=0&&displayed)Native.BackgroundPanel(dockSlot,(float)DesktopX,(float)DesktopY,(float)Width,(float)Height);}
     protected override void OnRender(DrawingContext dc)
     {
         D=dc;hits.Clear();if(!displayed)return;RenderCount++;
