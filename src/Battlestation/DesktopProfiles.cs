@@ -9,7 +9,7 @@ internal sealed class DesktopProfiles
     readonly string path;
     Dictionary<string,DesktopProfile> profiles=[];
     internal string Current {get;private set;}="Personnel";
-    internal static readonly string[] Presets=["Focus","Multimédia","Double écran"];
+    internal static readonly string[] Presets=["Jeu","Création","Cinéma","Focus","Multimédia","Double écran"];
     internal static readonly string[] Names=["Personnel","Jeu","Création","Cinéma",..Presets];
     internal DesktopProfiles(string file)
     {
@@ -25,17 +25,21 @@ internal sealed class DesktopProfiles
     {
         if(!Names.Contains(name))throw new ArgumentException("Disposition inconnue.");
         var current=new DesktopProfile(layout.Blocks.ToList(),settings.AnimateBackground,settings.ReactiveAudio,settings.AudioIntensity,settings.GlassOpacity);
-        var destination=name==Current?current:profiles.GetValueOrDefault(name)??Create(name,current);
+        var destination=name=="Personnel"
+            ? (name==Current?current:profiles.GetValueOrDefault(name)??Create(name,current))
+            : Create(name,current);
         _=(settings with{AnimateBackground=destination.Animate,ReactiveAudio=destination.Reactive,AudioIntensity=destination.Intensity,GlassOpacity=destination.Glass}).Validate(false);
         if(!layout.Restore(destination.Blocks))throw new InvalidOperationException("Cette disposition ne tient plus. Ajuste les blocs avant de la réutiliser.");
-        var next=new Dictionary<string,DesktopProfile>(profiles){[Current]=current,[name]=destination};
+        var next=new Dictionary<string,DesktopProfile>(profiles);
+        if(Current=="Personnel"||!Presets.Contains(Current))next[Current]=current;
+        next[name]=destination;
         try{DesktopSettings.Write(path,JsonSerializer.Serialize(new ProfileFile(name,next),new JsonSerializerOptions{WriteIndented=true}));}
         catch{layout.Restore(current.Blocks);throw;}
         profiles=next;Current=name;return destination;
     }
     static DesktopProfile Create(string name,DesktopProfile baseline)
     {
-        if(Presets.Contains(name))return baseline with{Blocks=Preset(name,baseline.Blocks)};
+        if(Presets.Contains(name))return baseline with{Blocks=Preset(name,baseline.Blocks),Reactive=name!="Cinéma",Intensity=name=="Jeu"?.35:name=="Création"?.55:.15};
         string[] keep=name switch
         {
             "Jeu"=>["clock","apps","music","hardware","audio","countdown","video"],
@@ -51,6 +55,19 @@ internal sealed class DesktopProfiles
     {
         (string Id,double X,double Y,double W,double H)[] cells=name switch
         {
+            "Jeu"=>[
+                ("clock",2584,24,760,164),("apps",3368,24,920,164),
+                ("countdown",2584,212,1704,840),("hardware",4300,212,820,218),
+                ("usage",4300,454,820,209),("music",4300,687,820,168),
+                ("weather",4300,879,820,112),("audio",2584,1064,2536,336)],
+            "Création"=>[
+                ("clock",2584,24,520,164),("apps",3128,24,1200,164),
+                ("terminal",2584,212,1744,1216),("projects",4352,212,744,560),
+                ("usage",4352,784,744,209),("music",4352,1017,744,168)],
+            "Cinéma"=>[
+                ("video",2584,24,1704,840),("music",4300,24,820,336),
+                ("audio",4300,372,820,400),("clock",2584,876,820,164),
+                ("apps",3416,876,868,164),("weather",4300,1064,820,112)],
             "Focus"=>[
                 ("clock",2584,24,520,232),("apps",3128,24,1200,232),
                 ("terminal",2584,280,1744,1136),("projects",4352,24,744,464),

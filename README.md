@@ -22,10 +22,10 @@ retiré sans toucher au reste.
 - L'icône Battlestation dans la zone de notification permet de réorganiser ou
   réafficher les blocs, même lorsque tous sont masqués.
 - **Terminer** quitte l'édition. La disposition est sauvegardée automatiquement.
-- **Dispositions**, dans Réorganiser, propose trois setups prêts à l’emploi :
-  **Focus** (grand terminal et projets), **Multimédia** (vidéo et audio),
-  **Double écran** (terminal à gauche, médias et monitoring à droite).
-  Leurs ajustements sont conservés ; **Personnel** retrouve ta disposition précédente.
+- **Dispositions**, dans Réorganiser, propose six setups prêts à l’emploi :
+  **Jeu**, **Création**, **Cinéma**, **Focus**, **Multimédia** et **Double écran**.
+  Ils sont fixes et reviennent toujours à leur plan par défaut ; **Personnel** est
+  la disposition libre, dont les ajustements sont conservés.
 - **Vidéo** : choisir YouTube ou Stremio, puis cliquer **Activer le miroir**.
   Un clic sur l'image commande lecture/pause ; **■** arrête le miroir et **↗**
   revient au lecteur. Voir [l'intégration Brave et Stremio](docs/VIDEO.md).

@@ -44,14 +44,18 @@ internal sealed partial class DesktopWorkspace
         foreach(var app in station.Apps)entries.Add(new("app:"+app.Path,app.Name,"Application","\uE71D",()=>{station.Launch(app);if(station.Error!="")throw new InvalidOperationException(station.Error);}));
         entries.Add(new("settings","Réglages","Paramètres · settings · transparence · météo","\uE713",ShowSettings,true));
         entries.Add(new("reserve","À regarder, à écouter","Réserve · YouTube · Spotify · liens copiés","\uE8B7",ShowReserve,true));
-        foreach(string name in DesktopProfiles.Names)entries.Add(new("profile:"+name,"Disposition "+name,profiles.Current==name?"Disposition actuelle":"Bureau · ambiance","\uE8A9",()=>SelectProfile(name),true));
+        foreach(string name in DesktopProfiles.Names)
+        {
+            var preview=name=="Personnel"?null:DesktopProfiles.Preset(name,DesktopLayout.Defaults(station.Apps.Count)).Where(b=>b.Visible).Select(b=>new PalettePreviewBlock(b.X,b.Y,b.Width,b.Height)).ToArray();
+            entries.Add(new("profile:"+name,"Disposition "+name,profiles.Current==name?"Disposition actuelle":"Bureau · ambiance","\uE8A9",()=>SelectProfile(name),true,name,preview));
+        }
         entries.Add(new("organize",editing?"Terminer la réorganisation":"Réorganiser le bureau","Déplacer les blocs sur la grille","\uE8A9",()=>SetEditing(!editing),true));
         entries.Add(new("terminal","Ouvrir le terminal","Retrouver les sessions actives","\uE756",()=>{if(!ChangeVisibility("terminal",true))throw new InvalidOperationException("Pas assez d’espace libre pour le terminal.");SetEditing(false);station.Terminal!.Start();},true));
         foreach(var block in station.Layout.Blocks)
         {
             bool show=!block.Visible;entries.Add(new("block:"+block.Id,(show?"Afficher ":"Masquer ")+block.Title,"Bloc du bureau","\uE8A9",()=>{if(!ChangeVisibility(block.Id,show))throw new InvalidOperationException("Pas assez d’espace libre pour ce bloc.");},true));
         }
-        var window=new CommandPaletteWindow(entries);palette=window;
+        var window=new CommandPaletteWindow(entries,()=>profiles.Current);palette=window;
         window.Closed+=(_,_)=>{if(palette==window)palette=null;};
         PaletteEntry Project(string path)=>new("project:"+path,Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar)),"Projet","\uE8B7",()=>window.ProjectActions(Path.GetFileName(path),
             ()=>{if(!Directory.Exists(path))throw new DirectoryNotFoundException("Ce projet a été déplacé ou supprimé.");Process.Start(new ProcessStartInfo(path){UseShellExecute=true})?.Dispose();},

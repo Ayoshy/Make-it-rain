@@ -14,18 +14,24 @@ internal sealed class CommandPaletteWindow : Window
     readonly TextBlock empty=OverlayStyle.Text("Aucun résultat",15,"#BCAACD");
     readonly TextBlock placeholder=OverlayStyle.Text("Rechercher…",21,"#AC99BF");
     readonly List<PaletteEntry> catalog;
+    readonly Func<string>? currentProfile;
+    readonly Dictionary<string,Border> profileCards=[];
     readonly nint previous;
     IReadOnlyList<PaletteEntry>? actions;
     string previousQuery="";
     bool closing;
-    internal CommandPaletteWindow(IEnumerable<PaletteEntry> entries)
+    internal CommandPaletteWindow(IEnumerable<PaletteEntry> entries,Func<string>? currentProfile=null)
     {
-        previous=Native.GetForegroundWindow();catalog=entries.ToList();Title="Battlestation · Palette";Width=660;Height=520;ShowInTaskbar=false;Topmost=true;
+        previous=Native.GetForegroundWindow();catalog=entries.ToList();this.currentProfile=currentProfile;Title="Battlestation · Palette";Width=660;Height=520;ShowInTaskbar=false;Topmost=true;
         OverlayStyle.Apply(this);
         var layout=new DockPanel();
         var top=new StackPanel();DockPanel.SetDock(top,Dock.Top);layout.Children.Add(top);
         var heading=new DockPanel();var close=OverlayStyle.Button("Échap",()=>Dismiss(true));close.FontSize=11;DockPanel.SetDock(close,Dock.Right);heading.Children.Add(close);heading.Children.Add(OverlayStyle.Text("BATTLESTATION",12,"#CDB9DF"));top.Children.Add(heading);
         var searchArea=new Grid{Margin=new Thickness(0,12,0,8)};placeholder.Margin=new Thickness(10,8,0,0);placeholder.IsHitTestVisible=false;searchArea.Children.Add(placeholder);searchArea.Children.Add(search);top.Children.Add(searchArea);top.Children.Add(context);
+        var previews=new ScrollViewer{HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled,Height=118,Margin=new Thickness(0,10,0,0)};
+        var previewRow=new StackPanel{Orientation=Orientation.Horizontal};
+        foreach(var entry in catalog.Where(e=>e.ProfileName is not null&&e.ProfileName!="Personnel"))previewRow.Children.Add(ProfileCard(entry));
+        previews.Content=previewRow;top.Children.Add(previews);
         top.Children.Add(new Border{Height=1,Background=OverlayStyle.B("#3CDBCAE8"),Margin=new Thickness(0,15,0,12)});
         var footer=OverlayStyle.Text("↑ ↓  Parcourir       Entrée  Ouvrir       >  Commandes",11,"#AB9ABB");footer.Margin=new Thickness(0,12,0,0);DockPanel.SetDock(footer,Dock.Bottom);layout.Children.Add(footer);
         var center=new Grid();center.Children.Add(results);empty.HorizontalAlignment=HorizontalAlignment.Center;empty.VerticalAlignment=VerticalAlignment.Center;center.Children.Add(empty);layout.Children.Add(center);
@@ -39,8 +45,32 @@ internal sealed class CommandPaletteWindow : Window
         search.TextChanged+=(_,_)=>{placeholder.Visibility=search.Text.Length==0?Visibility.Visible:Visibility.Collapsed;Rebuild();};PreviewKeyDown+=HandleKey;
         results.PreviewMouseLeftButtonUp+=(_,e)=>{var item=ItemsControl.ContainerFromElement(results,e.OriginalSource as DependencyObject) as ListBoxItem;if(item is not null){results.SelectedItem=item;Execute();e.Handled=true;}};
         Deactivated+=(_,_)=>Dismiss(false);Loaded+=(_,_)=>{search.Focus();Keyboard.Focus(search);};Closed+=(_,_)=>closing=true;
-        Rebuild();
+        Rebuild();UpdateProfileSelection();
     }
+    Border ProfileCard(PaletteEntry entry)
+    {
+        var card=new Border{Width=188,Height=104,Margin=new Thickness(0,0,8,0),Padding=new Thickness(8),CornerRadius=new CornerRadius(12),BorderThickness=new Thickness(1),Background=Brush("#241A30D8"),BorderBrush=Brush("#3C334A80")};
+        var stack=new StackPanel();var title=OverlayStyle.Text(entry.ProfileName!,13,"#E6D9F0");title.Margin=new Thickness(2,0,0,4);stack.Children.Add(title);
+        var plan=new Border{Height=62,Background=Brush("#160F20CC"),CornerRadius=new CornerRadius(7),Child=MiniMap(entry.ProfileName!)};stack.Children.Add(plan);card.Child=stack;
+        card.MouseLeftButtonUp+=(_,e)=>{entry.Execute();UpdateProfileSelection();e.Handled=true;};
+        profileCards[entry.ProfileName!]=card;return card;
+    }
+    UIElement MiniMap(string name)
+    {
+        var canvas=new Canvas{Width=166,Height=60};
+        foreach(var block in catalog.First(e=>e.ProfileName==name).Preview??[])
+        {
+            var x=block.X/5120*162+2;var y=block.Y/1440*50+4;var w=Math.Max(3,block.Width/5120*162);var h=Math.Max(3,block.Height/1440*50);
+            canvas.Children.Add(new Border{Width=Math.Min(160-x,w),Height=Math.Min(50-y,h),Background=Brush("#9B7FB04A"),BorderBrush=Brush("#D7C6E888"),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(2),Margin=new Thickness(x,y,0,0)});
+        }
+        return canvas;
+    }
+    void UpdateProfileSelection()
+    {
+        var selected=currentProfile?.Invoke();
+        foreach(var pair in profileCards)pair.Value.BorderBrush=Brush(pair.Key==selected?"#CDA9F0E8":"#3C334A80");
+    }
+    static SolidColorBrush Brush(string value){var brush=(SolidColorBrush)new BrushConverter().ConvertFromString(value)!;brush.Freeze();return brush;}
     internal void AddProjects(IEnumerable<PaletteEntry> entries)
     {
         if(closing)return;foreach(var entry in entries)if(!catalog.Any(e=>e.Id==entry.Id))catalog.Add(entry);if(actions is null)Rebuild();

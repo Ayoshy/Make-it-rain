@@ -35,7 +35,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
         surfaces=new(){["clock"]=new DeskSurface(station,DeskWidget.Clock),["weather"]=new DeskSurface(station,DeskWidget.Weather),
             ["apps"]=new DockSurface(station),["music"]=new DeskSurface(station,DeskWidget.Music),["projects"]=new DeskSurface(station,DeskWidget.Projects),
             ["terminal"]=new TerminalSurface(station),["countdown"]=new CountdownSurface(station),
-            ["hardware"]=new DashboardSurface(station,true),["usage"]=new DashboardSurface(station,false),["video"]=new VideoSurface(station),["audio"]=new AudioSurface(station)};
+            ["hardware"]=new DashboardSurface(station,true),["usage"]=new DashboardSurface(station,false),["reminders"]=new ReminderSurface(station),["video"]=new VideoSurface(station),["audio"]=new AudioSurface(station)};
         Native.BackgroundStart(Native.DesktopParent(),Path.Combine(station.Assets,"Images"));
         Native.BackgroundAppearance(station.Settings.AnimateBackground?1:0,(float)station.Settings.GlassOpacity);
         CreateEditGrids();
@@ -121,7 +121,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
     }
     void ClearGlass(string id)
     {
-        int[] slots=id switch{"clock"=>[0],"weather"=>[1],"apps"=>[2],"music"=>[3],"projects"=>[4,8],"terminal"=>[5],"hardware"=>[6],"usage"=>[7],"video"=>[9],"audio"=>[10],_=>[]};
+        int[] slots=id switch{"clock"=>[0],"weather"=>[1],"apps"=>[2],"music"=>[3],"projects"=>[4,8],"terminal"=>[5],"hardware"=>[6],"usage"=>[7],"video"=>[9],"audio"=>[10],"reminders"=>[11],_=>[]};
         foreach(int slot in slots)Native.BackgroundPanel(slot,0,0,0,0);
     }
     void Apply(string id,bool arrange=true)
@@ -216,7 +216,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
                 "weather"=>(long)Native.DeskRevision(1),
                 "music"=>(long)Native.DeskRevision(2),
                 "projects"=>HashCode.Combine(Native.DeskRevision(0),station.Projects.Revision,DateTimeOffset.UtcNow.ToUnixTimeSeconds()/60),
-                "hardware"=>station.Backend.Revision(true),"usage"=>station.Backend.Revision(false),
+                "hardware"=>station.Backend.Revision(true),"usage"=>station.Backend.Revision(false),"reminders"=>station.Reminders.GetHashCode(),
                 "terminal"=>HashCode.Combine(station.Terminal?.Revision,station.Terminal?.RemoteHandle,station.Terminal?.UseGlassTabs),
                 "apps"=>station.Apps.GetHashCode(),_=>0};
             if(pair.Key is "audio" or "video")continue;

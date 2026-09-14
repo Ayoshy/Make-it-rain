@@ -2,7 +2,8 @@ using System.Globalization;
 using System.Text;
 
 namespace Battlestation;
-internal sealed record PaletteEntry(string Id,string Title,string Detail,string Icon,Action Execute,bool Command=false);
+internal sealed record PalettePreviewBlock(double X,double Y,double Width,double Height);
+internal sealed record PaletteEntry(string Id,string Title,string Detail,string Icon,Action Execute,bool Command=false,string? ProfileName=null,IReadOnlyList<PalettePreviewBlock>? Preview=null);
 internal static class PaletteSearch
 {
     internal static string Normalize(string value)=>string.Concat(value.Normalize(NormalizationForm.FormD).Where(c=>CharUnicodeInfo.GetUnicodeCategory(c)!=UnicodeCategory.NonSpacingMark)).ToLowerInvariant();

@@ -6,11 +6,14 @@ using System.Text.RegularExpressions;
 namespace Battlestation;
 internal sealed class DashboardSurface : Surface
 {
+    const double PowerChartMaximum = 200;
     readonly bool sensors;
     readonly DashboardTransition pages;
     int modelOffset, quotaOffset;
     bool drawingPage, interactive, manual, draftDirty;
     double fan = double.NaN, thermal = double.NaN;
+    readonly Queue<(double Fan, double Power)> coolingHistory = [];
+    const int CoolingHistoryLength = 48;
     Rect body;
     readonly Dictionary<string, Rect> sliders = [];
     string? drag;
@@ -103,6 +106,11 @@ internal sealed class DashboardSurface : Surface
             double right = 2 * col;
             Text("VENTILATEUR", right, 3, 7); Text(Station.M("fan"), right, 20, 16, font: DockAppearance.NumberFont);
             Text("PUISSANCE", right, 59, 7); Text(Station.M("watts"), right, 75, 16, font: DockAppearance.NumberFont);
+            AddCoolingSample();
+            double chartX = right + 64, chartWidth = Math.Max(1, w - chartX);
+            double laneHeight = Math.Max(1, (h - 20) / 2);
+            Sparkline(coolingHistory.Select(sample => sample.Fan), new Rect(chartX, 4, chartWidth, laneHeight));
+            Sparkline(coolingHistory.Select(sample => sample.Power), new Rect(chartX, 16 + laneHeight, chartWidth, laneHeight), power: true);
         }
         else
         {
@@ -277,6 +285,38 @@ internal sealed class DashboardSurface : Surface
     {
         if (pages.Running || !body.Contains(e.GetPosition(this))) return;
         if (ScrollPage(e.Delta > 0 ? -1 : 1)) e.Handled = true;
+    }
+    void AddCoolingSample()
+    {
+        double currentFan = Station.N("fan"), currentPower = Station.N("watts");
+        if (!double.IsFinite(currentFan) && !double.IsFinite(currentPower)) return;
+        var previous = coolingHistory.LastOrDefault();
+        coolingHistory.Enqueue((double.IsFinite(currentFan) ? currentFan : previous.Fan,
+            double.IsFinite(currentPower) ? currentPower : previous.Power));
+        while (coolingHistory.Count > CoolingHistoryLength) coolingHistory.Dequeue();
+    }
+    void Sparkline(IEnumerable<double> values, Rect area, bool power = false)
+    {
+        var samples = values.Where(double.IsFinite).ToArray();
+        if (samples.Length < 2 || area.Width < 4 || area.Height < 4) return;
+        double maximum = power ? Math.Max(PowerChartMaximum, samples.Max()) : 100;
+        double minimum = 0, range = Math.Max(1, maximum - minimum);
+        var points = samples.Select((value, index) => new Point(
+            area.X + index * area.Width / (samples.Length - 1),
+            area.Bottom - Math.Clamp((value - minimum) / range, 0, 1) * area.Height)).ToArray();
+        for (int i = 1; i < points.Length; i++)
+        {
+            double value = samples[i];
+            double load = Math.Clamp(value / maximum * 100, 0, 100);
+            Line(points[i - 1].X, points[i - 1].Y, points[i].X, points[i].Y, LoadColor(load), 1);
+        }
+    }
+    static string LoadColor(double load)
+    {
+        load = Math.Clamp(load, 0, 100);
+        if (load < 55) return "#55E6A5";
+        if (load < 80) return "#F5D76E";
+        return "#FF6FD3";
     }
     internal bool ScrollPage(int delta)
     {

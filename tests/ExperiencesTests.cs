@@ -51,9 +51,9 @@ internal static class ExperiencesTests
         var settings=new DesktopSettings(folder,"Paris",48,2);var layout=new DesktopLayout(Path.Combine(folder,"layout.json"),5);
         var original=layout.Blocks.ToArray();var profiles=new DesktopProfiles(Path.Combine(folder,"profiles.json"));
         profiles.Switch("Cinéma",layout,settings);Check(!layout["terminal"].Visible&&layout["music"].Visible,"Cinema hides the terminal frame and keeps playback");
-        Check(layout.Move("music",3000,1000),"Cinema can have its own arrangement");Check(layout.Restore(layout.Blocks.Select(b=>b.Id=="music"?b with{Width=640,Height=200}:b)),"Cinema can resize a dock");var cinema=layout.Blocks.ToArray();
+        var cinema=layout.Blocks.ToArray();
         profiles.Switch("Personnel",layout,settings);Check(layout.Blocks.SequenceEqual(original),"Personal restores every original block exactly");
-        profiles.Switch("Cinéma",layout,settings);Check(layout.Blocks.SequenceEqual(cinema),"Cinema remembers its edited arrangement");
+        profiles.Switch("Cinéma",layout,settings);Check(layout.Blocks.SequenceEqual(cinema),"Cinema restores its fixed arrangement");
         var reloaded=new DesktopProfiles(Path.Combine(folder,"profiles.json"));Check(reloaded.Current=="Cinéma","Selected profile persists");
         reloaded.Switch("Personnel",layout,settings);Check(layout.Blocks.SequenceEqual(original),"Stored profiles survive reload");
         var bad=original.Select(x=>x.Id=="music"?x with{X=layout["clock"].X,Y=layout["clock"].Y}:x).ToList();
@@ -68,8 +68,10 @@ internal static class ExperiencesTests
             }
             Check(ready.Any(b=>b.Visible&&b!=original.Single(o=>o.Id==b.Id)),"Preset supplies actual positions and dimensions");
             Check(preset=="Double écran"?ready.Any(b=>b.Visible&&b.X<2560):ready.All(b=>!b.Visible||b.X>=2560),"Only the dual-screen preset occupies the primary monitor");
+            Check(layout.Restore(ready.Select((b,i)=>i==0?b with{Visible=false}:b)),"Preset fixture can be changed locally");
+            reloaded.Switch(preset,layout,settings);Check(layout.Blocks.SequenceEqual(ready),"Preset ignores local edits and returns to its default");
             reloaded.Switch("Personnel",layout,settings);Check(layout.Blocks.SequenceEqual(original),"Preset preserves personal layout exactly");
-            reloaded.Switch(preset,layout,settings);Check(layout.Blocks.SequenceEqual(ready),"Preset survives switching away and back");
+            reloaded.Switch(preset,layout,settings);Check(layout.Blocks.SequenceEqual(ready),"Preset is deterministic after switching away and back");
             reloaded.Switch("Personnel",layout,settings);
         }
     }

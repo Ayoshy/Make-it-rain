@@ -8,6 +8,7 @@ using Battlestation.Core;
 
 namespace Battlestation;
 internal sealed record DockApp(string Name,string Path);
+internal sealed record ReminderItem(string Text);
 internal sealed class Station : IDisposable
 {
     public string Root {get;}
@@ -15,6 +16,7 @@ internal sealed class Station : IDisposable
     public string Assets=>Path.Combine(Root,"assets");
     public DesktopBackend Backend {get;}
     public List<DockApp> Apps {get;private set;}=[];
+    public List<ReminderItem> Reminders {get;private set;}=[];
     public DesktopLayout Layout {get;}
     internal ProjectSignals Projects {get;}
     internal MediaReserve Reserve {get;}
@@ -59,6 +61,10 @@ internal sealed class Station : IDisposable
         var appsPath=Path.Combine(Data,"apps.json");
         if(!File.Exists(appsPath))File.Copy(Path.Combine(root,"dock/apps.json"),appsPath);
         Apps=JsonSerializer.Deserialize<List<DockApp>>(File.ReadAllText(appsPath),new JsonSerializerOptions{PropertyNameCaseInsensitive=true})??[];
+        var remindersPath=Path.Combine(Data,"reminders.json");
+        if(File.Exists(remindersPath))
+            try{Reminders=JsonSerializer.Deserialize<List<ReminderItem>>(File.ReadAllText(remindersPath),new JsonSerializerOptions{PropertyNameCaseInsensitive=true})??[];}
+            catch(JsonException){Reminders=[];}
         Layout=new DesktopLayout(Path.Combine(Data,"layout.json"),Apps.Count);
     }
     public string M(string metric)=>Backend.Read(metric);
@@ -85,13 +91,19 @@ internal sealed class Station : IDisposable
         Native.BackgroundAppearance(next.AnimateBackground?1:0,(float)next.GlassOpacity);
         SettingsChanged?.Invoke();
     }
-    public double N(string metric)=>double.TryParse(M(metric).TrimEnd('%','°'),NumberStyles.Float,CultureInfo.InvariantCulture,out var n)?n:double.NaN;
+    public double N(string metric)=>double.TryParse(M(metric).TrimEnd('%','°','W',' '),NumberStyles.Float,CultureInfo.InvariantCulture,out var n)?n:double.NaN;
     public void Command(string command){try{Backend.Command(command);Error="";}catch(Exception e){Error=e.Message;}}
     public void Launch(DockApp app){try{Process.Start(new ProcessStartInfo(Environment.ExpandEnvironmentVariables(app.Path)){UseShellExecute=true});Error="";}catch(Exception e){Error=e.Message;}}
     public void SaveApps(List<DockApp> apps)
     {
         if(apps.Count>12||apps.Any(a=>string.IsNullOrWhiteSpace(a.Name)||string.IsNullOrWhiteSpace(a.Path)))throw new ArgumentException("Le dock accepte jusqu’à 12 applications nommées.");
         DesktopSettings.Write(Path.Combine(Data,"apps.json"),JsonSerializer.Serialize(apps,new JsonSerializerOptions{WriteIndented=true}));Apps=apps.ToList();Layout.Save();DockChanged?.Invoke();
+    }
+    public void SaveReminders(IEnumerable<ReminderItem> reminders)
+    {
+        var next=reminders.Where(r=>!string.IsNullOrWhiteSpace(r.Text)).Select(r=>new ReminderItem(r.Text.Trim())).Take(32).ToList();
+        DesktopSettings.Write(Path.Combine(Data,"reminders.json"),JsonSerializer.Serialize(next,new JsonSerializerOptions{WriteIndented=true}));
+        Reminders=next;
     }
     public void RefreshCover()
     {
