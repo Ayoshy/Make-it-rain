@@ -13,7 +13,7 @@ internal static class TerminalTabsPreview
     public static void Run(string output)
     {
         var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};
-        var tabs=new TerminalTabs();tabs.SetTabs([new(Guid.NewGuid(),"Battlestation",true),new(Guid.NewGuid(),"PowerShell",false)]);
+        var tabs=new TerminalTabs();tabs.SetTabs([new(Guid.NewGuid(),"Battlestation",true,"#BBA0EA",TerminalActivity.Thinking),new(Guid.NewGuid(),"Interface",false,"#8CBDEB",TerminalActivity.Working),new(Guid.NewGuid(),"Validation",false,"#91D6BE",TerminalActivity.Ready),new(Guid.NewGuid(),"Question",false,"#E9BE81",TerminalActivity.Attention)]);
         var layout=new DockPanel();DockPanel.SetDock(tabs,Dock.Top);layout.Children.Add(tabs);
         var scroll=new ScrollBar{Orientation=Orientation.Vertical,Minimum=0,Maximum=180,Value=110,ViewportSize=29,Style=TerminalScrollBar.CreateStyle(),HorizontalAlignment=HorizontalAlignment.Right};
         var console=new Border{Margin=new Thickness(0,10,0,0),Background=new SolidColorBrush(Color.FromRgb(33,24,43)),Child=scroll};layout.Children.Add(console);

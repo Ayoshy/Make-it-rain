@@ -12,11 +12,13 @@ internal static class Program
 {
     [STAThread] public static void Main(string[] args)
     {
+        if(args.Length==1&&args[0]=="--terminal-metadata"){TerminalMetadataWorker.Run();return;}
         if(args.Length==2&&args[0]=="--preview-terminal-tabs"){TerminalTabsPreview.Run(args[1]);return;}
         if(args.Length==2&&args[0]=="--terminal-host"){TerminalHost.Run(Path.GetFullPath(args[1]));return;}
         if(args.Length==2&&args[0]=="--command"){Console.WriteLine(ControlPipe.Send(args[1]));return;}
         using var single=new Mutex(true,"Local\\Battlestation.Desktop",out bool created);if(!created)return;
         var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};
+        app.Resources.MergedDictionaries.Add(new GlassMenus());
         Station? station=null;DesktopWorkspace? runtime=null;
         app.DispatcherUnhandledException+=(_,e)=>{Directory.CreateDirectory(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Battlestation"));File.WriteAllText(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Battlestation/error.txt"),e.Exception.ToString());};
         app.Startup+=(_,_)=>

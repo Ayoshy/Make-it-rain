@@ -24,15 +24,20 @@ internal static class CommandsTests
         string root=Path.Combine(Path.GetTempPath(),"Battlestation-commands-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);
         try
         {
-            var defaults=new DesktopSettings(root,"Aix",43.5,5.4);var saved=defaults with{WeatherCity="Paris",Latitude=48.8,Longitude=2.3,AnimateBackground=false,GlassOpacity=.22};string file=Path.Combine(root,"preferences.json");saved.Save(file);
+            var defaults=new DesktopSettings(root,"Aix",43.5,5.4);var saved=defaults with{WeatherCity="Paris",Latitude=48.8,Longitude=2.3,AnimateBackground=false,GlassOpacity=.22,GridEnabled=false,GridStep=24,LinkDocks=true};string file=Path.Combine(root,"preferences.json");saved.Save(file);
             Check(DesktopSettings.Load(file,defaults)==saved,"All preferences must survive restart");
             Check(defaults.Validate().ProjectRoot==root,"Default project root survives validation");
-            foreach(var bad in new[]{defaults with{Latitude=91},defaults with{Longitude=double.NaN},defaults with{GlassOpacity=2},defaults with{ProjectRoot=root+"\nWeatherCity=other"}})
+            File.WriteAllText(file,System.Text.Json.JsonSerializer.Serialize(new{defaults.ProjectRoot,defaults.WeatherCity,defaults.Latitude,defaults.Longitude}));
+            var legacy=DesktopSettings.Load(file,defaults);Check(legacy.GridEnabled&&legacy.GridStep==8,"Old preferences default to an enabled 8-unit grid");
+            Check(!legacy.LinkDocks&&!defaults.LinkDocks,"Existing and new installations opt out of neighbour linkage by default");
+            foreach(var bad in new[]{defaults with{GridStep=3},defaults with{GridStep=65},defaults with{Latitude=91},defaults with{Longitude=double.NaN},defaults with{GlassOpacity=2},defaults with{ProjectRoot=root+"\nWeatherCity=other"}})
             {bool rejected=false;try{bad.Validate();}catch(ArgumentException){rejected=true;}Check(rejected,"Invalid preference accepted");}
             File.WriteAllText(file,"{");Check(DesktopSettings.Load(file,defaults)==defaults,"Corrupt preferences must fall back without changing sources");
         }
         finally{Directory.Delete(root,true);}
         var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};
+        app.Resources.MergedDictionaries.Add(new GlassMenus());
+        GlassMenuTests.Run();
         void Pump(){var frame=new DispatcherFrame();Dispatcher.CurrentDispatcher.BeginInvoke(()=>frame.Continue=false,DispatcherPriority.ApplicationIdle);Dispatcher.PushFrame(frame);}
         // WPF events on isolated windows: no user terminal and no injected keystrokes.
         var palette=new CommandPaletteWindow(entries);OverlayStyle.Place(palette);palette.Show();Pump();

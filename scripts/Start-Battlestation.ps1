@@ -7,6 +7,9 @@ if(!$directory.StartsWith($root+[IO.Path]::DirectorySeparatorChar,[StringCompari
 $exe=Join-Path $directory 'Battlestation.exe'
 if(!(Test-Path -LiteralPath $exe)){throw 'Build Battlestation first'}
 if($AtLogon){
+    # Existing administrator-owned tasks may still request High. Lower the
+    # launcher itself immediately, without changing that task's permissions.
+    [Diagnostics.Process]::GetCurrentProcess().PriorityClass='Normal'
     Add-Type @'
 using System;
 using System.Runtime.InteropServices;
@@ -37,5 +40,5 @@ public static class BattlestationLogonShell {
 }
 $process=Start-Process -FilePath $exe -WorkingDirectory $root -ArgumentList @('--root',('"'+$root+'"')) -WindowStyle Hidden -PassThru
 if($AtLogon){
-    try{if(!$process.HasExited){$process.PriorityClass='High'}}catch [InvalidOperationException]{}
+    try{if(!$process.HasExited){$process.PriorityClass='Normal'}}catch [InvalidOperationException]{}
 }

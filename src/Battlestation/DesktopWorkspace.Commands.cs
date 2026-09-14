@@ -8,21 +8,32 @@ internal sealed partial class DesktopWorkspace
     PaletteHotkey paletteHotkey=null!;
     CommandPaletteWindow? palette;
     SettingsWindow? settingsWindow;
+    MediaClipboard mediaClipboard=null!;
+    MediaReserveWindow? reserveWindow;
     void InitializeCommands()
     {
+        profiles=new DesktopProfiles(Path.Combine(station.Data,"profiles.json"));
+        mediaClipboard=new MediaClipboard(station.Reserve,()=>station.Settings.KeepMediaLinks);station.ClipboardRegistered=mediaClipboard.Registered;
+        station.ReserveRequested+=ShowReserve;
         paletteHotkey=new PaletteHotkey(TogglePalette);
         station.SettingsChanged+=()=>{foreach(var surface in surfaces.Values)surface.Refresh();};
     }
+    void ShowReserve()
+    {
+        if(reserveWindow is not null){reserveWindow.Activate();return;}
+        reserveWindow=new MediaReserveWindow(station);reserveWindow.Closed+=(_,_)=>reserveWindow=null;OverlayStyle.Reveal(reserveWindow,station.Settings.AnimateBackground);
+    }
     bool ChangeVisibility(string id,bool visible)
     {
+        ClearEditHistory();
         if(!station.Layout.SetVisible(id,visible))return false;
-        Apply(id);station.Layout.Save();if(id=="music"&&!visible)((DeskSurface)surfaces[id]).Audio.Stop();return true;
+        Apply(id);station.Layout.Save();UpdateEditGrids();if(id=="music"&&!visible)((DeskSurface)surfaces[id]).Audio.Stop();return true;
     }
     void ShowSettings()
     {
         palette?.Dismiss(false);
         if(settingsWindow is not null){if(settingsWindow.WindowState==WindowState.Minimized)settingsWindow.WindowState=WindowState.Normal;settingsWindow.Activate();return;}
-        settingsWindow=new SettingsWindow(station,paletteHotkey,ChangeVisibility,()=>SetEditing(true),owner=>((DockSurface)surfaces["apps"]).OpenEditor(owner));
+        settingsWindow=new SettingsWindow(station,paletteHotkey,ChangeVisibility,()=>SetEditing(true),owner=>((DockSurface)surfaces["apps"]).OpenEditor(owner),SelectProfile,profiles.Current);
         settingsWindow.Closed+=(_,_)=>settingsWindow=null;
         OverlayStyle.Reveal(settingsWindow,station.Settings.AnimateBackground);
     }
@@ -32,6 +43,8 @@ internal sealed partial class DesktopWorkspace
         var entries=new List<PaletteEntry>();
         foreach(var app in station.Apps)entries.Add(new("app:"+app.Path,app.Name,"Application","\uE71D",()=>{station.Launch(app);if(station.Error!="")throw new InvalidOperationException(station.Error);}));
         entries.Add(new("settings","Réglages","Paramètres · settings · transparence · météo","\uE713",ShowSettings,true));
+        entries.Add(new("reserve","À regarder, à écouter","Réserve · YouTube · Spotify · liens copiés","\uE8B7",ShowReserve,true));
+        foreach(string name in DesktopProfiles.Names)entries.Add(new("profile:"+name,"Disposition "+name,profiles.Current==name?"Disposition actuelle":"Bureau · ambiance","\uE8A9",()=>SelectProfile(name),true));
         entries.Add(new("organize",editing?"Terminer la réorganisation":"Réorganiser le bureau","Déplacer les blocs sur la grille","\uE8A9",()=>SetEditing(!editing),true));
         entries.Add(new("terminal","Ouvrir le terminal","Retrouver les sessions actives","\uE756",()=>{if(!ChangeVisibility("terminal",true))throw new InvalidOperationException("Pas assez d’espace libre pour le terminal.");SetEditing(false);station.Terminal!.Start();},true));
         foreach(var block in station.Layout.Blocks)

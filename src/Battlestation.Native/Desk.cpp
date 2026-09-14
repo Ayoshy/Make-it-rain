@@ -13,6 +13,9 @@
 #include <deque>
 #include <vector>
 #include <map>
+#include <set>
+#include <tuple>
+#include <utility>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -31,6 +34,11 @@ struct Command {std::wstring action,id;};
 std::mutex gate;
 std::condition_variable wake;
 std::atomic<bool> stopping=false;
+std::atomic<bool> projectsActive=true;
+std::atomic<uint64_t> revisions[4]{};
+std::condition_variable projectWake;
+std::set<std::wstring> dirtyProjects;
+bool allProjectsDirty=true;
 std::thread mediaThread,projectThread,weatherThread;
 std::atomic<HINTERNET> weatherRequest=nullptr;
 std::atomic<bool> refreshWeather=false;
@@ -98,47 +106,59 @@ void RunMedia(){
                 }
                 next.cover=cover;
             }else{cover.reset();coverKey.clear();}
-            {std::lock_guard lock(gate);next.error=media.error;media=std::move(next);}
-        }catch(...){std::lock_guard lock(gate);media=Media{};media.source=L"Médias indisponibles";manager=nullptr;}
+            {std::lock_guard lock(gate);next.error=media.error;
+                if(next.cover!=media.cover)++revisions[3];
+                if(std::tie(next.title,next.artist,next.source,next.id,next.error,next.exists,next.playing,next.play,next.next,next.previous,next.seek,next.position,next.duration,next.sources,next.cover)!=std::tie(media.title,media.artist,media.source,media.id,media.error,media.exists,media.playing,media.play,media.next,media.previous,media.seek,media.position,media.duration,media.sources,media.cover))++revisions[2];
+                media=std::move(next);}
+        }catch(...){std::lock_guard lock(gate);if(media.source!=L"Médias indisponibles"){++revisions[2];++revisions[3];}media=Media{};media.source=L"Médias indisponibles";manager=nullptr;}
         std::unique_lock lock(gate);wake.wait_for(lock,1s,[]{return stopping||!commands.empty();});
     }
     uninit_apartment();
 }
 void ScanProjects(){
     SetThreadPriority(GetCurrentThread(),THREAD_MODE_BACKGROUND_BEGIN);
+    std::map<fs::path,fs::file_time_type> cache;
     while(!stopping){
+        std::set<std::wstring> changed;bool full;
+        {std::unique_lock lock(gate);projectWake.wait(lock,[]{return stopping||projectsActive.load();});if(stopping)break;changed.swap(dirtyProjects);full=std::exchange(allProjectsDirty,false);}
         std::vector<Project> next;bool incomplete=false;size_t entries=0;std::error_code ec;
-        auto start=std::chrono::steady_clock::now();
-        for(fs::directory_iterator top(projectRoot,fs::directory_options::skip_permission_denied,ec),end;top!=end&&!stopping;top.increment(ec)){
+        for(fs::directory_iterator top(projectRoot,fs::directory_options::skip_permission_denied,ec),end;top!=end&&!stopping&&projectsActive;top.increment(ec)){
             if(ec){incomplete=true;ec.clear();continue;}
             auto item=*top;if(!item.is_directory(ec)||item.is_symlink(ec)||IgnoreProjectDirectory(item.path().filename()))continue;
-            auto latest=fs::file_time_type::min();
-            for(fs::recursive_directory_iterator it(item.path(),fs::directory_options::skip_permission_denied,ec),last;it!=last&&!stopping;it.increment(ec)){
-                if(ec){incomplete=true;ec.clear();continue;}
-                const auto& child=*it;auto name=child.path().filename().wstring();
-                auto attributes=GetFileAttributesW(child.path().c_str());
-                if((attributes!=INVALID_FILE_ATTRIBUTES&&(attributes&FILE_ATTRIBUTE_REPARSE_POINT))||IgnoreProjectDirectory(name)){it.disable_recursion_pending();continue;}
-                if(child.is_regular_file(ec)&&name!=L"auth.json"&&name!=L"wallpaper-token.txt"&&child.path().extension()!=L".log"){
-                    auto stamp=child.last_write_time(ec);if(!ec)latest=std::max(latest,stamp);
+            auto path=item.path();auto found=cache.find(path);
+            if(full||found==cache.end()||changed.count(path.filename().wstring())){
+                auto latest=item.last_write_time(ec);if(ec){latest=fs::file_time_type::clock::now();ec.clear();}
+                for(fs::recursive_directory_iterator it(path,fs::directory_options::skip_permission_denied,ec),last;it!=last&&!stopping&&projectsActive;it.increment(ec)){
+                    if(ec){incomplete=true;ec.clear();continue;}
+                    const auto& child=*it;auto name=child.path().filename().wstring();auto attributes=GetFileAttributesW(child.path().c_str());
+                    if((attributes!=INVALID_FILE_ATTRIBUTES&&(attributes&FILE_ATTRIBUTE_REPARSE_POINT))||IgnoreProjectDirectory(name)){it.disable_recursion_pending();continue;}
+                    if(child.is_regular_file(ec)&&name!=L"auth.json"&&name!=L"wallpaper-token.txt"&&child.path().extension()!=L".log"){
+                        auto stamp=child.last_write_time(ec);if(!ec)latest=std::max(latest,stamp);
+                    }
+                    if(++entries>1000000){incomplete=true;break;}
                 }
-                if(++entries>1000000){incomplete=true;break;}
+                cache[path]=latest;
             }
-            if(latest!=fs::file_time_type::min())next.push_back({item.path(),latest});
-            if(entries>1000000)break;
+            next.push_back({path,cache[path]});
         }
+        if(stopping)break;
+        if(!projectsActive){std::lock_guard lock(gate);allProjectsDirty=true;continue;}
         if(ec)incomplete=true;
         std::sort(next.begin(),next.end(),[](auto&a,auto&b){return a.modified==b.modified?a.path<b.path:a.modified>b.modified;});
-        if(next.size()>6)next.resize(6);
-        {std::lock_guard lock(gate);projects=std::move(next);if(selected.empty()&&!projects.empty())selected=projects[0].path;projectStatus=incomplete?L"Analyse partielle":projects.empty()?L"Aucun projet":L"6 derniers projets";}
-        for(int i=0;i<600&&!stopping;i++)std::this_thread::sleep_for(100ms);
+        for(auto it=cache.begin();it!=cache.end();)if(std::none_of(next.begin(),next.end(),[&](auto& p){return p.path==it->first;}))it=cache.erase(it);else ++it;
+        {std::lock_guard lock(gate);projects=std::move(next);if(selected.empty()&&!projects.empty())selected=projects[0].path;projectStatus=incomplete?L"Analyse partielle":projects.empty()?L"Aucun projet":std::to_wstring(projects.size())+L" projets";++revisions[0];}
+        std::unique_lock lock(gate);
+        bool signalled=projectWake.wait_for(lock,10min,[]{return stopping||!projectsActive||allProjectsDirty||!dirtyProjects.empty();});
+        if(!signalled)allProjectsDirty=true;
+        else if(projectsActive&&!stopping)projectWake.wait_for(lock,2s,[]{return stopping||!projectsActive;});
     }
 }
 void RunWeather(){
     init_apartment(apartment_type::multi_threaded);
     while(!stopping){
         if(!weatherCity.empty()){
-            try{auto next=FetchWeather(weatherLat,weatherLon,weatherRequest,stopping);std::lock_guard lock(gate);weather=std::move(next);}
-            catch(...){std::lock_guard lock(gate);weather.stale=true;}
+            try{auto next=FetchWeather(weatherLat,weatherLon,weatherRequest,stopping);std::lock_guard lock(gate);weather=std::move(next);++revisions[1];}
+            catch(...){std::lock_guard lock(gate);weather.stale=true;++revisions[1];}
         }
         refreshWeather=false;
         for(int i=0;i<9000&&!stopping&&!refreshWeather;i++)std::this_thread::sleep_for(100ms);
@@ -146,7 +166,7 @@ void RunWeather(){
     uninit_apartment();
 }
 void Start(const std::wstring& config){
-    {std::lock_guard lock(gate);projects.clear();weather=DeskWeather{};projectStatus=L"Analyse…";}
+    {std::lock_guard lock(gate);projects.clear();dirtyProjects.clear();allProjectsDirty=true;weather=DeskWeather{};projectStatus=L"Analyse…";for(auto& revision:revisions)++revision;}
     projectRoot=Ini(L"ProjectRoot",config);
     if(selected.parent_path()!=projectRoot)selected.clear();
     weatherCity=Ini(L"WeatherCity",config);weatherLat=Ini(L"WeatherLatitude",config);weatherLon=Ini(L"WeatherLongitude",config);
@@ -172,6 +192,7 @@ std::wstring Read(std::wstring key){
     if(key==L"mediaProgress")return std::to_wstring(media.duration>0?media.position/media.duration:0);
     if(key==L"mediaTime")return media.exists?Time(media.position)+L" / "+Time(media.duration):L"";
     if(key==L"mediaError")return media.error;if(key==L"sourceCount")return std::to_wstring(media.sources);
+    if(key==L"projectCount")return std::to_wstring(projects.size());
     if(key==L"projectStatus")return projectStatus;if(key==L"selectedProject")return selected.filename();
     if(key==L"selectedPath")return selected.wstring();
     if(key.rfind(L"project:",0)==0){int i=-1;wchar_t field[20];if(swscanf_s(key.c_str(),L"project:%d:%19s",&i,field,20)==2&&i>=0&&i<(int)projects.size()){
@@ -182,17 +203,20 @@ std::wstring Read(std::wstring key){
     return L"";
 }
 void Execute(std::wstring command){
-    if(command.rfind(L"Project:",0)==0){int i=std::stoi(command.substr(8));fs::path path;{std::lock_guard lock(gate);if(i<0||i>=(int)projects.size())return;selected=path=projects[i].path;}Open(path);return;}
-    if(command.rfind(L"Select:",0)==0){int i=std::stoi(command.substr(7));std::lock_guard lock(gate);if(i>=0&&i<(int)projects.size())selected=projects[i].path;return;}
+    if(command.rfind(L"Project:",0)==0){int i=std::stoi(command.substr(8));fs::path path;{std::lock_guard lock(gate);if(i<0||i>=(int)projects.size())return;selected=path=projects[i].path;++revisions[0];}Open(path);return;}
+    if(command.rfind(L"Select:",0)==0){int i=std::stoi(command.substr(7));std::lock_guard lock(gate);if(i>=0&&i<(int)projects.size()){selected=projects[i].path;++revisions[0];}return;}
     if(command==L"OpenSelected"){fs::path path;{std::lock_guard lock(gate);path=selected;}if(!path.empty())Open(path);return;}
     std::lock_guard lock(gate);
+    if(command.rfind(L"ProjectChanged:",0)==0){auto name=command.substr(15);if(name.empty())allProjectsDirty=true;else dirtyProjects.insert(name);projectWake.notify_all();return;}
     if(command==L"WeatherRefresh"){refreshWeather=true;return;}
     if(command==L"Play"||command==L"Next"||command==L"Previous"||command==L"Source"||command.rfind(L"Seek:",0)==0){commands.push_back({command,media.id});wake.notify_all();}
 }
-void Stop(){stopping=true;wake.notify_all();if(auto request=weatherRequest.exchange(nullptr))WinHttpCloseHandle(request);if(mediaThread.joinable())mediaThread.join();if(projectThread.joinable())projectThread.join();if(weatherThread.joinable())weatherThread.join();}
+void Stop(){stopping=true;wake.notify_all();projectWake.notify_all();if(auto request=weatherRequest.exchange(nullptr))WinHttpCloseHandle(request);if(mediaThread.joinable())mediaThread.join();if(projectThread.joinable())projectThread.join();if(weatherThread.joinable())weatherThread.join();}
 }
 extern "C" __declspec(dllexport) void DeskStart(const wchar_t* config){Start(config);}
 extern "C" __declspec(dllexport) void DeskStop(){Stop();}
+extern "C" __declspec(dllexport) uint64_t DeskRevision(int group){return group>=0&&group<4?revisions[group].load():0;}
+extern "C" __declspec(dllexport) void DeskProjectsActive(int active){bool value=active!=0;if(projectsActive.exchange(value)!=value){std::lock_guard lock(gate);if(value)allProjectsDirty=true;projectWake.notify_all();}}
 extern "C" __declspec(dllexport) int DeskRead(const wchar_t* key,wchar_t* buffer,int capacity){
     try{auto value=Read(key);if(capacity<1)return 0;auto length=std::min<size_t>(value.size(),capacity-1);std::copy_n(value.c_str(),length,buffer);buffer[length]=0;return (int)length;}catch(...){if(capacity>0)buffer[0]=0;return 0;}
 }

@@ -14,12 +14,25 @@ internal static class DesktopLayoutTests
     }
     static void Main()
     {
+        LayoutGestureTests.Run();
         var directory=Path.Combine(Path.GetTempPath(),"Battlestation-layout-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(directory);
         try
         {
             var path=Path.Combine(directory,"layout.json");
             foreach(int apps in new[]{0,5,6,7,12})Validate(new DesktopLayout(path,apps));
             var layout=new DesktopLayout(path,5);
+            var original=layout.Blocks.Where(b=>b.Id!="video").ToArray();
+            Check(!layout["video"].Visible,"New video block must not relocate existing desktop widgets");
+            Check(layout.SetVisible("video",true),"Video can be added to a free grid position");Validate(layout);
+            Check(original.SequenceEqual(layout.Blocks.Where(b=>b.Id!="video")),"Adding video must preserve every existing block");
+            Check(layout.Move("video",900,600),"Video is movable");layout.Save();
+            var savedVideo=new DesktopLayout(path,5);Check(savedVideo["video"]==layout["video"],"Video visibility and position survive reload");
+            layout.SetVisible("video",false);
+            var touching=new DesktopLayout(Path.Combine(directory,"touching.json"),5);
+            foreach(var block in touching.Blocks.ToArray())touching.SetVisible(block.Id,false);
+            touching.SetVisible("video",true);touching.Move("video",0,0);touching.SetVisible("clock",true);touching.Move("clock",0,384);
+            Check(touching["clock"].X==0&&touching["clock"].Y==384,"Exactly one grid gap must fit without relocation");Validate(touching);
+            Check(touching.Move("video",3396,312)&&touching["video"].X==3396,"Video moves from primary to secondary monitor");
             foreach(var summary in new[]{new System.Windows.Rect(4272,720,779,218),new System.Windows.Rect(4272,1210,779,218),new System.Windows.Rect(36,0,779,209),new System.Windows.Rect(4272,960,779,209)})
             {
                 foreach(bool above in new[]{true,false})

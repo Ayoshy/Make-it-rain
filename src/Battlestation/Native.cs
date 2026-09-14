@@ -7,8 +7,10 @@ internal static class Native
     const string G="Battlestation.Graphics.dll", D="Battlestation.Desk.dll";
     [DllImport(G, CharSet=CharSet.Unicode, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundStart(nint parent,string images);
     [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundStop();
+    [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundVisibility(int monitors);
     [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundCapture();
     [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundAppearance(int animate,float opacity);
+    [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundAudio(float bass,float middle,float treble,float intensity);
     [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundPanelFront(int slot);
     [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundGlass(float x,float cy,float my,float w,float ch,float mh);
     [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundDock(float x,float y,float w,float h);
@@ -18,7 +20,18 @@ internal static class Native
     [DllImport(D, CharSet=CharSet.Unicode, CallingConvention=CallingConvention.Cdecl)] static extern int DeskRead(string key,StringBuilder buffer,int capacity);
     [DllImport(D, CharSet=CharSet.Unicode, CallingConvention=CallingConvention.Cdecl)] internal static extern void DeskCommand(string command);
     [DllImport(D, CallingConvention=CallingConvention.Cdecl)] internal static extern int DeskCover([Out] byte[]? buffer,int capacity);
-    internal static string Read(string key){var b=new StringBuilder(8192);DeskRead(key,b,b.Capacity);return b.ToString();}
+    [ThreadStatic] static StringBuilder? readBuffer;
+    [ThreadStatic] static Dictionary<string,(ulong Revision,string Text)>? readCache;
+    internal static string Read(string key)
+    {
+        int group=key.StartsWith("clock",StringComparison.Ordinal)||key.EndsWith(":age",StringComparison.Ordinal)||key=="mouseX"?-1:key.StartsWith("weather",StringComparison.Ordinal)?1:key.StartsWith("project",StringComparison.Ordinal)||key.StartsWith("selected",StringComparison.Ordinal)?0:2;
+        ulong revision=group<0?0:DeskRevision(group);var cache=readCache??=[];
+        if(group>=0&&cache.TryGetValue(key,out var old)&&old.Revision==revision)return old.Text;
+        var b=readBuffer??=new StringBuilder(512);b.Clear();int count=DeskRead(key,b,b.Capacity);if(count==b.Capacity-1&&b.Capacity<8192){b.EnsureCapacity(8192);b.Clear();DeskRead(key,b,b.Capacity);}string text=b.ToString();
+        if(group>=0){if(cache.Count>=1024)cache.Clear();cache[key]=(revision,text);}return text;
+    }
+    [DllImport(D, CallingConvention=CallingConvention.Cdecl)] internal static extern void DeskProjectsActive(int active);
+    [DllImport(D, CallingConvention=CallingConvention.Cdecl)] internal static extern ulong DeskRevision(int group);
 
     [StructLayout(LayoutKind.Sequential)] internal struct CursorPoint {public int X,Y;}
     [DllImport("user32.dll")] internal static extern bool GetCursorPos(out CursorPoint point);

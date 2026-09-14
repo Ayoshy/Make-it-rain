@@ -16,9 +16,18 @@ internal sealed class Station : IDisposable
     public DesktopBackend Backend {get;}
     public List<DockApp> Apps {get;private set;}=[];
     public DesktopLayout Layout {get;}
+    internal ProjectSignals Projects {get;}
+    internal MediaReserve Reserve {get;}
+    internal event Action? ReserveRequested;
+    internal bool ClipboardRegistered {get;set;}
+    internal void ShowReserve()=>ReserveRequested?.Invoke();
     public string Codex {get;}
     public string ProjectRoot=>Settings.ProjectRoot;
     public DesktopSettings Settings {get;private set;}
+    internal bool? PreviewReactiveAudio {get;set;}
+    internal double? PreviewAudioIntensity {get;set;}
+    internal bool ReactiveAudio=>PreviewReactiveAudio??Settings.ReactiveAudio;
+    internal double AudioIntensity=>PreviewAudioIntensity??Settings.AudioIntensity;
     public string TargetDate {get;private set;}="";
     public string Error {get;private set;}="";
     public BitmapSource? Cover {get;private set;}
@@ -29,6 +38,8 @@ internal sealed class Station : IDisposable
     public Station(string root)
     {
         Root=root;Directory.CreateDirectory(Data);
+        Projects=new ProjectSignals();
+        Reserve=new MediaReserve(Path.Combine(Data,"media-reserve.json"));
         using var settings=JsonDocument.Parse(File.ReadAllText(Path.Combine(root,"desk/settings.json")));
         var s=settings.RootElement;Codex=Environment.ExpandEnvironmentVariables(s.GetProperty("codex").GetString()!);
         var weather=s.GetProperty("weather");
@@ -51,6 +62,12 @@ internal sealed class Station : IDisposable
         Layout=new DesktopLayout(Path.Combine(Data,"layout.json"),Apps.Count);
     }
     public string M(string metric)=>Backend.Read(metric);
+    internal void ApplyAppearance(DesktopProfile profile)
+    {
+        var next=(Settings with{AnimateBackground=profile.Animate,ReactiveAudio=profile.Reactive,AudioIntensity=profile.Intensity,GlassOpacity=profile.Glass}).Validate(false);
+        next.Save(Path.Combine(Data,"preferences.json"));Settings=next;
+        Native.BackgroundAppearance(next.AnimateBackground?1:0,(float)next.GlassOpacity);SettingsChanged?.Invoke();
+    }
     public void ApplySettings(DesktopSettings next,string target)
     {
         next=next.Validate();
@@ -74,7 +91,6 @@ internal sealed class Station : IDisposable
     public void SaveApps(List<DockApp> apps)
     {
         if(apps.Count>12||apps.Any(a=>string.IsNullOrWhiteSpace(a.Name)||string.IsNullOrWhiteSpace(a.Path)))throw new ArgumentException("Le dock accepte jusqu’à 12 applications nommées.");
-        if(!Layout.Resize("apps",DesktopLayout.DockHeight(apps.Count)))throw new InvalidOperationException("Pas assez d’espace libre pour agrandir le dock.");
         DesktopSettings.Write(Path.Combine(Data,"apps.json"),JsonSerializer.Serialize(apps,new JsonSerializerOptions{WriteIndented=true}));Apps=apps.ToList();Layout.Save();DockChanged?.Invoke();
     }
     public void RefreshCover()
@@ -85,5 +101,5 @@ internal sealed class Station : IDisposable
         if(coverBytes is not null&&bytes.AsSpan().SequenceEqual(coverBytes))return;
         try{using var stream=new MemoryStream(bytes);var image=new BitmapImage();image.BeginInit();image.CacheOption=BitmapCacheOption.OnLoad;image.StreamSource=stream;image.EndInit();image.Freeze();Cover=image;coverBytes=bytes;}catch{Cover=null;coverBytes=null;}
     }
-    public void Dispose(){Terminal?.Dispose();Native.DeskStop();Backend.Dispose();}
+    public void Dispose(){Reserve.Dispose();Projects.Dispose();Terminal?.Dispose();Native.DeskStop();Backend.Dispose();}
 }

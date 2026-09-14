@@ -5,17 +5,24 @@
 Le fond Direct2D est attaché au bureau Windows et dessine le verre aux coordonnées
 des blocs. Aucun navigateur ni serveur HTTP local ne sert de façade.
 
-`DesktopLayout` gère neuf identifiants de blocs, leurs positions, les collisions,
+`Surface` possède le rendu commun des cadres et leur inscription native ; les
+widgets ne dessinent que leur contenu. `DockAppearance` partage polices,
+boutons et arrondis. Le dictionnaire `GlassMenus.xaml` habille les composants
+WPF de menus et sous-menus au niveau de l'application, sans remplacer leur
+logique de navigation. Voir [l'apparence commune](HARMONIZATION.md).
+
+`DesktopLayout` gère onze identifiants de blocs, leurs positions, les collisions,
 la recherche d'un emplacement libre et la persistance atomique de `layout.json`.
 `DesktopWorkspace` relie ce modèle aux fenêtres, aux gestes de déplacement et au
 menu de notification. Horloge, météo, lecteur, projets, compteur, matériel et
 compteurs Codex ne partagent plus une fenêtre indissociable.
 
-`DashboardBounds` calcule les volets temporaires sur le même écran, sans appeler
-`DesktopLayout.Resize`. Le résumé garde sa position physique ; le volet pousse
-vers le haut si nécessaire. `DesktopPlacement.RaiseWithinDesktop` et l’ordre des
-panneaux natifs placent le volet devant les autres widgets, toujours dans la
-couche du bureau. Le matériau local du volet évite la superposition des textes.
+`DashboardTransition` compose deux dessins WPF conservés sous un découpage fixe.
+Des transformations animées remplacent les informations à l’intérieur des docks
+Conrad/Codex, sans modifier leurs fenêtres ni le verre natif. Une seule destination
+en attente regroupe les clics rapides. Les données conservent leur cadence par
+révision ; aucun timer de dessin ne pilote le glissement. Masquage, occultation
+et changement de taille arrêtent les horloges. Voir [les pages internes](DOCK_PAGE_TRANSITIONS.md).
 
 `PaletteHotkey` possède son propre HWND de messages et enregistre Ctrl+Espace
 avec `RegisterHotKey` et `MOD_NOREPEAT`. Un conflit est exposé dans les réglages
@@ -58,8 +65,26 @@ le dernier onglet du nouvel hôte termine celui-ci ; une ouverture ultérieure
 utilise l'exécutable du bureau courant. Masquer le bloc ne termine jamais l'hôte.
 
 Les données multimédias viennent de GSMTC, la météo d'Open-Meteo, le spectre audio
-de NAudio. La pochette reste en mémoire. Les six projets récents sont classés par
-modifications de sources, en excluant les dossiers générés.
+de NAudio. La pochette reste en mémoire et n'est recopiée que lorsqu'elle change.
+Tous les sous-dossiers de projets sont classés par modifications de sources, en
+excluant les dossiers générés. Le dock affiche les cartes qui tiennent dans sa
+taille et permet de faire défiler le reste. Un FileSystemWatcher regroupe les
+changements de sources ; le scanner ne réanalyse que les projets concernés,
+avec une réconciliation complète espacée. Retirer ou couvrir le bloc suspend
+ce scanner. Les états Git ne sont demandés que pour les cartes présentées.
+
+Le bureau invalide les surfaces selon la révision de leurs données. Horloge et
+compteur suivent la seconde ; météo, applications et projets statiques ne sont
+plus redessinés quatre fois par seconde. Les ressources de dessin stables sont
+réutilisées. Une politique d'occultation conserve les effets sur les écrans
+exposés, suspend les producteurs inutilisés et reprend après retour au bureau.
+L'analyse audio et la capture WGC ont leurs workers propriétaires ; aucune
+attente de périphérique ou de transfert GPU ne se fait dans leurs ticks WPF.
+
+Les diagnostics sont écrits en arrière-plan et tolèrent les erreurs disque.
+Le pipe de contrôle borne les messages, impose un délai par requête et évite
+la capture du contexte WPF dans son client synchrone. La perte d'une cible
+Direct2D provoque une reconstruction des ressources plutôt que l'arrêt du fond.
 
 Les lecteurs matériels et de compteurs sont issus des projets locaux Conrad et
 Codex Meter. Les écritures GPU restent protégées contre un autre Conrad actif.

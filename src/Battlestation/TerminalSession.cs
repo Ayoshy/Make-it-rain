@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Text.Json;
 using System.Windows.Threading;
 
@@ -9,6 +10,10 @@ internal sealed class TerminalSession : IDisposable
     readonly Station station;
     readonly Dispatcher dispatcher=Dispatcher.CurrentDispatcher;
     readonly SemaphoreSlim requests=new(1,1);
+    readonly TerminalTabPreferences preferences;
+    readonly TerminalMetadataClient metadata;
+    TerminalTabInfo[] rawTabs=[];
+    ConsoleTitleInfo[] titles=[];
     int x=2700,y=760,w=1464,h=660;
     bool visible=true,starting,polling,disposed,placing,placementDirty,detached;
     nint remoteHost;
@@ -17,8 +22,22 @@ internal sealed class TerminalSession : IDisposable
     public string Status {get;private set;}="Terminal natif prêt";
     public bool UseGlassTabs {get;private set;}
     public IReadOnlyList<TerminalTabInfo> Tabs {get;private set;}=[];
+    public long Revision {get;private set;}
     public event Action? HeaderChanged;
-    public TerminalSession(Station s){station=s;}
+    public TerminalSession(Station s)
+    {
+        station=s;preferences=new TerminalTabPreferences(Path.Combine(s.Data,"terminal-tabs.json"));
+        metadata=new TerminalMetadataClient(Environment.ProcessPath!);
+    }
+    public TerminalTabPreference TabPreference(Guid id)=>preferences.Get(id);
+    public void SetTabPreference(Guid id,TerminalTabPreference preference)
+    {
+        if(!rawTabs.Any(tab=>tab.Id==id))throw new InvalidOperationException("Cet onglet n'existe plus.");
+        preferences.Set(id,preference);RefreshTabPresentation();
+    }
+    Dictionary<Guid,int> shellPids=[];
+    void RefreshTabPresentation(){var next=rawTabs.Select(tab=>preferences.Decorate(tab,titles.FirstOrDefault(t=>t.Pid==shellPids.GetValueOrDefault(tab.Id)))).ToArray();if(!Tabs.SequenceEqual(next)){Tabs=next;Revision++;}}
+    public object InspectTabMetadata()=>new{helperPid=metadata.Pid,tabs=Tabs.Select(tab=>new{tab.Id,tab.Title,tab.Accent,activity=tab.Activity.ToString(),tab.AutomaticTitle,tab.Effects})};
     async Task<string> Send(string command)
     {
         await requests.WaitAsync();
@@ -36,7 +55,7 @@ internal sealed class TerminalSession : IDisposable
         try{do{placementDirty=false;if(UseGlassTabs)await Send("chrome:external");await Send($"place:{x}:{y}:{w}:{h}");await Send(visible?"show":"hide");}while(placementDirty&&!disposed);}catch(Exception e){Status=e.Message;}
         finally{placing=false;}
     }
-    public void SetVisible(bool show){visible=show;if(remoteHost!=0)_=VisibilityAsync();}
+    public void SetVisible(bool show){if(visible==show)return;visible=show;if(remoteHost!=0)_=VisibilityAsync();}
     async Task VisibilityAsync(){try{await Send(visible?"show":"hide");}catch{}}
     async Task EnsureHost(string command)
     {
@@ -73,7 +92,11 @@ internal sealed class TerminalSession : IDisposable
             if(disposed)return;
             var root=json.RootElement;var handle=(nint)root.GetProperty("hwnd").GetInt64();bool changed=remoteHost!=handle;
             remoteHost=handle;Pid=root.GetProperty("pid").GetInt32();Status=root.GetProperty("status").GetString()??"Terminal natif";
-            Tabs=root.GetProperty("sessions").EnumerateArray().Select(tab=>new TerminalTabInfo(tab.GetProperty("id").GetGuid(),tab.GetProperty("title").GetString()??"Terminal",tab.GetProperty("active").GetBoolean())).ToArray();
+            var sessions=root.GetProperty("sessions").EnumerateArray().ToArray();
+            rawTabs=sessions.Select(tab=>new TerminalTabInfo(tab.GetProperty("id").GetGuid(),tab.GetProperty("title").GetString()??"Terminal",tab.GetProperty("active").GetBoolean())).ToArray();
+            shellPids=sessions.ToDictionary(tab=>tab.GetProperty("id").GetGuid(),tab=>tab.GetProperty("pid").GetInt32());
+            titles=await metadata.Read(shellPids.Values);
+            if(disposed)return;RefreshTabPresentation();
             bool external=root.TryGetProperty("chromeVersion",out var version)&&version.GetInt32()>=1;
             if(UseGlassTabs!=external){UseGlassTabs=external;HeaderChanged?.Invoke();}
             if(changed)await PlaceAsync();
@@ -87,5 +110,5 @@ internal sealed class TerminalSession : IDisposable
         if(detached)return;detached=true;remoteHost=0;
         try{ControlPipe.Send("detach",TerminalHost.PipeName,1500);}catch{}
     }
-    public void Dispose(){disposed=true;Detach();}
+    public void Dispose(){disposed=true;metadata.Dispose();Detach();}
 }

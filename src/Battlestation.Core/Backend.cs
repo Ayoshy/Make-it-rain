@@ -26,6 +26,9 @@ internal sealed partial class Backend : IDisposable
         sensorsTask = Task.Run(ReadSensors);
         codexTask = Task.Run(ReadCodex);
     }
+    public int Revision(bool hardware)=>hardware
+        ? HashCode.Combine(sensors?.FetchedAt,hardwareError,gpuError,gpuBusy,heatwave,controls,Volatile.Read(ref writePending),sensors is {} sample&&DateTimeOffset.Now-sample.FetchedAt>TimeSpan.FromSeconds(15))
+        : HashCode.Combine(meter,meter.Snapshot is {} usage&&DateTimeOffset.Now-usage.FetchedAt>TimeSpan.FromMinutes(16));
     string QuotaText()
     {
         var value = meter.Snapshot?.Limits.FirstOrDefault()?.Primary?.UsedPercent;
@@ -43,8 +46,7 @@ internal sealed partial class Backend : IDisposable
                 catch (Exception e) { sensors = null; hardwareError = e.GetType().Name; }
                 var state = new { processId = Environment.ProcessId, runtime = Environment.Version.ToString(), sampledAt = DateTimeOffset.Now, sensors, hardwareError, codex = meter, gpuControl = controls, heatwaveActive = heatwave, gpuError, transport = "in-process + app-server stdio" };
                 var file = Path.Combine(directory, "probe.json");
-                File.WriteAllText(file + ".tmp", JsonSerializer.Serialize(state, Json));
-                File.Move(file + ".tmp", file, true);
+                DiagnosticFile.TryWrite(file, JsonSerializer.Serialize(state, Json));
                 await Task.Delay(2000, shutdown.Token);
             }
         }

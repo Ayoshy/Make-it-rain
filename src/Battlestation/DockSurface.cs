@@ -14,32 +14,37 @@ internal sealed class DockSurface : Surface
     readonly bool[] press=new bool[12];
     readonly DispatcherTimer animation;
     int hover=-1;
-    public DockSurface(Station s):base(s){Width=720;Height=DesktopLayout.DockHeight(s.Apps.Count);animation=new DispatcherTimer(TimeSpan.FromMilliseconds(16),DispatcherPriority.Render,(_,_)=>Animate(),Dispatcher);animation.Stop();}
+    int rowOffset;
+    int Columns=>Math.Max(1,Math.Min(Math.Max(1,Station.Apps.Count),(int)((Width-80)/88)));
+    int VisibleRows=>Math.Max(1,(int)((Height-24)/88));
+    void ClampRows()=>rowOffset=Math.Clamp(rowOffset,0,Math.Max(0,(int)Math.Ceiling(Station.Apps.Count/(double)Columns)-VisibleRows));
+    public DockSurface(Station s):base(s,2){Width=720;Height=DesktopLayout.DockHeight(s.Apps.Count);animation=new DispatcherTimer(TimeSpan.FromMilliseconds(16),DispatcherPriority.Render,(_,_)=>Animate(),Dispatcher);animation.Stop();}
     void Retarget(int i,double value,bool clicked=false){if(i<0||i>=12)return;from[i]=amount[i];target[i]=value;since[i]=DateTime.UtcNow;press[i]=clicked;animation.Start();}
     void Animate(){bool active=false;for(int i=0;i<12;i++){double p=Math.Clamp((DateTime.UtcNow-since[i]).TotalMilliseconds/160,0,1);amount[i]=from[i]+(target[i]-from[i])*(1-Math.Pow(1-p,3));active|=p<1;}Refresh();if(!active)animation.Stop();}
     protected override void OnPointer(MouseEventArgs e)
     {
-        int cols=Math.Max(1,Math.Min(6,Station.Apps.Count));double pitch=640d/cols;int next=-1;
-        for(int i=0;i<Station.Apps.Count;i++)if(new Rect(16+(i%6)*pitch+pitch/2-44,8+(i/6)*88,88,100).Contains(Pointer))next=i;
+        ClampRows();int cols=Columns;double pitch=(Width-80)/cols;int next=-1;
+        for(int i=rowOffset*cols;i<Math.Min(Station.Apps.Count,(rowOffset+VisibleRows)*cols);i++)if(new Rect(16+(i%cols)*pitch+pitch/2-44,8+(i/cols-rowOffset)*88,88,88).Contains(Pointer))next=i;
         if(next!=hover){Retarget(hover,0);hover=next;Retarget(hover,1);ToolTip=hover>=0?Station.Apps[hover].Name:null;}
     }
     protected override void OnMouseLeave(MouseEventArgs e){Retarget(hover,0);hover=-1;ToolTip=null;base.OnMouseLeave(e);}
     protected override void Paint()
     {
-        int rows=Math.Max(1,(Station.Apps.Count+5)/6);double h=rows*88+28;
-        Panel(0,0,720,h,34);Glass(2,0,0,720,h);
-        int cols=Math.Max(1,Math.Min(6,Station.Apps.Count));double pitch=640d/cols,left=16;
-        for(int i=0;i<Station.Apps.Count;i++)
+        ClampRows();double h=Height;
+        int cols=Columns;double pitch=(Width-80)/cols,left=16;
+        for(int i=rowOffset*cols;i<Math.Min(Station.Apps.Count,(rowOffset+VisibleRows)*cols);i++)
         {
-            var app=Station.Apps[i];double x=left+(i%6)*pitch+pitch/2,y=58+(i/6)*88;
+            var app=Station.Apps[i];double x=left+(i%cols)*pitch+pitch/2,y=56+(i/cols-rowOffset)*88;
             var key=Regex.Replace(app.Name.ToLowerInvariant(),"[^a-z0-9]","");var path=Path.Combine(Station.Root,"dock/icons/neon",key+".png");
             double p=Math.Clamp((DateTime.UtcNow-since[i]).TotalMilliseconds/160,0,1);
             double size=72*(1+amount[i]/6-(press[i]?Math.Sin(p*Math.PI)*.065:0));y-=amount[i]*3;
             if(File.Exists(path))Image(path,x-size/2,y-size/2,size,size);else Text(app.Name[..1],x,y-22,26,align:"center");
-            int index=i;Hit("Launch:"+app.Name,x-44,8+(i/6)*88,88,100,()=>{Retarget(index,hover==index?1:0,true);Station.Launch(app);});
+            int index=i;Hit("Launch:"+app.Name,x-44,8+(i/cols-rowOffset)*88,88,88,()=>{Retarget(index,hover==index?1:0,true);Station.Launch(app);});
         }
-        Line(656,32,656,h-32,"#22D2BDDF");Text("+",685,h/2-15,17,Muted,align:"center");Hit("ManageApps",662,15,50,h-30,()=>OpenEditor());
+        Line(Width-64,32,Width-64,h-32,"#22D2BDDF");Text("+",Width-35,h/2-15,17,Muted,align:"center");Hit("ManageApps",Width-58,15,50,h-30,()=>OpenEditor());
+        int total=(int)Math.Ceiling(Station.Apps.Count/(double)cols);if(total>VisibleRows){double track=Height-32;Box(Width-70,16,3,track,"#305C4868",radius:2);Box(Width-70,16+track*rowOffset/total,3,track*VisibleRows/total,"#A0DAC3E5",radius:2);}
     }
+    protected override void OnMouseWheel(MouseWheelEventArgs e){rowOffset+=e.Delta>0?-1:1;ClampRows();Refresh();e.Handled=true;}
     internal void OpenEditor(Window? owner=null)
     {
         var window=new Window{Title="Applications du dock",Width=500,Height=475,ResizeMode=ResizeMode.NoResize,WindowStartupLocation=WindowStartupLocation.CenterScreen,Background=B("#261A32"),Foreground=B(Ink)};

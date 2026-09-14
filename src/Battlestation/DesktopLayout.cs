@@ -10,6 +10,19 @@ internal sealed record DesktopBlock(string Id,string Title,double Width,double H
 internal sealed class DesktopLayout
 {
     public const int Grid=12,Gap=12;
+    public static Size Minimum(string id)=>id switch
+    {
+        "clock"=>new(360,144),"weather"=>new(360,112),"music"=>new(400,168),
+        "projects"=>new(360,240),"apps"=>new(240,112),"terminal"=>new(480,300),
+        "countdown"=>new(400,360),"hardware"=>new(440,218),"usage"=>new(440,209),
+        "video"=>new(480,270),"audio"=>new(440,336),_=>new(120,100)
+    };
+    static DesktopBlock Dimensions(DesktopBlock original,DesktopBlock saved)=>original with
+    {
+        X=saved.X,Y=saved.Y,Visible=saved.Visible,
+        Width=saved.Width==0?original.Width:saved.Width,
+        Height=saved.Height==0?original.Height:saved.Height
+    };
     readonly string path;
     public List<DesktopBlock> Blocks {get;private set;}
     public static readonly Rect[] Screens=[new(0,0,2560,1440),new(2560,0,2560,1440)];
@@ -23,7 +36,9 @@ internal sealed class DesktopLayout
         new("terminal","Terminal",1488,1428-TerminalY(apps),2688,TerminalY(apps)),
         new("countdown","Vice City",779,706,4212,132),
         new("hardware","Matériel",779,218,4212,852),
-        new("usage","Codex",779,209,4212,1092)
+        new("usage","Codex",779,209,4212,1092),
+        new("video","Vidéo",576,372,3396,312,false),
+        new("audio","Audio",720,336,2616,360,false)
     ];
     static double TerminalY(int apps)=>Math.Max(720,Math.Ceiling((336+DockHeight(apps)-116+293+Gap)/Grid)*Grid);
     public static double DockHeight(int apps)=>Math.Max(1,Math.Ceiling(apps/6d))*88+28;
@@ -39,7 +54,7 @@ internal sealed class DesktopLayout
             foreach(var original in Blocks)
             {
                 var old=saved.FirstOrDefault(b=>b.Id==original.Id);
-                var item=old is null?original:original with{X=old.X,Y=old.Y,Visible=old.Visible};
+                var item=old is null?original:Dimensions(original,old);
                 if(!Valid(item,restored))item=FindFree(original with{Visible=item.Visible},original.X,original.Y,restored)??original with{Visible=false};
                 restored.Add(item);
             }
@@ -47,13 +62,18 @@ internal sealed class DesktopLayout
         }
         catch(JsonException){File.Copy(path,path+".invalid-"+DateTime.Now.ToString("yyyyMMddHHmmss"),true);}
     }
-    static bool Valid(DesktopBlock block,IEnumerable<DesktopBlock> others)
+    internal static bool Valid(DesktopBlock block,IEnumerable<DesktopBlock> others)
     {
         if(!double.IsFinite(block.X+block.Y+block.Width+block.Height)||block.Width<=0||block.Height<=0)return false;
         if(!Screens.Any(s=>s.Contains(block.Bounds)))return false;
         if(!block.Visible)return true;
         var occupied=block.Bounds;occupied.Inflate(Gap/2d,Gap/2d);
-        return !others.Any(b=>b.Visible&&b.Id!=block.Id&&occupied.IntersectsWith(Inflated(b.Bounds)));
+        return !others.Any(b=>{
+            if(!b.Visible||b.Id==block.Id)return false;
+            var other=Inflated(b.Bounds);
+            // Exact 12 px gaps are valid: touching inflated edges do not overlap.
+            return occupied.Left<other.Right&&occupied.Right>other.Left&&occupied.Top<other.Bottom&&occupied.Bottom>other.Top;
+        });
     }
     static Rect Inflated(Rect r){r.Inflate(Gap/2d,Gap/2d);return r;}
     static DesktopBlock? FindFree(DesktopBlock block,double x,double y,IEnumerable<DesktopBlock> others)
@@ -85,10 +105,22 @@ internal sealed class DesktopLayout
     }
     public bool SetVisible(string id,bool visible)
     {
-        var b=this[id];var next=visible?FindFree(b with{Visible=true},b.X,b.Y,Blocks):b with{Visible=false};
+        var b=this[id];var shown=b with{Visible=true};
+        var next=visible?(Valid(shown,Blocks)?shown:FindFree(shown,b.X,b.Y,Blocks)):b with{Visible=false};
         if(next is null)return false;Blocks[Blocks.FindIndex(b=>b.Id==id)]=next;return true;
     }
     public void Reset(int apps)=>Blocks=Defaults(apps);
+    public bool Restore(IEnumerable<DesktopBlock> saved)
+    {
+        var incoming=saved.ToArray();if(incoming.Any(b=>b is null))return false;var next=new List<DesktopBlock>();
+        foreach(var block in Blocks)
+        {
+            var old=incoming.FirstOrDefault(b=>b.Id==block.Id);
+            var candidate=old is null?block with{Visible=false}:Dimensions(block,old);
+            if(!Valid(candidate,next))return false;next.Add(candidate);
+        }
+        Blocks=next;return true;
+    }
     public void Save()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);

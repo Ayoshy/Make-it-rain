@@ -20,6 +20,7 @@ internal sealed class DesktopPlacement : IDisposable
     nint externalWindow,externalFrame;
     bool? desktopRaised;
     bool arranging,disposed;
+    internal event Action? VisibilityChanged;
     public DesktopPlacement(Dispatcher ui)
     {
         dispatcher=ui;callback=OnForeground;nativeCallback=NativeMessage;
@@ -69,7 +70,7 @@ internal sealed class DesktopPlacement : IDisposable
     void OnForeground(nint hook,uint ev,nint hwnd,int objectId,int child,uint thread,uint time)
     {
         if(disposed)return;
-        dispatcher.BeginInvoke(()=>{if(!disposed)Arrange();},DispatcherPriority.Background);
+        dispatcher.BeginInvoke(()=>{if(!disposed){Arrange();VisibilityChanged?.Invoke();}},DispatcherPriority.Background);
     }
     public void Arrange()=>Arrange(Native.DesktopIconsHost());
     internal void RaiseWithinDesktop(Window window)
@@ -118,6 +119,7 @@ internal sealed class DesktopPlacement : IDisposable
             }
         }
         finally{arranging=false;}
+        if(changed)VisibilityChanged?.Invoke();
     }
     static bool Above(nint window,nint other)
     {

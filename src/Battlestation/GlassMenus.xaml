@@ -1,0 +1,111 @@
+<ResourceDictionary x:Class="Battlestation.GlassMenus" x:ClassModifier="internal"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:Battlestation">
+    <!-- One template family for WPF context menus, dropdowns and their submenus. -->
+    <LinearGradientBrush x:Key="MenuGlass" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#EB44344F" Offset="0"/>
+        <GradientStop Color="#E62C213B" Offset="0.4"/>
+        <GradientStop Color="#F01F192C" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="MenuRim" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#A6F1E4FF" Offset="0"/>
+        <GradientStop Color="#35DACDEC" Offset="0.45"/>
+        <GradientStop Color="#729DCEDA" Offset="1"/>
+    </LinearGradientBrush>
+    <Style x:Key="MenuPlate" TargetType="Border">
+        <Setter Property="CornerRadius" Value="15"/>
+        <Setter Property="Padding" Value="6"/>
+        <Setter Property="Background" Value="{StaticResource MenuGlass}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource MenuRim}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style TargetType="ContextMenu">
+        <Setter Property="FontFamily" Value="{x:Static local:DockAppearance.UiFont}"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="Foreground" Value="#E9E0F2"/>
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="HasDropShadow" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Style="{StaticResource MenuPlate}">
+                        <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto"
+                            HorizontalScrollBarVisibility="Disabled" MaxHeight="{Binding Source={x:Static SystemParameters.WorkArea}, Path=Height}">
+                            <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                        </ScrollViewer>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style TargetType="MenuItem">
+        <Setter Property="FontFamily" Value="{x:Static local:DockAppearance.UiFont}"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="Foreground" Value="#E9E0F2"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="Padding" Value="8,7"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Grid>
+                        <Border x:Name="Row" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="1" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="24"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="20"/>
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter x:Name="Icon" ContentSource="Icon" Width="14" Height="14"
+                                    HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="Check" Text="✓" Foreground="#BDEDE5" Visibility="Collapsed" VerticalAlignment="Center"/>
+                                <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}" Foreground="#AE9FBD"
+                                    Margin="20,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="Arrow" Grid.Column="3" Text="›" FontSize="19" Visibility="Collapsed"
+                                    HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <Popup x:Name="PART_Popup" Placement="Right" HorizontalOffset="-2" VerticalOffset="-7"
+                            AllowsTransparency="True" Focusable="False" IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                            PopupAnimation="Fade">
+                            <Border Style="{StaticResource MenuPlate}">
+                                <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                    MaxHeight="{Binding Source={x:Static SystemParameters.WorkArea}, Path=Height}">
+                                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" KeyboardNavigation.TabNavigation="Cycle"/>
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="Row" Property="Background" Value="{x:Static local:DockAppearance.ButtonHover}"/>
+                            <Setter TargetName="Row" Property="BorderBrush" Value="#38DACDEC"/>
+                        </Trigger>
+                        <Trigger Property="IsSubmenuOpen" Value="True">
+                            <Setter TargetName="Row" Property="Background" Value="{x:Static local:DockAppearance.ButtonHover}"/>
+                        </Trigger>
+                        <Trigger Property="HasItems" Value="True"><Setter TargetName="Arrow" Property="Visibility" Value="Visible"/></Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Icon" Property="Visibility" Value="Collapsed"/>
+                            <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Row" Property="Opacity" Value="0.4"/></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style TargetType="Separator">
+        <Setter Property="Template">
+            <Setter.Value><ControlTemplate TargetType="Separator"><Border Height="1" Margin="12,5" Background="#2EDACDEC"/></ControlTemplate></Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator" BasedOn="{StaticResource {x:Type Separator}}"/>
+</ResourceDictionary>

@@ -24,8 +24,18 @@ static std::mutex glassMutex;
 static D2D1_RECT_F glassRects[16]={};
 static std::atomic<bool> glassDirty=true;
 static std::atomic<bool> animateBackground=true;
+static std::atomic<int> visibleMonitors=3;
 static std::atomic<float> glassOpacity=.46f;
 static std::atomic<int> frontPanel=-1;
+static std::atomic<float> audioBass=0,audioMiddle=0,audioTreble=0,audioIntensity=0;
+static float bass=0,middle=0,treble=0;
+#ifdef BATTLESTATION_TESTING
+static std::atomic<bool> testLoseTarget=false;
+static std::atomic<uint64_t> testFrames=0,testLosses=0;
+extern "C" __declspec(dllexport) void BackgroundTestLoseTarget(){testLoseTarget=true;}
+extern "C" __declspec(dllexport) uint64_t BackgroundTestFrames(){return testFrames.load();}
+extern "C" __declspec(dllexport) uint64_t BackgroundTestLosses(){return testLosses.load();}
+#endif
 static float fract(double value){return float(value-std::floor(value));}
 static void Check(HRESULT hr){if(FAILED(hr))throw hr;}
 static LRESULT CALLBACK Proc(HWND window,UINT msg,WPARAM w,LPARAM l){return DefWindowProcW(window,msg,w,l);}
@@ -41,6 +51,8 @@ struct Paint {
     ComPtr<ID2D1BitmapRenderTarget> frost;
     std::unique_ptr<Paint> frostPaint;
     ComPtr<ID2D1LinearGradientBrush> sheen;
+    ComPtr<ID2D1RoundedRectangleGeometry> masks[16];
+    D2D1_ROUNDED_RECT maskShapes[16]={};
     Paint(ID2D1RenderTarget* rt,IWICImagingFactory* wic,bool auxiliary=false):target(rt){
         auto load=[&](const wchar_t* file,ComPtr<ID2D1Bitmap>& bitmap){
             ComPtr<IWICBitmapDecoder> decoder;Check(wic->CreateDecoderFromFilename((std::filesystem::path(images)/file).c_str(),nullptr,GENERIC_READ,WICDecodeMetadataCacheOnLoad,&decoder));
@@ -77,10 +89,12 @@ struct Paint {
         }
     }
     void Fill(D2D1_RECT_F rect,D2D1_COLOR_F color){brush->SetColor(color);target->FillRectangle(rect,brush.Get());}
-    void Draw(){
+    void Draw(int monitors=3){
         ComPtr<ID2D1Bitmap> frosted;
-        if(frostPaint){frostPaint->Draw();Check(frost->GetBitmap(&frosted));}
-        auto rt=target;rt->BeginDraw();rt->SetTransform(D2D1::Matrix3x2F::Identity());rt->Clear(D2D1::ColorF(.09f,.055f,.14f));
+        if(frostPaint){frostPaint->Draw(monitors);Check(frost->GetBitmap(&frosted));}
+        auto rt=target;rt->BeginDraw();rt->SetTransform(D2D1::Matrix3x2F::Identity());
+        rt->PushAxisAlignedClip(D2D1::RectF(monitors==2?2560.f:0.f,0,monitors==1?2560.f:5120.f,1440),D2D1_ANTIALIAS_MODE_ALIASED);
+        rt->Clear(D2D1::ColorF(.09f,.055f,.14f));
         rt->DrawBitmap(art.Get(),D2D1::RectF(0,0,5120,1440),.5f,D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,D2D1::RectF(2880,830,3840,1100));
         Fill(D2D1::RectF(0,0,5120,1440),D2D1::ColorF(.16f,.08f,.24f,.75f));
         float dx=float(std::sin(elapsed*.14)*20.48-easedX*15),dy=float(std::cos(elapsed*.11)*5.76-easedY*10);
@@ -90,6 +104,23 @@ struct Paint {
         Fill(D2D1::RectF(0,0,5120,1440),D2D1::ColorF(.063f,.027f,.118f,.14f));
         rt->DrawBitmap(glows[1].Get(),D2D1::RectF(2450,-150,5350,1600),.18f);
         rt->DrawBitmap(glows[2].Get(),D2D1::RectF(200,-200,2800,1600),.09f);
+        // Broad pearl light and thin ripples stay behind the glass.
+        if(bass+middle+treble>.002f){
+            float bloom=150+bass*260;
+            rt->DrawBitmap(glows[1].Get(),D2D1::RectF(2500-bloom,800-bloom,5100+bloom,1800+bloom),bass*.34f);
+            rt->DrawBitmap(glows[2].Get(),D2D1::RectF(2950,-450,5200,950),treble*.27f);
+            for(int wave=0;wave<3;wave++){
+                D2D1_POINT_2F previous{};
+                for(int step=0;step<=80;step++){
+                    float x=2560+step*32.f;
+                    float y=1260+wave*35+std::sin(step*.075f+float(elapsed)*.8f+wave*.7f)*(12+middle*65)+std::sin(step*.17f-float(elapsed)*1.2f)*bass*22;
+                    float edge=std::sin(step/80.f*3.1415926f);
+                    brush->SetColor(D2D1::ColorF(.76f+wave*.07f,.85f-wave*.06f,1,(bass*.22f+middle*.17f+treble*.10f)*edge));
+                    if(step)rt->DrawLine(previous,D2D1::Point2F(x,y),brush.Get(),1.4f+treble*1.5f);
+                    previous=D2D1::Point2F(x,y);
+                }
+            }
+        }
         double t=elapsed*.65;
         for(int i=0;i<3;i++){
             float x=float(5120*(.26+i*.28+std::sin(t*.075+i)*.05));
@@ -129,10 +160,14 @@ struct Paint {
                 auto r=rects[index];
                 if(r.right<=r.left||r.bottom<=r.top)continue;
                 bool clearPopup=index==8;
-                float radius=clearPopup?22:index==2?34:index>=3?24:24*(r.right-r.left)/779;
+                // Keep dock corners at 24 physical pixels, matching Surface.Panel at every size.
+                float radius=clearPopup?22:24;
                 for(int shadow=4;shadow>=1;shadow--){float d=shadow*3.f;brush->SetColor(D2D1::ColorF(.015f,.005f,.03f,.035f));rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(r.left-d,r.top+4,r.right+d,r.bottom+d+4),radius+d,radius+d),brush.Get());}
-                ComPtr<ID2D1RoundedRectangleGeometry> mask;Check(factory->CreateRoundedRectangleGeometry(D2D1::RoundedRect(r,radius,radius),&mask));
-                rt->PushLayer(D2D1::LayerParameters(r,mask.Get()),layer.Get());
+                auto shape=D2D1::RoundedRect(r,radius,radius);auto& old=maskShapes[index];
+                if(!masks[index]||old.rect.left!=r.left||old.rect.top!=r.top||old.rect.right!=r.right||old.rect.bottom!=r.bottom||old.radiusX!=radius){
+                    masks[index].Reset();Check(factory->CreateRoundedRectangleGeometry(shape,&masks[index]));old=shape;
+                }
+                rt->PushLayer(D2D1::LayerParameters(r,masks[index].Get()),layer.Get());
                 float shift=float(easedX*3);
                 rt->DrawBitmap(frosted.Get(),r,clearPopup?.22f:1.f,D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,D2D1::RectF(r.left-4+shift,r.top-3,r.right+4+shift,r.bottom+3));
                 Fill(r,D2D1::ColorF(.06f,.022f,.10f,glassOpacity.load()*(clearPopup?.08f/.46f:1.f)));
@@ -144,15 +179,9 @@ struct Paint {
                 brush->SetColor(D2D1::ColorF(1,.92f,1,.34f));rt->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(r.left+1,r.top+1,r.right-1,r.bottom-1),radius-1,radius-1),brush.Get(),1);rt->PopAxisAlignedClip();
             }
         }
-        Check(rt->EndDraw());
+        rt->PopAxisAlignedClip();Check(rt->EndDraw());
     }
 };
-static bool Fullscreen(){
-    auto window=GetForegroundWindow();DWORD process=0;GetWindowThreadProcessId(window,&process);if(!window||process==GetCurrentProcessId())return false;
-    wchar_t cls[128];GetClassNameW(window,cls,128);if(wcscmp(cls,L"Progman")==0||wcscmp(cls,L"WorkerW")==0)return false;
-    RECT r;GetWindowRect(window,&r);MONITORINFO m{sizeof(m)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&m);
-    return r.left<=m.rcMonitor.left && r.top<=m.rcMonitor.top && r.right>=m.rcMonitor.right && r.bottom>=m.rcMonitor.bottom;
-}
 static void SaveFrame(ID2D1Factory* factory,IWICImagingFactory* wic){
     ComPtr<IWICBitmap> bitmap;Check(wic->CreateBitmap(5120,1440,GUID_WICPixelFormat32bppPBGRA,WICBitmapCacheOnLoad,&bitmap));
     ComPtr<ID2D1RenderTarget> target;Check(factory->CreateWicBitmapRenderTarget(bitmap.Get(),D2D1::RenderTargetProperties(),&target));
@@ -176,15 +205,34 @@ static DWORD WINAPI Run(void*){
         stage="create Direct2D resources";
         ComPtr<ID2D1Factory> factory;Check(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,factory.GetAddressOf()));
         ComPtr<IWICImagingFactory> wic;Check(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&wic)));
-        ComPtr<ID2D1HwndRenderTarget> target;Check(factory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(),D2D1::HwndRenderTargetProperties(window,D2D1::SizeU(5120,1440),D2D1_PRESENT_OPTIONS_IMMEDIATELY),&target));
-        stage="load artwork";Paint paint(target.Get(),wic.Get());stage="render frames";
-        auto last=std::chrono::steady_clock::now();bool first=true;
+        ComPtr<ID2D1HwndRenderTarget> target;std::unique_ptr<Paint> paint;ULONGLONG retryAt=0,nextState=0;stage="render frames";
+        auto last=std::chrono::steady_clock::now();bool first=true;unsigned long long rendered=0;double renderMs=0;
         while(WaitForSingleObject(stopEvent,0)!=WAIT_OBJECT_0){
             MSG msg;while(PeekMessageW(&msg,nullptr,0,0,PM_REMOVE)){TranslateMessage(&msg);DispatchMessageW(&msg);}
-            bool paused=Fullscreen()||!animateBackground.load();auto now=std::chrono::steady_clock::now();double dt=std::min(.1,std::chrono::duration<double>(now-last).count());last=now;
-            if(!paused||first||glassDirty.exchange(false)){if(!paused)elapsed+=dt;POINT p;GetCursorPos(&p);double blend=1-std::exp(-dt*3);easedX+=((p.x/5120.0*2-1)-easedX)*blend;easedY+=((p.y/1440.0*2-1)-easedY)*blend;paint.Draw();first=false;}
+            int monitors=visibleMonitors.load();bool paused=monitors==0||!animateBackground.load();auto now=std::chrono::steady_clock::now();double dt=std::min(.1,std::chrono::duration<double>(now-last).count());last=now;
+            float intensity=audioIntensity.load();
+            auto smooth=[&](float value,float desired){return value+(desired-value)*float(1-std::exp(-dt*(desired>value?12:3)));};
+            bass=smooth(bass,audioBass.load()*intensity);middle=smooth(middle,audioMiddle.load()*intensity);treble=smooth(treble,audioTreble.load()*intensity);
+            bool dirty=glassDirty.exchange(false);
+            if(monitors!=0&&(!paused||first||dirty)&&GetTickCount64()>=retryAt){
+                try{
+                    if(!paint){Check(factory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(),D2D1::HwndRenderTargetProperties(window,D2D1::SizeU(5120,1440),D2D1_PRESENT_OPTIONS_IMMEDIATELY),&target));paint=std::make_unique<Paint>(target.Get(),wic.Get());}
+#ifdef BATTLESTATION_TESTING
+                    if(testLoseTarget.exchange(false)){++testLosses;throw HRESULT(D2DERR_RECREATE_TARGET);}
+#endif
+                    if(!paused)elapsed+=dt;POINT p;GetCursorPos(&p);double blend=1-std::exp(-dt*3);easedX+=((p.x/5120.0*2-1)-easedX)*blend;easedY+=((p.y/1440.0*2-1)-easedY)*blend;
+                    auto began=std::chrono::steady_clock::now();paint->Draw(monitors);renderMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-began).count();++rendered;first=false;
+#ifdef BATTLESTATION_TESTING
+                    ++testFrames;
+#endif
+                }catch(HRESULT hr){paint.reset();target.Reset();retryAt=GetTickCount64()+1000;first=true;std::ofstream log(Output()/L"native-renderer-error.txt");log<<"Recovering render target: HRESULT "<<std::hex<<hr;}
+            }
             if(capture.exchange(false)){try{SaveFrame(factory.Get(),wic.Get());}catch(...){std::ofstream log(Output()/L"native-capture-error.txt");log<<"Capture failed; renderer remains running";}}
-            static int frames=0;if(++frames%30==0||paused){std::ofstream state(Output()/L"native-renderer-state.json");state<<"{\"pid\":"<<GetCurrentProcessId()<<",\"paused\":"<<(paused?"true":"false")<<",\"elapsed\":"<<elapsed<<",\"hwnd\":"<<(uintptr_t)window<<",\"parent\":"<<(uintptr_t)parentWindow<<",\"width\":5120,\"height\":1440}";}
+            if(GetTickCount64()>=nextState){nextState=GetTickCount64()+(paused?5000:1000);
+                std::ofstream state(Output()/L"native-renderer-state.json");state<<"{\"pid\":"<<GetCurrentProcessId()<<",\"paused\":"<<(paused?"true":"false")<<",\"elapsed\":"<<elapsed<<",\"hwnd\":"<<(uintptr_t)window<<",\"parent\":"<<(uintptr_t)parentWindow<<",\"width\":5120,\"height\":1440,\"renderedFrames\":"<<rendered<<",\"renderMilliseconds\":"<<renderMs<<",\"panels\":[";
+                std::lock_guard<std::mutex> lock(glassMutex);bool comma=false;
+                for(int i=0;i<16;i++){auto r=glassRects[i];if(r.right<=r.left||r.bottom<=r.top)continue;if(comma)state<<",";comma=true;state<<"{\"slot\":"<<i<<",\"x\":"<<r.left<<",\"y\":"<<r.top<<",\"width\":"<<r.right-r.left<<",\"height\":"<<r.bottom-r.top<<"}";}state<<"]}";
+            }
             HANDLE events[]={stopEvent,wakeEvent};WaitForMultipleObjects(2,events,FALSE,paused?500:33);
         }
     }catch(HRESULT hr){std::ofstream log(Output()/L"native-renderer-error.txt");log<<stage<<": HRESULT "<<std::hex<<hr;}catch(...){std::ofstream log(Output()/L"native-renderer-error.txt");log<<stage<<": native renderer failed";}
@@ -192,7 +240,12 @@ static DWORD WINAPI Run(void*){
 }
 void Start(HWND parent,const std::wstring& resources){if(thread)return;images=resources;parentWindow=parent;stopEvent=CreateEventW(nullptr,TRUE,FALSE,nullptr);wakeEvent=CreateEventW(nullptr,FALSE,FALSE,nullptr);thread=CreateThread(nullptr,0,Run,nullptr,0,nullptr);}
 void Stop(){if(!thread)return;SetEvent(stopEvent);WaitForSingleObject(thread,INFINITE);CloseHandle(thread);CloseHandle(stopEvent);CloseHandle(wakeEvent);thread=nullptr;stopEvent=nullptr;wakeEvent=nullptr;}
-void Capture(){capture=true;}
+void Capture(){capture=true;if(wakeEvent)SetEvent(wakeEvent);}
+void SetVisibility(int monitors){monitors&=3;if(visibleMonitors.exchange(monitors)!=monitors){glassDirty=true;if(wakeEvent)SetEvent(wakeEvent);}}
+void SetAudio(float low,float mid,float high,float intensity){
+    if(!std::isfinite(low+mid+high+intensity))return;
+    audioBass=std::clamp(low,0.f,1.f);audioMiddle=std::clamp(mid,0.f,1.f);audioTreble=std::clamp(high,0.f,1.f);audioIntensity=std::clamp(intensity,0.f,1.f);
+}
 void SetAppearance(bool animate,float opacity){
     if(!std::isfinite(opacity)||opacity<.05f||opacity>.85f)return;
     animateBackground=animate;glassOpacity=opacity;glassDirty=true;if(wakeEvent)SetEvent(wakeEvent);

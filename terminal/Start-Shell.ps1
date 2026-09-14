@@ -7,5 +7,5 @@ $env:COLORTERM='truecolor'
 $env:FORCE_COLOR='1'
 $env:CLICOLOR='1'
 function global:codex {
-    & $env:BATTLESTATION_CODEX_EXE -c 'tui.animations=false' -c 'tui.theme="catppuccin-mocha"' @args
+    & $env:BATTLESTATION_CODEX_EXE -c 'tui.animations=false' -c 'tui.theme="catppuccin-mocha"' -c "tui.terminal_title=['run-state','activity','thread-name','project-name']" @args
 }
