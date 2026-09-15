@@ -145,6 +145,80 @@ Computer Use reste indisponible (`native pipe`, erreur Windows 2). L'essai de
 clic dans le dock est donc réalisé par l'utilisateur avec observation des états
 Windows. Le démarrage Windows n'a pas été basculé dans cette tranche.
 
+## Batterie
+
+Le dock lit la propriété Bluetooth Windows `{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2`
+sur les nœuds BTHENUM présents, y compris les services Hands-Free. Il rattache
+la mesure au périphérique par son ContainerId exact. Seuls les octets de 0 à 100
+sont acceptés ; une propriété absente ou invalide laisse la batterie inconnue.
+Si plusieurs services du même appareil publient un niveau, le minimum est retenu.
+
+Le pourcentage apparaît sous le dessin et au survol, uniquement pendant une
+connexion confirmée. À 20 % ou moins, il devient ambre. Le scan existant le relit
+toutes les cinq secondes lorsque le dock est exposé ; le rythme de mise à jour
+de la mesure dépend de Windows et du périphérique. Aucune lecture HID de la
+DualSense n'est ajoutée.
+
+Au contrôle du 15 septembre 2026, Windows conserve 97 % pour les Buds3 Pro et
+100 % pour PARTYBTMS3 sur leurs services Hands-Free ; les ContainerId correspondent
+aux appareils du dock. Les quatre appareils sont déconnectés lors du scan natif,
+donc aucun pourcentage courant n'est affiché. La DualSense et la soundbar ne
+publient pas cette propriété lors du contrôle.
+
+Tests Bluetooth et rendus WPF des quatre dispositions réussis, notamment 0 %, les
+sentinelles invalides, le masquage à la déconnexion et la mise à jour du survol.
+Les rendus isolés ne valident pas l'affichage d'une mesure sur un appareil connecté
+dans le bureau réel.
+
+Build `build/battlestation-bluetooth-battery` chargé dans le bureau (PID 3640 au
+contrôle), DLL managée et native vérifiées. Disposition identique et hôte terminal
+13472 avec ses processus enfants conservés. Preuves :
+`artifacts/validation/bluetooth-battery/before.json` et `after.json`.
+La cible de démarrage Windows (`build/current.txt`) reste inchangée.
+
+### Buds3 Pro : gauche, droite et boîtier
+
+Les Buds utilisent désormais une lecture Samsung dédiée, séparée du scan Windows.
+`BudsBattery.cpp` ouvre brièvement le service RFCOMM GEARMANAGER
+`2e73a4ad-332d-41fc-90e2-16bef06523f2` à l'adresse exacte du périphérique connecté.
+Il reçoit les notifications sans envoyer de commande, puis ferme sa propre socket.
+La connexion et la réception ont chacune une borne de 1,5 seconde ; la lecture
+tourne hors du thread WPF toutes les 30 secondes lorsque le dock est exposé.
+Elle ne ferme pas l'application Samsung et ne commande ni l'audio ni les réglages.
+Si un autre client occupe le service ou que la lecture échoue, les niveaux séparés
+deviennent indisponibles ; le niveau global Windows reste accessible au survol.
+
+Le décodage indépendant suit le format décrit par les sources du projet
+[GalaxyBudsClient](https://github.com/timschneeb/GalaxyBudsClient/blob/master/GalaxyBudsClient/Message/Decoder/ExtendedStatusUpdateDecoder.cs)
+et son [décodeur de notifications courtes](https://github.com/timschneeb/GalaxyBudsClient/blob/master/GalaxyBudsClient/Message/Decoder/StatusUpdateDecoder.cs).
+Les trames FD/DD sont contrôlées par taille et CRC16-CCITT (initialisation zéro,
+CRC transmis en little endian). Les messages 0x60 et 0x61 portent les trois
+niveaux ; toute valeur supérieure à 100 reste inconnue. Aucun paquet reçu n'est
+journalisé. La valeur du boîtier dépend de ce que les écouteurs transmettent.
+
+Les deux niveaux sont placés sous les écouteurs correspondants et le troisième
+accompagne une silhouette originale du boîtier, générée avec les mêmes matériaux
+nacrés/Vice City. Aucun nouveau bouton ni zone cliquable. Une déconnexion efface
+les mesures ; une lecture commencée avant la déconnexion ne peut pas les rétablir.
+Un clic de déconnexion attend la fin de la courte lecture passive avant d'agir.
+
+Preuve matérielle du 15 septembre : la DLL compilée a reçu et validé par CRC
+gauche 79 %, droite 78 %, boîtier 23 %. L'application Samsung est restée ouverte.
+Tests de trames abîmées/tronquées, sentinelles, notifications groupées et survol
+réussis ; rendus WPF vérifiés en ligne et en grille compacte. Ces rendus restent
+distincts de l'observation du bureau réel.
+
+```powershell
+dotnet run --project tests/Battlestation.Bluetooth.Tests.csproj -c Release -- --buds-read build/battlestation-buds-batteries/Battlestation.Desk.dll
+```
+
+Le build `battlestation-buds-batteries` est ensuite chargé dans le bureau (PID
+3636 au contrôle). L'inspection de la surface active confirme gauche 80 %, droite
+79 %, boîtier 23 %, avec les quatre appareils toujours connectés. Disposition,
+hôte terminal 13472, ses processus enfants et application Samsung 14488 conservés.
+Preuves : `artifacts/validation/buds-batteries/before.json` et `after.json`.
+`build/current.txt` n'est pas modifié.
+
 ## Bilan Eclipse
 
 - Principal : diagnostic Windows, preuves matérielles et audit de la restauration,

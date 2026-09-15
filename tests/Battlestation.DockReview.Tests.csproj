@@ -21,6 +21,7 @@
     <Compile Include="../src/Battlestation/BluetoothSurface.cs"/>
     <Compile Include="../src/Battlestation/BluetoothIconLayout.cs"/>
     <Compile Include="../src/Battlestation/BluetoothDevices.cs"/>
+    <Compile Include="../src/Battlestation/BudsBattery.cs"/>
     <Resource Include="../assets/Fonts/art-deco.ttf" Link="Assets/Fonts/art-deco.ttf"/>
   </ItemGroup>
 </Project>

@@ -8,6 +8,9 @@ Douze blocs indépendants : horloge, météo, applications, lecteur, projets, te
 compteur Vice City, matériel, compteurs Codex, vidéo et audio. Le compteur Vice City peut être
 retiré sans toucher au reste.
 
+- **Applications** : cliquer une app déjà lancée réaffiche sa fenêtre existante,
+  en la restaurant si elle est réduite. Les clics rapprochés pendant le démarrage
+  ne lancent pas plusieurs instances.
 - Clic droit sur un bloc → **Réorganiser**. Glisser le bloc pour le déplacer,
   ou ses bords/coins pour le redimensionner. **Lier les docks**, dans la barre,
   active le redimensionnement partagé et la poussée des voisins. Cette liaison
@@ -40,6 +43,11 @@ retiré sans toucher au reste.
   La DualSense se déconnecte au clic et se reconnecte avec son bouton **PS**.
   Aucun pilote n'est désactivé et l'appariement est conservé. Le survol précise
   l'état et l'action ; un état indisponible n'est pas présenté comme déconnecté.
+  Le pourcentage de batterie apparaît sous le dessin si Windows le fournit et
+  que l'appareil est connecté ; les niveaux bas (20 % ou moins) sont ambrés.
+  Pour les Buds3 Pro, chaque écouteur a son pourcentage ; une mini-icône du
+  boîtier porte le troisième niveau. Les mesures Samsung sont relues toutes
+  les 30 secondes ; « — » signifie que le niveau n'est pas communiqué.
   Voir [le fonctionnement et les preuves Bluetooth](docs/BLUETOOTH.md).
   En mode **Réorganiser**, redimensionner le dock choisit automatiquement une
   ligne, une colonne ou une grille ; les quatre appareils restent visibles.

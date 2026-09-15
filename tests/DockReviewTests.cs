@@ -121,11 +121,12 @@ static class DockReviewTests
         Check(sixty==0,"Silence settles completely so repainting can stop");
         using var bluetooth=new BluetoothSurface(station){Width=488,Height=280};
         var rows=new BluetoothDevice?[]{
-            new("BTHENUM\\DEV_000000000001\\fixture-party","PARTYBTMS3",true,BluetoothKind.Speaker,null,1),
-            new("BTHENUM\\DEV_000000000002\\fixture-buds","Buds3 Pro de Ayo",false,BluetoothKind.Headphones,null,2),
+            new("BTHENUM\\DEV_000000000001\\fixture-party","PARTYBTMS3",true,BluetoothKind.Speaker,null,1,100),
+            new("BTHENUM\\DEV_000000000002\\fixture-buds","Buds3 Pro de Ayo",true,BluetoothKind.Headphones,null,2,17),
             new("BTHENUM\\DEV_000000000003\\fixture-controller","DualSense Wireless Controller",false,BluetoothKind.Controller,null,3),
             new("BTHENUM\\DEV_000000000004\\fixture-soundbar","[Samsung] Soundbar J-Series",null,BluetoothKind.Speaker,null,4)};
         typeof(BluetoothSurface).GetField("rows",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(bluetooth,rows);
+        typeof(BluetoothSurface).GetField("budsBattery",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(bluetooth,new BudsBattery(74,71,25));
         typeof(BluetoothSurface).GetMethod("RefreshState",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(bluetooth,null);
         Thread.Sleep(280);
         Render(bluetooth,Path.Combine(output,"bluetooth.png"));

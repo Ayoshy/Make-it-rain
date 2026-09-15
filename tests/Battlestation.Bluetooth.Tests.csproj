@@ -10,5 +10,6 @@
   <ItemGroup>
     <Compile Include="BluetoothTests.cs" />
     <Compile Include="../src/Battlestation/BluetoothDevices.cs" />
+    <Compile Include="../src/Battlestation/BudsBattery.cs" />
   </ItemGroup>
 </Project>

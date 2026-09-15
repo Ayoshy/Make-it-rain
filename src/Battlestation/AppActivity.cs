@@ -17,7 +17,7 @@ internal enum AppActivityState
 }
 
 /// <summary>A process view used by the detector. It deliberately contains no command line.</summary>
-internal sealed record AppProcessSnapshot(string Name, string? Path, bool PathAccessible = true)
+internal sealed record AppProcessSnapshot(string Name, string? Path, bool PathAccessible = true, int Pid = 0)
 {
     internal string ProcessName
     {
@@ -139,10 +139,17 @@ internal static class AppActivity
                 if (!candidates.Contains(NormalizeProcessName(name))) continue;
 
                 var path = TryGetProcessPath(process.Id, out var accessible);
-                found.Add(new AppProcessSnapshot(name, path, accessible));
+                found.Add(new AppProcessSnapshot(name, path, accessible, process.Id));
             }
         }
         return found.ToArray();
+    }
+
+    internal static IReadOnlyList<AppProcessSnapshot> RunningProcesses(DockApp app)
+    {
+        var resolved = Resolve(app);
+        return CaptureProcesses(resolved.Rule.CandidateNames)
+            .Where(process => resolved.Evaluate([process]).State == AppActivityState.Running).ToArray();
     }
 
     static ResolvedApp Resolve(DockApp app)

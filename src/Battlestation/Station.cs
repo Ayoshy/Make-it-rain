@@ -93,7 +93,8 @@ internal sealed class Station : IDisposable
     }
     public double N(string metric)=>double.TryParse(M(metric).TrimEnd('%','°','W',' '),NumberStyles.Float,CultureInfo.InvariantCulture,out var n)?n:double.NaN;
     public void Command(string command){try{Backend.Command(command);Error="";}catch(Exception e){Error=e.Message;}}
-    public void Launch(DockApp app){try{Process.Start(new ProcessStartInfo(Environment.ExpandEnvironmentVariables(app.Path)){UseShellExecute=true});Error="";}catch(Exception e){Error=e.Message;}}
+    readonly AppLauncher launcher=new();
+    public void Launch(DockApp app){try{launcher.Open(app);Error="";}catch(Exception e){Error=e.Message;}}
     public void SaveApps(List<DockApp> apps)
     {
         if(apps.Count>12||apps.Any(a=>string.IsNullOrWhiteSpace(a.Name)||string.IsNullOrWhiteSpace(a.Path)))throw new ArgumentException("Le dock accepte jusqu’à 12 applications nommées.");

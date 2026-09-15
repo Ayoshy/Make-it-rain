@@ -170,6 +170,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
         if(command=="terminal-tabs-inspect")return JsonSerializer.Serialize(station.Terminal?.InspectTabMetadata());
         if(command=="audio-inspect"){((AudioSurface)surfaces["audio"]).Mixer.Poll();return JsonSerializer.Serialize(new{mixer=((AudioSurface)surfaces["audio"]).Mixer,spectrum=new{((DeskSurface)surfaces["music"]).Audio.Running,((DeskSurface)surfaces["music"]).Audio.DeviceId,((DeskSurface)surfaces["music"]).Audio.Error,bands=((DeskSurface)surfaces["music"]).Audio.Bands},reactive=station.ReactiveAudio,intensity=station.AudioIntensity});}
         if(command=="video-inspect")return JsonSerializer.Serialize(((VideoSurface)surfaces["video"]).Inspect());
+        if(command=="bluetooth-inspect")return JsonSerializer.Serialize(((BluetoothSurface)surfaces["bluetooth"]).Inspect());
         if(command=="apps-inspect")return JsonSerializer.Serialize(((DockSurface)surfaces["apps"]).InspectActivity());
         if(command.StartsWith("gpu-settings:"))
         {

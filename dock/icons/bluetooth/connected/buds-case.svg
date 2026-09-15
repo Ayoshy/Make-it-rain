@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 128 128"><title>buds-case — connected</title><defs><linearGradient id="material" x1="0" y1="0" x2="0.85" y2="1">
+      <stop stop-color="#ff5dbb" /><stop offset=".38" stop-color="#d96eff" />
+      <stop offset=".76" stop-color="#987bff" /><stop offset="1" stop-color="#63ddec" />
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#ffd1ef" /><stop offset="1" stop-color="#a9f8ff" />
+    </linearGradient>
+    <pattern id="mesh" width=".6" height=".6" patternUnits="userSpaceOnUse"><circle cx=".3" cy=".3" r=".075" fill="#241e2e" opacity=".55" /></pattern><filter id="running-halo" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation=".55" /></filter></defs><g transform="translate(22 22) scale(3.5)"><g fill="url(#material)" stroke="url(#edge)" stroke-width=".25" stroke-linejoin="round" filter="url(#running-halo)" opacity=".28">
+  <path d="M3 10V7.8C3 4.8 5.2 3.5 8 3.5H16C18.8 3.5 21 4.8 21 7.8V10Z" fill-opacity=".4" />
+  <path d="M3 9H21V15.5C21 18.7 18.5 20.5 15.5 20.5H8.5C5.5 20.5 3 18.7 3 15.5Z" />
+ </g>
+ <g id="body" fill="url(#material)" stroke="url(#edge)" stroke-width=".25" stroke-linejoin="round">
+  <path d="M3 10V7.8C3 4.8 5.2 3.5 8 3.5H16C18.8 3.5 21 4.8 21 7.8V10Z" fill-opacity=".4" />
+  <path d="M3 9H21V15.5C21 18.7 18.5 20.5 15.5 20.5H8.5C5.5 20.5 3 18.7 3 15.5Z" />
+ </g>
+ <path d="M4.5 7.5C5 5.5 6.5 5 8.5 5H15.5C17.5 5 19 5.5 19.5 7.5" fill="none" stroke="url(#edge)" stroke-width=".22" opacity=".8" />
+ <path d="M3.5 10H20.5" stroke="#393143" stroke-width=".22" opacity=".7" />
+ <rect x="11.1" y="15.2" width="1.8" height=".6" rx=".3" fill="#AFFFE7" />
+</g></svg>

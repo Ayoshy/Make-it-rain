@@ -12,8 +12,10 @@ internal sealed record BluetoothDevice(
     bool? Connected,
     BluetoothKind Kind,
     Guid? ContainerId,
-    ulong Address)
+    ulong Address,
+    int? BatteryPercent=null)
 {
+    internal int? CurrentBatteryPercent=>Connected==true&&BatteryPercent is >=0 and <=100?BatteryPercent:null;
 }
 
 internal enum BluetoothMutationStatus { Confirmed,NativeError,Cancelled,TargetMissing,InvalidTarget,UnsupportedState,Unconfirmed }
@@ -39,6 +41,8 @@ internal sealed class BluetoothDevices
     const uint Present=2,AllClasses=4,FriendlyName=12,Description=0,DevPropTypeGuid=0x0000000D;
     static readonly Guid BluetoothClass=new("e0cbf06c-cd8b-4647-bb8a-263b43f0f974");
     static readonly DevPropKey ContainerKey=new(new Guid("8c7ed206-3f8a-4827-b3ab-ae9e1faefc6c"),2);
+    // Windows Bluetooth battery property, also exposed on Hands-Free service nodes.
+    static readonly DevPropKey BatteryKey=new(new Guid("104ea319-6ee2-4701-bd47-8ddbf425bbe5"),2);
     static readonly TimeSpan ConfirmationTimeout=TimeSpan.FromSeconds(15);
 
     sealed class Candidate
@@ -53,6 +57,7 @@ internal sealed class BluetoothDevices
     {
         var connections=ReadConnections();
         var grouped=new Dictionary<ulong,Candidate>();
+        var batteries=new Dictionary<Guid,int>();
         var bluetoothClass=BluetoothClass;
         var set=SetupDiGetClassDevs(ref bluetoothClass,"BTHENUM",0,Present|AllClasses);
         if(set==Invalid)throw new BluetoothScanException("Bluetooth enumeration unavailable",Marshal.GetLastWin32Error());
@@ -71,9 +76,11 @@ internal sealed class BluetoothDevices
                 if(id is null)throw new BluetoothScanException("Bluetooth device identity unavailable",identityError);
                 if(id.StartsWith("BTHENUM\\DEV_",StringComparison.OrdinalIgnoreCase)&&!TryGetRemoteAddress(id,out _))
                     throw new BluetoothScanException("Malformed Bluetooth device identity",13);
+                var container=ContainerId(set,ref info);
+                if(container is Guid batteryContainer&&BatteryPercent(set,ref info) is int percent)
+                    batteries[batteryContainer]=batteries.TryGetValue(batteryContainer,out int previous)?Math.Min(previous,percent):percent;
                 if(!TryGetRemoteAddress(id,out ulong address)||!connections.ContainsKey(address))continue;
                 string name=Property(set,ref info,FriendlyName)??Property(set,ref info,Description)??"Bluetooth";
-                var container=ContainerId(set,ref info);
                 if(!grouped.TryGetValue(address,out var candidate))
                     grouped[address]=new Candidate(id!,name,container);
                 else
@@ -86,7 +93,8 @@ internal sealed class BluetoothDevices
         }
         finally{SetupDiDestroyDeviceInfoList(set);}
         return grouped.OrderBy(x=>x.Value.Name,StringComparer.CurrentCultureIgnoreCase)
-            .Select(x=>new BluetoothDevice(x.Value.Id,x.Value.Name,connections[x.Key],GuessKind(x.Value.Name),x.Value.ContainerId,x.Key))
+            .Select(x=>new BluetoothDevice(x.Value.Id,x.Value.Name,connections[x.Key],GuessKind(x.Value.Name),x.Value.ContainerId,x.Key,
+                connections[x.Key]&&x.Value.ContainerId is Guid container&&batteries.TryGetValue(container,out int battery)?battery:null))
             .ToArray();
     }
 
@@ -215,6 +223,19 @@ internal sealed class BluetoothDevices
         {
             if(!SetupDiGetDeviceProperty(set,ref info,ref key,out uint type,buffer,16,out uint required,0)||type!=DevPropTypeGuid||required<16)return null;
             var value=Marshal.PtrToStructure<Guid>(buffer);return value==Guid.Empty?null:value;
+        }
+        finally{Marshal.FreeHGlobal(buffer);}
+    }
+
+    internal static int? DecodeBattery(uint type,uint size,byte value)=>type==3&&size==1&&value<=100?value:null;
+
+    static int? BatteryPercent(nint set,ref DeviceInfo info)
+    {
+        var key=BatteryKey;var buffer=Marshal.AllocHGlobal(1);
+        try
+        {
+            return SetupDiGetDeviceProperty(set,ref info,ref key,out uint type,buffer,1,out uint size,0)
+                ?DecodeBattery(type,size,Marshal.ReadByte(buffer)):null;
         }
         finally{Marshal.FreeHGlobal(buffer);}
     }

@@ -21,6 +21,10 @@ internal sealed class BluetoothSurface : Surface,IDisposable
     CancellationTokenSource? actionCancellation;
     readonly DispatcherTimer busyTimer;
     string error="",scanError="";
+    BudsBattery? budsBattery;
+    bool readingBuds;
+    Task<BudsBattery?>? budsReadTask;
+    long nextBudsRead,budsGeneration;
 
     public BluetoothSurface(Station station):base(station,12)
     {
@@ -40,7 +44,7 @@ internal sealed class BluetoothSurface : Surface,IDisposable
             if(disposed||changing||generation!=scanGeneration)return;
             rows=Favorites.Select(want=>found.FirstOrDefault(row=>string.Equals(row.Name,want,StringComparison.OrdinalIgnoreCase))).ToArray();
             if(waitingForController&&errorTarget>=0&&rows[errorTarget]?.Connected==true){waitingForController=false;error="";}
-            stateCurrent=true;scanError="";RefreshState();
+            stateCurrent=true;scanError="";RefreshState();PollBuds();
         }
         catch(BluetoothScanException e)
         {
@@ -56,6 +60,25 @@ internal sealed class BluetoothSurface : Surface,IDisposable
         }
     }
 
+    async void PollBuds()
+    {
+        if(disposed||readingBuds||changing||rows[1]?.Connected!=true||Environment.TickCount64<nextBudsRead)return;
+        var target=rows[1]!;long generation=budsGeneration;
+        readingBuds=true;nextBudsRead=Environment.TickCount64+30000;
+        try
+        {
+            budsReadTask=Task.Run(()=>BudsBattery.Read(target.Address));
+            var battery=await budsReadTask;
+            if(!disposed&&generation==budsGeneration&&rows[1]?.Address==target.Address&&rows[1]?.Connected==true)
+            {budsBattery=battery;RefreshState();}
+        }
+        catch(Exception)
+        {
+            if(!disposed&&generation==budsGeneration){budsBattery=null;RefreshState();}
+        }
+        finally{readingBuds=false;budsReadTask=null;}
+    }
+
     protected override void Paint()
     {
         SyncMaterials();
@@ -67,7 +90,8 @@ internal sealed class BluetoothSurface : Surface,IDisposable
             if(hover)D.DrawEllipse(B("#16DACDEC"),null,new Point(x,y+rect.Height*.3),rect.Width*.37,rect.Height*.065);
             double size=rect.Width*1.38*(hover?1.07:1);
             D.PushOpacity(busy?.72:row?.Connected is null?.6:1);
-            DrawDevice(i,x,y-(hover?2:0),size,MaterialAmount(i));D.Pop();
+            bool detailed=i==1&&row?.Connected==true;
+            DrawDevice(i,x,y-(hover?2:0)-(detailed?rect.Height*.12:0),size*(detailed?.82:1),MaterialAmount(i));D.Pop();
             if(busy)
             {
                 for(int dot=0;dot<3;dot++)
@@ -78,6 +102,10 @@ internal sealed class BluetoothSurface : Surface,IDisposable
             }
             else if(row?.Connected is null)
                 D.DrawEllipse(null,new Pen(B("#D7BB88"),1),new Point(x,y+rect.Height*.43),3,3);
+            else if(detailed)DrawBudsBattery(rect);
+            else if(row.CurrentBatteryPercent is int battery)
+                Text($"{battery} %",x,y+rect.Height*.31,Math.Clamp(rect.Width*.085,6,9),
+                    battery<=20?"#F4BD8C":"#DBE9F5",align:"center",bold:true);
             int index=i;
             if(!changing&&!scanning&&stateCurrent)Hit("BluetoothToggle:"+i,rect.X,rect.Y,rect.Width,rect.Height,()=>Toggle(index));
         }
@@ -87,6 +115,20 @@ internal sealed class BluetoothSurface : Surface,IDisposable
             string label=Width>=240?message:scanError!=""?"Indisponible":message.Contains("PS")?"Appuyez sur PS":"Échec";
             Text(label,Width/2,Height-18,8,"#E8B5C8",align:"center",width:Width-24);
         }
+    }
+
+    void DrawBudsBattery(Rect rect)
+    {
+        double x=rect.X+rect.Width/2,y=rect.Y+rect.Height/2;
+        double font=Math.Clamp(rect.Width*.075,5.5,8.5);
+        void Level(int? value,double cx,double top)=>Text(value is int percent?$"{percent} %":"—",cx,top,font,
+            value is <=20?"#F4BD8C":value is null?"#A89BB5":"#DBE9F5",align:"center",bold:true);
+        Level(budsBattery?.Left,x-rect.Width*.23,y+rect.Height*.16);
+        Level(budsBattery?.Right,x+rect.Width*.23,y+rect.Height*.16);
+        double icon=Math.Clamp(rect.Width*.3,14,32),caseY=y+rect.Height*.42;
+        string path=Path.Combine(Station.Root,"dock/icons/bluetooth",budsBattery?.Case is null?"pearl":"connected","buds-case.png");
+        Image(path,x-rect.Width*.16-icon/2,caseY-icon/2+font*.8,icon,icon);
+        Level(budsBattery?.Case,x+rect.Width*.13,caseY);
     }
 
     Rect[] Slots()=>BluetoothIconLayout.Arrange(Width,Height);
@@ -112,7 +154,12 @@ internal sealed class BluetoothSurface : Surface,IDisposable
         Refresh();
         if(!changing&&materialSince.All(since=>Environment.TickCount64-since>=260))busyTimer.Stop();
     }
-    void RefreshState(){SyncMaterials();UpdateToolTip();Refresh();}
+    void RefreshState()
+    {
+        if(!stateCurrent||rows[1]?.Connected!=true||changing&&changingTarget==1)
+        {budsBattery=null;nextBudsRead=0;budsGeneration++;}
+        SyncMaterials();UpdateToolTip();Refresh();
+    }
     protected override void OnPointer(MouseEventArgs e)=>UpdateToolTip();
     void UpdateToolTip()
     {
@@ -129,7 +176,14 @@ internal sealed class BluetoothSurface : Surface,IDisposable
         string link=row?.Connected switch {true=>"Connecté",false=>"Déconnecté",_=>"Connexion inconnue"};
         string action=row?.Connected switch {true=>"Cliquer pour déconnecter",false=>"Cliquer pour connecter",_=>"Ouvrir les réglages Bluetooth"};
         if(row?.Kind==BluetoothKind.Controller&&row.Connected==false)action="Appuyez sur PS pour connecter";
-        ToolTip=$"{Favorites[index]} · {link}\n{action}";
+        string battery=row?.CurrentBatteryPercent is int percent?$" · Batterie {percent} %":row?.Connected==true?" · Batterie non communiquée":"";
+        if(index==1&&row?.Connected==true)
+        {
+            string Level(int? value)=>value is int level?$"{level} %":"non communiqué";
+            battery=$"\nGauche : {Level(budsBattery?.Left)} · Droite : {Level(budsBattery?.Right)}\nBoîtier : {Level(budsBattery?.Case)}";
+            if(budsBattery is null&&row.CurrentBatteryPercent is int windows)battery+=$"\nNiveau global Windows : {windows} %";
+        }
+        ToolTip=$"{Favorites[index]} · {link}{battery}\n{action}";
         if(index==errorTarget&&error!="")ToolTip+="\n"+error;
     }
 
@@ -143,11 +197,15 @@ internal sealed class BluetoothSurface : Surface,IDisposable
         changing=true;changingTarget=index;changingDesired=!row.Connected.Value;scanGeneration++;error="";actionCancellation=new CancellationTokenSource();busyTimer.Start();RefreshState();
         try
         {
+            // Let the bounded passive read release its RFCOMM socket before a
+            // requested disconnect, so an in-flight connect cannot undo the click.
+            if(index==1&&budsReadTask is {} pending){try{await pending;}catch{}}
+            if(disposed)return;
             var result=await Task.Run(()=>devices.SetConnected(row,changingDesired,actionCancellation.Token));
             if(disposed)return;
             error=ResultError(result,row.Kind==BluetoothKind.Controller);
             if(result.ConfirmedConnected is bool actual&&rows[index] is BluetoothDevice current&&string.Equals(current.Id,row.Id,StringComparison.OrdinalIgnoreCase))
-                rows=rows.Select((item,itemIndex)=>itemIndex==index?current with{Connected=actual}:item).ToArray();
+                rows=rows.Select((item,itemIndex)=>itemIndex==index?current with{Connected=actual,BatteryPercent=null}:item).ToArray();
         }
         catch(Exception e){if(!disposed)error=$"Commande Bluetooth indisponible ({e.GetType().Name})";}
         finally
@@ -177,5 +235,6 @@ internal sealed class BluetoothSurface : Surface,IDisposable
         if(connected>0)Image(Path.Combine(root,"connected",Artwork[index]+".png"),x-size/2,y-size/2,size,size,connected);
     }
     static void Manage()=>System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:bluetooth"){UseShellExecute=true});
+    internal object Inspect()=>new{devices=rows.Select(row=>new{row?.Name,row?.Connected,row?.CurrentBatteryPercent}),budsBattery,readingBuds};
     public void Dispose(){disposed=true;actionCancellation?.Cancel();busyTimer.Stop();}
 }
