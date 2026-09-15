@@ -1,23 +1,21 @@
 # Vice City Neon
 
-Bibliothèque locale : Steam, Brave, Discord, Stremio et League of Legends.
+Bibliothèque locale : Steam, Brave, Discord, Stremio, League of Legends, Codex
+(marque OpenAI), Claude Code (marque Claude), Edge, Chrome, qBittorrent et Battle.net.
 Chaque icône existe en SVG éditable et PNG transparent de 192 × 192 dans `neon/`.
 Les silhouettes restent reconnaissables et partagent les mêmes proportions,
 ton nacré légèrement mauve/cyan, liseré clair et halo très réduit. Cette révision
 remplace le premier dégradé rose jugé trop appuyé. Le dock utilise directement les PNG.
 
 La sélection se fait par le nom de l'application normalisé : « League of Legends »
-→ `leagueoflegends.png`. Un champ optionnel `"icon": "steam"` dans `dock/apps.json`
-permet de choisir explicitement une icône, indépendamment du libellé.
+→ `leagueoflegends.png`.
 Une application sans variante néon utilise son icône Windows habituelle.
 
 Pour étendre la famille, ajouter une silhouette SVG de viewBox 0 0 24 24 dans
-`source/`, ajouter son identifiant à `NAMES` dans le générateur puis exécuter :
+`source/`, puis exécuter depuis la racine (resvg-py doit être installé) :
 
 ```powershell
-python -m pip install resvg-py
-Les assets PNG sont fournis dans ce dossier.
-.\scripts\Install-Dock.ps1
+python scripts/Build-DockIcons.py chrome edge battlenet qbittorrent claudecode codex
 ```
 
 Le générateur centralise la palette et le style. Aucun générateur ni téléchargement
@@ -26,4 +24,11 @@ ne tourne avec le dock. SVG et PNG sont conservés dans le dépôt.
 Silhouettes : [Simple Icons](https://github.com/simple-icons/simple-icons), fichiers
 `icons/steam.svg`, `brave.svg`, `discord.svg`, `stremio.svg`, `leagueoflegends.svg`,
 récupérés le 13 septembre 2026. Licence du projet conservée dans `source/LICENSE.md`.
-La déclinaison néon est produite localement par le générateur artistique initial, archivé avec les sources historiques.
+Les six nouvelles silhouettes proviennent de Simple Icons 13.21.0, sauf Edge
+(11.15.0). Elles ont été récupérées le 15 septembre 2026. Les fichiers source
+restent inchangés ; `scripts/Build-DockIcons.py` produit leur déclinaison nacrée.
+Les cinq premières icônes conservent leur rendu existant.
+
+Spotify utilise également la silhouette Simple Icons 13.21.0, récupérée le
+15 septembre 2026, et les mêmes générateurs nacré et Vice City.
+`python scripts/Build-RunningDockIcons.py spotify` produit uniquement sa variante active.

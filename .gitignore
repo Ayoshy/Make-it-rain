@@ -13,3 +13,10 @@ private/
 **/__pycache__/
 node_modules/
 .worktrees/
+
+# Native compiler outputs accidentally emitted at the repository root.
+/*.obj
+/*.exp
+/*.lib
+# Local icon comparison renders; runtime icons remain versioned.
+/dock/icons/neon/*-preview.png

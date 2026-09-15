@@ -2,7 +2,7 @@
 let port,worker,epoch='';
 addEventListener('message',event=>{
   const origin=chrome.runtime.getURL('').replace(/\/$/,'');
-  if(port||event.source!==parent||!['https://www.youtube.com',origin].includes(event.origin)||event.data?.type!=='battlestation-video-port'||event.ports.length!==1)return;
+  if(port||event.source!==parent||!["https://www.youtube.com","https://www.twitch.tv","https://clips.twitch.tv",origin].includes(event.origin)||event.data?.type!=='battlestation-video-port'||event.ports.length!==1)return;
   port=event.ports[0];epoch=event.data.captureId;
   try{
     worker=new Worker('video-worker.js');

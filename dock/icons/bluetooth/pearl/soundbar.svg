@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 128 128"><title>soundbar — pearl</title><defs><linearGradient id="material" x1="0" y1="0" x2="0.85" y2="1">
+      <stop stop-color="#e2dce9" /><stop offset=".38" stop-color="#cbc3d6" />
+      <stop offset=".76" stop-color="#b1acc7" /><stop offset="1" stop-color="#a0bfc9" />
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#efdfeb" /><stop offset="1" stop-color="#bad7dc" />
+    </linearGradient>
+    <pattern id="mesh" width=".6" height=".6" patternUnits="userSpaceOnUse"><circle cx=".3" cy=".3" r=".075" fill="#241e2e" opacity=".55" /></pattern></defs><g transform="translate(22 22) scale(3.5)"><g id="body" fill="url(#material)" stroke="url(#edge)" stroke-width=".15" stroke-linejoin="round">
+  <path d="M2 9.3H22C22.6 9.3 23 9.8 23 10.5V14C23 14.7 22.6 15.1 22 15.1H2C1.4 15.1 1 14.7 1 14V10.5C1 9.8 1.4 9.3 2 9.3Z" />
+ </g>
+ <path d="M2 10.7H22V14.15H2Z" fill="url(#mesh)" />
+ <path d="M1.3 10.4H22.7M2.6 10.65V14.3M21.4 10.65V14.3" stroke="#554960" stroke-width=".18" opacity=".7" />
+ <path d="M11.25 12.25H12.75V12.8H11.25Z" fill="#2d2439" /><path d="M11.55 12.52H12.45" stroke="url(#edge)" stroke-width=".13" />
+ <path d="M4.4 9.8H5M5.5 9.8H6.1M6.6 9.8H7.2" stroke="url(#edge)" stroke-width=".14" stroke-linecap="round" />
+ <path d="M2.5 14.75H21.5" stroke="url(#edge)" stroke-width=".12" opacity=".7" />
+</g></svg>

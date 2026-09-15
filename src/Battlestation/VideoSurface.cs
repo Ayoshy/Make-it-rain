@@ -28,7 +28,7 @@ internal sealed class VideoSurface : Surface,IDisposable
         preferences=Path.Combine(station.Data,"video.json");
         browser.FrameAvailable+=BrowserFrame;
         capture.FrameAvailable+=BrowserFrame;
-        try {if(File.Exists(preferences)){var saved=JsonSerializer.Deserialize<string>(File.ReadAllText(preferences));if(saved is "auto" or "youtube" or "stremio")mode=saved;}}catch(JsonException){}
+        try {if(File.Exists(preferences)){var saved=JsonSerializer.Deserialize<string>(File.ReadAllText(preferences));if(saved is "auto" or "youtube" or "twitch" or "stremio")mode=saved;}}catch(JsonException){}
         timer=new DispatcherTimer(TimeSpan.FromMilliseconds(1000),DispatcherPriority.Background,(_,_)=>Update(),Dispatcher);timer.Stop();
     }
     void BrowserFrame()
@@ -52,17 +52,12 @@ internal sealed class VideoSurface : Surface,IDisposable
     public void StopMirror(){armed=false;Release();nextScan=0;Update();}
     public void Select(string value)
     {
-        if(value is not ("auto" or "youtube" or "stremio"))throw new ArgumentException("Source vidéo inconnue");
+        if(value is not ("auto" or "youtube" or "twitch" or "stremio"))throw new ArgumentException("Source vidéo inconnue");
         mode=value;lease?.ProtectFocusTransition();DesktopSettings.Write(preferences,JsonSerializer.Serialize(mode));nextScan=0;Update();
     }
     string Resolve(BrowserVideoState web)
     {
-        if(mode!="auto")return mode;
-        bool youtube=web.Connected&&web.Tabs.Any(t=>t.Ready);
-        if(stremio?.Foreground==true)return "stremio";
-        if(youtube&&VideoSources.BraveForeground())return "youtube";
-        if(kind=="youtube"&&youtube||kind=="stremio"&&stremio is not null)return kind;
-        return youtube?"youtube":stremio is not null?"stremio":"";
+        return VideoSelection.Resolve(mode,web,VideoSources.BraveForeground(),stremio?.Foreground==true,stremio is not null,kind);
     }
     void Update()
     {
@@ -82,7 +77,7 @@ internal sealed class VideoSurface : Surface,IDisposable
         if(source is not null&&(!Native.IsWindow(source.Handle)||!Native.IsWindowVisible(source.Handle))){Release();nextScan=0;}
         bool fresh=kind=="stremio"&&capture.Read();
         if(kind=="stremio"&&capture.Age>1500&&controls.Playing==true)lease?.ParkForMirror();
-        if(kind=="youtube"){web=browser.State;fresh=web.Frames!=lastBrowserFrame;lastBrowserFrame=web.Frames;}
+        if(VideoSelection.IsBrowserKind(kind)){web=browser.State;fresh=web.Frames!=lastBrowserFrame;lastBrowserFrame=web.Frames;}
         if(capture.Error<0){lease?.Dispose();lease=null;}
         timer.Interval=TimeSpan.FromMilliseconds(1000);if(fresh||scanned)Refresh();
     }
@@ -95,14 +90,12 @@ internal sealed class VideoSurface : Surface,IDisposable
     }
     void Reconcile(BrowserVideoState web)
     {
-        if(wanted=="youtube")
+        if(VideoSelection.IsBrowserKind(wanted))
         {
-            var tabs=web.Tabs.Where(t=>t.Ready).ToArray();
-            var tab=VideoSources.BraveForeground()?tabs.FirstOrDefault(t=>t.Active):tabs.FirstOrDefault(t=>t.Id==web.TabId);
-            tab??=tabs.OrderByDescending(t=>t.Playing).ThenByDescending(t=>t.Used).FirstOrDefault();
+            var tab=VideoSelection.SelectBrowserTab(web,wanted,VideoSources.BraveForeground());
             if(!web.Connected||tab is null){if(kind!="")Release(true);return;}
-            if(kind!="youtube"||web.TabId!=tab.Id){Release(true);kind="youtube";browser.Start(tab.Id);nextBrowserRetry=Environment.TickCount64+5000;}
-            else if(web.Error!=""&&web.Error!="play-blocked"&&Environment.TickCount64>=nextBrowserRetry){browser.Start(tab.Id,true);nextBrowserRetry=Environment.TickCount64+5000;}
+            if(kind!=wanted||web.TabId!=tab.Id||web.Kind!=wanted){Release(true);kind=wanted;browser.Start(tab.Id,wanted);nextBrowserRetry=Environment.TickCount64+5000;}
+            else if(web.Error!=""&&web.Error!="play-blocked"&&Environment.TickCount64>=nextBrowserRetry){browser.Start(tab.Id,wanted,true);nextBrowserRetry=Environment.TickCount64+5000;}
         }
         else if(wanted=="stremio"&&stremio is not null)
         {
@@ -124,7 +117,7 @@ internal sealed class VideoSurface : Surface,IDisposable
     public async void TogglePlayback()
     {
         if(!armed||Picture is null){StartMirror();return;}
-        if(kind=="youtube"){browser.Toggle();return;}
+        if(VideoSelection.IsBrowserKind(kind)){browser.Toggle();return;}
         if(source is null||transportBusy)return;
         var target=source;transportBusy=true;lease?.ProtectFocusTransition();
         try{bool sent=await Task.Run(()=>StremioControls.Toggle(target));if(!disposed){transportError=sent?"":"Commande indisponible";nextScan=0;Update();}}
@@ -132,36 +125,39 @@ internal sealed class VideoSurface : Surface,IDisposable
     }
     void ReturnToSource()
     {
-        if(kind=="youtube"){browser.Focus();return;}
+        if(VideoSelection.IsBrowserKind(kind)){browser.Focus();return;}
         if(lease is not null){lease.Reveal();return;}
         var target=source??stremio;if(target is null||!Native.IsWindow(target.Handle))return;
         Native.GetWindowThreadProcessId(target.Handle,out uint pid);if(pid!=target.Pid)return;
         if(VideoSources.IsIconic(target.Handle))Native.ShowWindow(target.Handle,9);
         Native.SetForegroundWindow(target.Handle);
     }
-    BitmapSource? Picture=>kind=="youtube"?browser.State.Image:capture.Error==0?capture.Image:null;
-    bool? Playing=>kind=="youtube"?browser.State.Playing:kind=="stremio"?controls.Playing:null;
+    BitmapSource? Picture=>VideoSelection.IsBrowserKind(kind)?browser.State.Image:capture.Error==0?capture.Image:null;
+    bool? Playing=>VideoSelection.IsBrowserKind(kind)?browser.State.Playing:kind=="stremio"?controls.Playing:null;
     public object Inspect()
     {
         var web=browser.State;
         return new{mode,visible,armed,kind,wanted,sourceHwnd=(long)(source?.Handle??0),sourcePid=source?.Pid,maintaining=lease?.Maintaining==true,nativeFrames=capture.Frames,nativeWidth=capture.Image?.PixelWidth,nativeHeight=capture.Image?.PixelHeight,nativeAgeMs=capture.Age,nativeError=capture.Error,
-            browser=new{web.Connected,web.TabId,web.Frames,drawnFrames=browserDrawn,web.DecodedFrames,web.EncodeMs,web.Visibility,web.Version,web.Diagnostic,width=web.Image?.PixelWidth,height=web.Image?.PixelHeight,frameAgeMs=web.LastFrame==0?(long?)null:Environment.TickCount64-web.LastFrame,web.Playing,web.Error,available=web.Tabs.Count(t=>t.Ready)},playing=Playing,transportError};
+            browser=new{web.Connected,web.Kind,web.TabId,web.Frames,drawnFrames=browserDrawn,web.DecodedFrames,web.EncodeMs,web.Visibility,web.Version,web.Diagnostic,width=web.Image?.PixelWidth,height=web.Image?.PixelHeight,frameAgeMs=web.LastFrame==0?(long?)null:Environment.TickCount64-web.LastFrame,web.Playing,web.Error,available=web.Tabs.Count(t=>t.Ready)},playing=Playing,transportError};
     }
     protected override void Paint()
     {
         double w=ActualWidth>0?ActualWidth:576,h=ActualHeight>0?ActualHeight:372;
-        Header("VIDÉO");double x=92;
-        foreach(var (key,label,width) in new[]{("auto","Auto",54d),("youtube","YouTube",72d),("stremio","Stremio",72d)})
+        Header("VIDÉO");
+        var compact=w<590;double sourceY=compact?10:12,sourceHeight=compact?28:32,sourceSize=compact?9:10;
+        var sources=compact?new[]{("auto","Auto",48d),("youtube","YouTube",70d),("twitch","Twitch",60d),("stremio","Stremio",68d)}:new[]{("auto","Auto",54d),("youtube","YouTube",72d),("twitch","Twitch",64d),("stremio","Stremio",72d)};
+        double sourceX=compact?72:92;
+        foreach(var (key,label,width) in sources)
         {
-            string chosen=key;Button("VideoSource:"+key,label,x,12,width,32,()=>Select(chosen),10,mode==key?"#F6EFFF":Muted);
-            if(mode==key)Line(x+16,43,x+width-16,43,"#CFB6E3",2);x+=width+8;
+            string chosen=key;Button("VideoSource:"+key,label,sourceX,sourceY,width,sourceHeight,()=>Select(chosen),sourceSize,mode==key?"#F6EFFF":Muted);
+            if(mode==key)Line(sourceX+12,sourceY+sourceHeight+1,sourceX+width-12,sourceY+sourceHeight+1,"#CFB6E3",2);sourceX+=width+(compact?4:8);
         }
         if(armed)Button("VideoStop","■",w-100,12,32,32,StopMirror,10);
         if(kind!="")Button("VideoReturn","↗",w-58,12,34,32,ReturnToSource,15);
         var screen=new Rect(12,56,w-24,h-68);D.PushClip(new RectangleGeometry(screen,16,16));D.DrawRectangle(B("#FF100E16"),null,screen);
         if(Picture is {} picture)
         {
-            if(kind=="youtube"){long frame=browser.State.Frames;if(frame!=lastDrawn){lastDrawn=frame;browserDrawn++;}}
+            if(VideoSelection.IsBrowserKind(kind)){long frame=browser.State.Frames;if(frame!=lastDrawn){lastDrawn=frame;browserDrawn++;}}
             double scale=Math.Min(screen.Width/picture.PixelWidth,screen.Height/picture.PixelHeight);
             var bounds=new Rect(screen.X+(screen.Width-picture.PixelWidth*scale)/2,screen.Y+(screen.Height-picture.PixelHeight*scale)/2,picture.PixelWidth*scale,picture.PixelHeight*scale);D.DrawImage(picture,bounds);
             if(screen.Contains(Pointer)||Playing==false){Box(w/2-27,screen.Y+screen.Height/2-27,54,54,"#A0282032","#60EEE4FF",27);Text(Playing==false?"▶":"Ⅱ",w/2,screen.Y+screen.Height/2-17,19,"#F8F2FF",align:"center");}
@@ -172,7 +168,7 @@ internal sealed class VideoSurface : Surface,IDisposable
         else
         {
             var web=browser.State;
-            string text=!armed?"Activer le miroir":wanted=="youtube"&&!web.Connected?"Brave non connecté":wanted=="youtube"&&web.Error!=""?"Capture YouTube indisponible":wanted==""?"Ouvrir une vidéo":capture.Error<0?"Capture indisponible":"En attente du lecteur";
+            string text=!armed?"Activer le miroir":VideoSelection.IsBrowserKind(wanted)&&!web.Connected?"Brave non connecté":wanted=="youtube"&&web.Error!=""?"Capture YouTube indisponible":wanted=="twitch"&&web.Error!=""?"Capture Twitch indisponible":wanted==""?"Ouvrir une vidéo":capture.Error<0?"Capture indisponible":"En attente du lecteur";
             Text("▷",w/2,screen.Y+screen.Height/2-52,30,"#CBBFDA",align:"center");Text(text,w/2,screen.Y+screen.Height/2+8,12,Ink,align:"center");
             Hit("VideoStart",screen.X,screen.Y,screen.Width,screen.Height,StartMirror);
         }

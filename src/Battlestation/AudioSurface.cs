@@ -12,10 +12,32 @@ internal sealed class AudioSurface : Surface,IDisposable
     bool dragging;
     float dragVolume;
     (Rect Bounds,string? Key) drag;
-    internal AudioSurface(Station station):base(station,10){Width=720;Height=336;Mixer.Poll();}
+    readonly Dictionary<string,float> levels=[];
+    bool active;
+    TimeSpan lastFrame;
+    internal AudioSurface(Station station):base(station,10){Width=720;Height=264;Mixer.Poll();}
     int lastSnapshot;
     internal void Poll(){if(!dragging)Mixer.Poll();var hash=new HashCode();hash.Add(Mixer.OutputName);hash.Add(Mixer.Volume);hash.Add(Mixer.Muted);hash.Add(Mixer.MicrophoneMuted);hash.Add(Mixer.Error);foreach(var row in Mixer.Apps)hash.Add(row);foreach(var output in Mixer.Outputs)hash.Add(output);int next=hash.ToHashCode();if(next!=lastSnapshot){lastSnapshot=next;Refresh();}}
-    internal void SetActive(bool value)=>Mixer.SetActive(value);
+    internal void SetActive(bool value)
+    {
+        Mixer.SetActive(value);if(active==value)return;active=value;
+        if(value){lastFrame=default;CompositionTarget.Rendering+=Animate;}
+        else{CompositionTarget.Rendering-=Animate;levels.Clear();}
+    }
+    void Animate(object? sender,EventArgs e)
+    {
+        if(e is not RenderingEventArgs frame||frame.RenderingTime==lastFrame)return;
+        double elapsed=lastFrame==default?1/60d:Math.Clamp((frame.RenderingTime-lastFrame).TotalSeconds,0,.1);lastFrame=frame.RenderingTime;
+        var apps=Mixer.Apps;bool changed=false;
+        foreach(var app in apps)
+        {
+            float previous=levels.GetValueOrDefault(app.Key);
+            float next=AudioMeterMotion.Step(previous,app.Muted?0:app.Peak,elapsed);
+            changed|=Math.Abs(previous-next)>.00001f;levels[app.Key]=next;
+        }
+        foreach(string key in levels.Keys.Where(key=>!apps.Any(app=>app.Key==key)).ToArray()){levels.Remove(key);changed=true;}
+        if(changed)Refresh();
+    }
     protected override void Paint()
     {
         sliders.Clear();
@@ -23,18 +45,18 @@ internal sealed class AudioSurface : Surface,IDisposable
         Button("AudioOutput","",100,12,Width-234,36,Outputs);
         Text(Mixer.OutputName,112,19,10,width:Width-258);
         Button("Microphone",Mixer.MicrophoneMuted==true?"Micro coupé":"Micro",Width-122,12,98,36,()=>Mixer.ToggleMicrophone(),10,color:Mixer.MicrophoneMuted==true?"#FFA9D8":Ink,enabled:Mixer.MicrophoneMuted.HasValue);
-        Row(null,"Volume général",Mixer.Volume,Mixer.Muted??false,0,62);
-        Line(24,120,Width-24,120,"#30C9B4DB");
-        int count=Math.Max(1,(int)((Height-170)/52)),pages=Math.Max(1,(Mixer.Apps.Count+count-1)/count);page=Math.Clamp(page,0,pages-1);
+        Row(null,"Volume général",Mixer.Volume,Mixer.Muted??false,0,58);
+        Line(24,98,Width-24,98,"#30C9B4DB");
+        int count=Math.Max(1,(int)((Height-132)/44)),pages=Math.Max(1,(Mixer.Apps.Count+count-1)/count);page=Math.Clamp(page,0,pages-1);
         var rows=Mixer.Apps.Skip(page*count).Take(count).ToArray();
-        for(int i=0;i<rows.Length;i++){var row=rows[i];Row(row.Key,row.Name,row.Volume,row.Muted,row.Peak,134+i*52);}
-        if(rows.Length==0)Text("Aucune application audio",24,165,11,Muted);
-        Text(Mixer.Error,24,Height-31,9,"#F4B7CA",width:Width-215);
+        for(int i=0;i<rows.Length;i++){var row=rows[i];Row(row.Key,row.Name,row.Volume,row.Muted,levels.GetValueOrDefault(row.Key),110+i*44);}
+        if(rows.Length==0)Text("Aucune application audio",24,119,11,Muted);
+        Text(Mixer.Error,24,Height-26,9,"#F4B7CA",width:Width-215);
         if(pages>1)
         {
-            Button("AudioPrevious","‹",Width-170,Height-40,38,28,()=>page--,enabled:page>0);
-            Text($"{page+1} / {pages}",Width-100,Height-34,9,Muted,align:"center");
-            Button("AudioNext","›",Width-62,Height-40,38,28,()=>page++,enabled:page+1<pages);
+            Button("AudioPrevious","‹",Width-170,Height-32,38,24,()=>page--,enabled:page>0);
+            Text($"{page+1} / {pages}",Width-100,Height-29,9,Muted,align:"center");
+            Button("AudioNext","›",Width-62,Height-32,38,24,()=>page++,enabled:page+1<pages);
         }
     }
     void Row(string? key,string name,float? volume,bool muted,float peak,double y)
@@ -81,5 +103,5 @@ internal sealed class AudioSurface : Surface,IDisposable
     }
     protected override void OnLostMouseCapture(MouseEventArgs e){dragging=false;base.OnLostMouseCapture(e);}
     protected override void OnMouseWheel(MouseWheelEventArgs e){page+=e.Delta>0?-1:1;Refresh();e.Handled=true;}
-    public void Dispose()=>Mixer.Dispose();
+    public void Dispose(){SetActive(false);Mixer.Dispose();}
 }

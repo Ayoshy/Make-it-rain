@@ -29,34 +29,47 @@ internal sealed class AudioMixer : IDisposable
         {
             if(force||Environment.TickCount64>=nextRefresh)
             {
-                nextRefresh=Environment.TickCount64+5000;ReleaseEndpoints();
+                nextRefresh=Environment.TickCount64+5000;ReleaseSessions();
+                output?.Dispose();microphone?.Dispose();
                 output=Default(DataFlow.Render,Role.Multimedia);microphone=Default(DataFlow.Capture,Role.Communications);OutputId=output?.ID;
                 MicrophoneName=microphone?.FriendlyName??"Micro indisponible";
                 var rows=new List<AudioOutput>();
-                foreach(var endpoint in devices.EnumerateAudioEndPoints(DataFlow.Render,DeviceState.Active))
+                var previous=endpoints.ToDictionary(endpoint=>endpoint.ID);endpoints.Clear();
+                try
                 {
-                    endpoints.Add(endpoint);
-                    try
+                    foreach(var discovered in devices.EnumerateAudioEndPoints(DataFlow.Render,DeviceState.Active))
                     {
-                        string id=endpoint.ID;rows.Add(new(id,endpoint.FriendlyName,id==OutputId));
-                        var collection=endpoint.AudioSessionManager.Sessions;
-                        for(int i=0;i<collection.Count;i++)
+                        string id=discovered.ID;var endpoint=discovered;
+                        // Keep the session managers alive. Releasing/recreating all
+                        // of them every five seconds stalls metering on some drivers.
+                        if(previous.Remove(id,out var existing)){discovered.Dispose();endpoint=existing;}
+                        endpoints.Add(endpoint);
+                        try
                         {
-                            var session=collection[i];
-                            try
+                            rows.Add(new(id,endpoint.FriendlyName,id==OutputId));
+                            endpoint.AudioSessionManager.RefreshSessions();
+                            var collection=endpoint.AudioSessionManager.Sessions;
+                            for(int i=0;i<collection.Count;i++)
                             {
-                                if(session.State==AudioSessionState.AudioSessionStateExpired){session.Dispose();continue;}
-                                string name;
-                                if(session.IsSystemSoundsSession)name="Système";
-                                else{using var process=Process.GetProcessById((int)session.GetProcessID);name=process.ProcessName;}
-                                if(!sessions.TryGetValue(name,out var group))sessions[name]=group=[];
-                                group.Add(session);
+                                var session=collection[i];
+                                try
+                                {
+                                    if(session.State==AudioSessionState.AudioSessionStateExpired){session.Dispose();continue;}
+                                    // Spectrum's own loopback analysis is not playback.
+                                    if(session.GetProcessID==(uint)Environment.ProcessId){session.Dispose();continue;}
+                                    string name;
+                                    if(session.IsSystemSoundsSession)name="Système";
+                                    else{using var process=Process.GetProcessById((int)session.GetProcessID);name=process.ProcessName;}
+                                    if(!sessions.TryGetValue(name,out var group))sessions[name]=group=[];
+                                    group.Add(session);
+                                }
+                                catch(Exception e) when(Recoverable(e)){session.Dispose();}
                             }
-                            catch(Exception e) when(Recoverable(e)){session.Dispose();}
                         }
+                        catch(Exception e) when(Recoverable(e)){Error="Une sortie audio est devenue indisponible.";}
                     }
-                    catch(Exception e) when(Recoverable(e)){Error="Une sortie audio est devenue indisponible.";}
                 }
+                finally{foreach(var endpoint in previous.Values)ReleaseEndpoint(endpoint);}
                 Outputs=rows.OrderByDescending(x=>x.Selected).ThenBy(x=>x.Name).ToArray();
                 OutputName=Outputs.FirstOrDefault(x=>x.Selected)?.Name??output?.FriendlyName??"Sortie indisponible";
             }
@@ -79,6 +92,17 @@ internal sealed class AudioMixer : IDisposable
         }
     }
     MMDevice? Default(DataFlow flow,Role role){try{return devices.GetDefaultAudioEndpoint(flow,role);}catch(COMException){return null;}}
+    internal void PollPeaks()
+    {
+        Apps=Apps.Select(app=>
+        {
+            float peak=0;
+            if(sessions.TryGetValue(app.Key,out var group))foreach(var session in group)
+                try{peak=Math.Max(peak,session.AudioMeterInformation.MasterPeakValue);}
+                catch(Exception e) when(Recoverable(e)){nextRefresh=0;}
+            return app with{Peak=float.IsFinite(peak)?Math.Clamp(peak,0,1):0};
+        }).ToArray();
+    }
     static string DisplayName(string name)=>name.ToLowerInvariant() switch{"stremio-shell-ng" or "stremio"=>"Stremio","brave"=>"Brave","chrome"=>"Chrome","msedge"=>"Edge","spotify"=>"Spotify","discord"=>"Discord",_=>name};
     internal void SetVolume(string? key,float value)=>Act(()=>
     {
@@ -115,11 +139,16 @@ internal sealed class AudioMixer : IDisposable
         try{action();Error="";Poll();}
         catch(Exception e) when(Recoverable(e)){Error="Action audio indisponible · réessaie";nextRefresh=0;}
     }
-    void ReleaseEndpoints()
+    void ReleaseSessions()
     {
         foreach(var group in sessions.Values)foreach(var session in group)try{session.Dispose();}catch(COMException){}
         sessions.Clear();
-        foreach(var endpoint in endpoints){try{endpoint.AudioSessionManager.Dispose();}catch(COMException){}endpoint.Dispose();}
+    }
+    static void ReleaseEndpoint(MMDevice endpoint){try{endpoint.AudioSessionManager.Dispose();}catch(COMException){}endpoint.Dispose();}
+    void ReleaseEndpoints()
+    {
+        ReleaseSessions();
+        foreach(var endpoint in endpoints)ReleaseEndpoint(endpoint);
         endpoints.Clear();output?.Dispose();microphone?.Dispose();output=null;microphone=null;
     }
     public void Dispose(){ReleaseEndpoints();devices.Dispose();}

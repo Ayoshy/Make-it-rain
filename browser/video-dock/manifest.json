@@ -1,15 +1,17 @@
 {
   "manifest_version": 3,
   "name": "Battlestation · Vidéo",
-  "version": "0.3.2",
-  "description": "Miroir local de la vidéo YouTube vers le dock Battlestation.",
+  "version": "0.4.0",
+  "description": "Miroir local des vidéos YouTube et Twitch vers le dock Battlestation.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA9y2XY9jyr5s17sazrT9mJ/IpIvpqSZ25ug9FaaFxPZFGGtiPma89DQpPmUv7IeRj7eNv0ghKmixDHbcpKTYdFirXDcKvFN/qHmD3hTYa36GT8WDBtjwNSh3bN7WNEXO+ylRcx5gnh0Xhul7jPi7Z9sZh8izzX4lpE05xXxVjyXWMEKPCMAqPbPnIgGOQwBUvd9ttNhb501+cYG0aLk1mCdfxGrDQUZHCdKNL2aHLSzVNxGnI7dlSnFnuFdi9CM6710uTNO3CK7R2T6hIo/YUQC2CWAWU5JmahNmD55LDa//99jzlMc2j/gDBE7h3zbQP27KWd99NS0VyR58iTdqEAQIDAQAB",
   "permissions": [
     "nativeMessaging",
     "scripting"
   ],
   "host_permissions": [
-    "https://www.youtube.com/*"
+    "https://www.youtube.com/*",
+    "https://www.twitch.tv/*",
+    "https://clips.twitch.tv/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -17,7 +19,9 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.youtube.com/*"
+        "https://www.youtube.com/*",
+        "https://www.twitch.tv/*",
+        "https://clips.twitch.tv/*"
       ],
       "js": [
         "video.js"
@@ -31,7 +35,9 @@
         "video-frame.html"
       ],
       "matches": [
-        "https://www.youtube.com/*"
+        "https://www.youtube.com/*",
+        "https://www.twitch.tv/*",
+        "https://clips.twitch.tv/*"
       ]
     }
   ],

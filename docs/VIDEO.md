@@ -2,17 +2,17 @@
 
 Le bloc Vidéo est redimensionnable. Il se déplace sur les deux écrans,
 se retire et se réajoute comme les autres blocs. Les coordonnées et la visibilité
-restent dans `layout.json`, le choix Auto/YouTube/Stremio dans `video.json`.
+restent dans `layout.json`, le choix Auto/YouTube/Twitch/Stremio dans `video.json`.
 Une marge exactement égale aux 12 pixels de la grille est maintenant acceptée.
 
 ## Utilisation
 
-- Choisir Auto, YouTube ou Stremio, puis cliquer **Activer le miroir**.
+- Choisir Auto, YouTube, Twitch ou Stremio, puis cliquer **Activer le miroir**.
 - Cliquer l'image pour lecture/pause du lecteur sélectionné.
 - **■** arrête le miroir et laisse la lecture d'origine ouverte.
 - **↗** revient au lecteur d'origine.
-- Auto privilégie l'application utilisée au premier plan, puis conserve la source
-  courante disponible. Un choix manuel verrouille le type de source.
+- Auto utilise le type réel de l'onglet navigateur actif prêt, puis conserve la
+  source courante disponible. Un choix manuel verrouille le type de source.
 - Une bascule YouTube/Stremio garde la fenêtre de support Stremio derrière le
   dock. Elle ne ramène pas le lecteur normal au premier plan.
 - Retirer le bloc arrête la capture. La réorganisation suspend le miroir pendant
@@ -25,13 +25,14 @@ YouTube avec `captureStream` et `MediaStreamTrackProcessor`. Aucune fenêtre PiP
 n'est nécessaire ; le PiP du même élément est quitté au démarrage du miroir.
 Les commandes lecture/pause ciblent cet élément, sans frappe clavier globale.
 
-Permissions : pages `https://www.youtube.com/*`, injection sur ces mêmes pages
+Permissions : pages `https://www.youtube.com/*`, `https://www.twitch.tv/*` et
+`https://clips.twitch.tv/*`, injection sur ces mêmes pages
 et native messaging. Aucun cookie, identifiant, historique, titre ou URL de vidéo
 n'est envoyé au bureau. Aucune donnée ne part vers un service distant. Les images
 JPEG passent en mémoire par le pont .NET et un pipe limité à l'utilisateur courant.
 Aucune piste audio n'est transmise ou enregistrée ; le son reste dans Brave.
 
-Version de l'extension : 0.3.2. La résolution suit le cadre du dock,
+Version de l'extension : 0.4.0. La résolution suit le cadre du dock,
 jusqu'à 1920 × 1080, sans agrandir la source à la capture. Encodage JPEG dans un
 worker chargé depuis une page interne de l'extension, cadence plafonnée à
 30 images/s et deux images au maximum en attente
@@ -55,6 +56,27 @@ Le Brave installé consulte la clé compatible Chrome sous
 `HKCU/Software/Google/Chrome/NativeMessagingHosts/com.battlestation.video` ; la clé
 Brave équivalente est aussi enregistrée. Le manifeste est dans les données
 personnelles Battlestation, jamais dans Git. Aucun démarrage Windows n'est ajouté.
+
+## Twitch / Brave
+
+L'extension locale reconnaît explicitement les onglets `https://www.twitch.tv/*`
+et `https://clips.twitch.tv/*`. Elle capture l'élément `video` du lecteur avec
+`captureStream`, comme pour YouTube ; elle ne capture jamais la fenêtre Brave,
+le PiP ou un autre onglet. Le son reste dans Brave : les pistes audio du flux
+local sont arrêtées avant le traitement des images.
+
+Twitch remplace parfois son élément vidéo pendant une navigation SPA. Tant que
+le miroir a été activé explicitement, le content script reprend la capture après
+le remplacement de l'élément, la fin de la piste ou le retour à un état prêt.
+La simple découverte d'un onglet prêt n'active jamais la capture. Les commandes
+lecture/pause sont envoyées à l'élément ciblé ; retour remet cet onglet au premier
+plan. Une navigation hors des deux domaines Twitch purge immédiatement sa
+disponibilité du bridge.
+
+Le bridge accepte les types `youtube` et `twitch` strictement. Les messages d'une
+ancienne extension sans champ `kind` restent interprétés comme YouTube ; un type
+inconnu est rejeté. La capture Twitch réelle n'a pas encore été validée sur un
+lecteur utilisateur dans cet environnement.
 
 ## Stremio Windows
 

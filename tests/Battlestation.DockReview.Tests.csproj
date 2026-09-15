@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget><EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="DockReviewTests.cs"/><Compile Include="DockReviewFixtures.cs"/><Compile Include="BluetoothSurfaceChecks.cs"/>
+    <Compile Include="../src/Battlestation/Surface.cs"/>
+    <Compile Include="../src/Battlestation/DockAppearance.cs"/>
+    <Compile Include="../src/Battlestation/ReminderSurface.cs"/>
+    <Compile Include="../src/Battlestation/DockSurface.cs"/>
+    <Compile Include="../src/Battlestation/AudioSurface.cs"/>
+    <Compile Include="../src/Battlestation/AudioMixer.cs"/>
+    <Compile Include="../src/Battlestation/AudioMixerWorker.cs"/>
+    <Compile Include="../src/Battlestation/AudioMeterMotion.cs"/>
+    <Compile Include="../src/Battlestation/AudioPolicy.cs"/>
+    <PackageReference Include="NAudio" Version="2.2.1"/>
+    <Compile Include="../src/Battlestation/AppIcons.cs"/>
+    <Compile Include="../src/Battlestation/AppActivity.cs"/>
+    <Compile Include="../src/Battlestation/BluetoothSurface.cs"/>
+    <Compile Include="../src/Battlestation/BluetoothIconLayout.cs"/>
+    <Compile Include="../src/Battlestation/BluetoothDevices.cs"/>
+    <Resource Include="../assets/Fonts/art-deco.ttf" Link="Assets/Fonts/art-deco.ttf"/>
+  </ItemGroup>
+</Project>

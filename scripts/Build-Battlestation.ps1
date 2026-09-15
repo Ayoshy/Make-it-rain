@@ -11,7 +11,7 @@ if(!$vs){throw 'Visual C++ x64 required'}
 call "$vs\VC\Auxiliary\Build\vcvars64.bat" >nul
 cl /nologo /O2 /LD /std:c++20 /EHsc /utf-8 /MT "$root\src\Battlestation.Native\Background.cpp" "$root\src\Battlestation.Native\NativeBackground.cpp" User32.lib D2d1.lib Windowscodecs.lib Ole32.lib /link /OUT:"$out\Battlestation.Graphics.dll"
 if errorlevel 1 exit /b 1
-cl /nologo /O2 /LD /std:c++20 /EHsc /utf-8 /MT "$root\src\Battlestation.Native\Desk.cpp" windowsapp.lib Shell32.lib Winhttp.lib User32.lib Gdi32.lib Gdiplus.lib Shlwapi.lib Ole32.lib /link /OUT:"$out\Battlestation.Desk.dll"
+cl /nologo /O2 /LD /std:c++20 /EHsc /utf-8 /MT "$root\src\Battlestation.Native\Desk.cpp" "$root\src\Battlestation.Native\Bluetooth.cpp" windowsapp.lib Shell32.lib Winhttp.lib User32.lib Gdi32.lib Gdiplus.lib Shlwapi.lib Ole32.lib Uuid.lib Bthprops.lib /link /OUT:"$out\Battlestation.Desk.dll"
 if errorlevel 1 exit /b 1
 cl /nologo /O2 /LD /std:c++20 /EHsc /utf-8 /MT "$root\src\Battlestation.Native\VideoCapture.cpp" windowsapp.lib D3d11.lib D3DCompiler.lib Dwmapi.lib User32.lib /link /OUT:"$out\Battlestation.Video.dll"
 "@ | Set-Content "$out/compile.cmd" -Encoding Ascii

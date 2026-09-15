@@ -3,5 +3,12 @@
   { "name": "Brave", "path": "%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\Brave.lnk" },
   { "name": "Discord", "path": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Discord Inc\\Discord.lnk" },
   { "name": "Stremio", "path": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Stremio.lnk" },
-  { "name": "League of Legends", "path": "%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\Riot Games\\League of Legends.lnk" }
+  { "name": "League of Legends", "path": "%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\Riot Games\\League of Legends.lnk" },
+  { "name": "Codex", "path": "%LOCALAPPDATA%\\Programs\\OpenAI\\Codex\\bin\\codex.exe" },
+  { "name": "Claude Code", "path": "%USERPROFILE%\\.local\\bin\\claude.exe" },
+  { "name": "Edge", "path": "%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\Microsoft Edge.lnk" },
+  { "name": "Chrome", "path": "%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\Google Chrome.lnk" },
+  { "name": "qBittorrent", "path": "%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\qBittorrent\\qBittorrent.lnk" },
+  { "name": "battle.net", "path": "%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\Battle.net\\Battle.net.lnk" },
+  { "name": "Spotify", "path": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Spotify.lnk" }
 ]

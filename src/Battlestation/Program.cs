@@ -10,18 +10,18 @@ using System.Windows.Threading;
 namespace Battlestation;
 internal static class Program
 {
-    [STAThread] public static void Main(string[] args)
+    [STAThread] public static int Main(string[] args)
     {
-        if(args.Length==1&&args[0]=="--terminal-metadata"){TerminalMetadataWorker.Run();return;}
-        if(args.Length==2&&args[0]=="--preview-terminal-tabs"){TerminalTabsPreview.Run(args[1]);return;}
-        if(args.Length==2&&args[0]=="--terminal-host"){TerminalHost.Run(Path.GetFullPath(args[1]));return;}
-        if(args.Length==2&&args[0]=="--command"){Console.WriteLine(ControlPipe.Send(args[1]));return;}
+        if(args.Length==1&&args[0]=="--terminal-metadata"){TerminalMetadataWorker.Run();return 0;}
+        if(args.Length==2&&args[0]=="--preview-terminal-tabs"){TerminalTabsPreview.Run(args[1]);return 0;}
+        if(args.Length==2&&args[0]=="--terminal-host"){TerminalHost.Run(Path.GetFullPath(args[1]));return 0;}
+        if(args.Length==2&&args[0]=="--command"){Console.WriteLine(ControlPipe.Send(args[1]));return 0;}
         bool waitingReload=args.Contains("--reload",StringComparer.Ordinal);
         using var single=new Mutex(true,"Local\\Battlestation.Desktop",out bool created);
-        if(!created&&!waitingReload)return;
+        if(!created&&!waitingReload)return 0;
         if(!created)
         {
-            try{if(!single.WaitOne(TimeSpan.FromSeconds(5)))return;}
+            try{if(!single.WaitOne(TimeSpan.FromSeconds(5)))return 0;}
             catch(AbandonedMutexException){}
         }
         var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};
@@ -35,5 +35,6 @@ internal static class Program
         };
         app.Exit+=(_,_)=>{runtime?.Dispose();station?.Dispose();};
         app.Run();
+        return 0;
     }
 }

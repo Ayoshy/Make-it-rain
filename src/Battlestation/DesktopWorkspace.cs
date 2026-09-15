@@ -125,7 +125,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
     }
     void ClearGlass(string id)
     {
-        int[] slots=id switch{"clock"=>[0],"weather"=>[1],"apps"=>[2],"music"=>[3],"projects"=>[4,8],"terminal"=>[5],"hardware"=>[6],"usage"=>[7],"video"=>[9],"audio"=>[10],"reminders"=>[11],_=>[]};
+        int[] slots=id switch{"clock"=>[0],"weather"=>[1],"apps"=>[2],"music"=>[3],"projects"=>[4,8],"terminal"=>[5],"hardware"=>[6],"usage"=>[7],"video"=>[9],"audio"=>[10],"reminders"=>[11],"bluetooth"=>[12],_=>[]};
         foreach(int slot in slots)Native.BackgroundPanel(slot,0,0,0,0);
     }
     void Apply(string id,bool arrange=true,bool refresh=true)
@@ -170,6 +170,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
         if(command=="terminal-tabs-inspect")return JsonSerializer.Serialize(station.Terminal?.InspectTabMetadata());
         if(command=="audio-inspect"){((AudioSurface)surfaces["audio"]).Mixer.Poll();return JsonSerializer.Serialize(new{mixer=((AudioSurface)surfaces["audio"]).Mixer,spectrum=new{((DeskSurface)surfaces["music"]).Audio.Running,((DeskSurface)surfaces["music"]).Audio.DeviceId,((DeskSurface)surfaces["music"]).Audio.Error,bands=((DeskSurface)surfaces["music"]).Audio.Bands},reactive=station.ReactiveAudio,intensity=station.AudioIntensity});}
         if(command=="video-inspect")return JsonSerializer.Serialize(((VideoSurface)surfaces["video"]).Inspect());
+        if(command=="apps-inspect")return JsonSerializer.Serialize(((DockSurface)surfaces["apps"]).InspectActivity());
         if(command.StartsWith("gpu-settings:"))
         {
             var parts=command.Split(':');
@@ -208,6 +209,9 @@ internal sealed partial class DesktopWorkspace : IDisposable
     void Tick()
     {
         if(ticks%4==0)UpdateVisibility();
+        // App activity is independent of exposure: an occluded but visible dock still reports
+        // real process presence. DockSurface throttles and runs the snapshot off the UI thread.
+        if(station.Layout["apps"].Visible)((DockSurface)surfaces["apps"]).Poll();
         if(exposed.Contains("projects"))station.Projects.Poll(((DeskSurface)surfaces["projects"]).VisibleProjects());
         if(exposed.Contains("audio")&&!editing)((AudioSurface)surfaces["audio"]).Poll();
         if(exposed.Contains("bluetooth")&&!editing)((BluetoothSurface)surfaces["bluetooth"]).Poll();
@@ -251,7 +255,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
     {
         EndGesture(false);CompositionTarget.Rendering-=RenderGesture;foreach(var grid in editGrids)grid.Close();
         disposed=true;placement.VisibilityChanged-=UpdateVisibility;Microsoft.Win32.SystemEvents.SessionSwitch-=SessionSwitch;control.Dispose();timer.Stop();audio.Stop();palette?.Dismiss(false);settingsWindow?.Close();paletteHotkey.Dispose();tray.Dispose();toolbar.Close();
-        placement.Dispose();foreach(var desk in surfaces.Values.OfType<DeskSurface>())desk.Audio.Dispose();
+        placement.Dispose();((DockSurface)surfaces["apps"]).Dispose();foreach(var desk in surfaces.Values.OfType<DeskSurface>())desk.Audio.Dispose();
         ((VideoSurface)surfaces["video"]).Dispose();
         ((AudioSurface)surfaces["audio"]).Dispose();((BluetoothSurface)surfaces["bluetooth"]).Dispose();
         mediaClipboard.Dispose();reserveWindow?.Close();

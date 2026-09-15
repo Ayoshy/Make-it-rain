@@ -15,7 +15,7 @@ internal sealed class DesktopLayout
         "clock"=>new(360,144),"weather"=>new(360,112),"music"=>new(400,168),
         "projects"=>new(360,240),"apps"=>new(240,112),"terminal"=>new(480,300),
         "countdown"=>new(400,360),"hardware"=>new(440,218),"usage"=>new(440,209),
-        "video"=>new(480,270),"audio"=>new(440,336),"reminders"=>new(440,112),_=>new(120,100)
+        "video"=>new(480,270),"audio"=>new(440,220),"bluetooth"=>new(128,128),"reminders"=>new(440,112),_=>new(120,100)
     };
     static DesktopBlock Dimensions(DesktopBlock original,DesktopBlock saved)=>original with
     {
@@ -39,7 +39,8 @@ internal sealed class DesktopLayout
         new("usage","Codex",779,209,4212,1092),
         new("reminders","Nudge",779,112,4212,0),
         new("video","Vidéo",576,372,3396,312,false),
-        new("audio","Audio",720,336,2616,360,false)
+        new("audio","Audio",720,264,2616,360,false),
+        new("bluetooth","Bluetooth",560,280,2616,720,false)
     ];
     static double TerminalY(int apps)=>Math.Max(720,Math.Ceiling((336+DockHeight(apps)-116+293+Gap)/Grid)*Grid);
     public static double DockHeight(int apps)=>Math.Max(1,Math.Ceiling(apps/6d))*88+28;

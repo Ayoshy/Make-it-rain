@@ -29,9 +29,24 @@ retiré sans toucher au reste.
   **Jeu**, **Création**, **Cinéma**, **Focus**, **Multimédia** et **Double écran**.
   Ils sont fixes et reviennent toujours à leur plan par défaut ; **Personnel** est
   la disposition libre, dont les ajustements sont conservés.
-- **Vidéo** : choisir YouTube ou Stremio, puis cliquer **Activer le miroir**.
+- **Vidéo** : choisir YouTube, Twitch ou Stremio, puis cliquer **Activer le miroir**.
   Un clic sur l'image commande lecture/pause ; **■** arrête le miroir et **↗**
   revient au lecteur. Voir [l'intégration Brave et Stremio](docs/VIDEO.md).
+- **Bluetooth** : quatre dessins nacrés sur le même fond liquid glass que les
+  autres docks. Les appareils sont déjà appairés : le clic connecte/déconnecte
+  les Buds et les enceintes. **Néon Vice City = connecté ; gris nacré = déconnecté**,
+  après confirmation Windows, avec un fondu entre les deux et une animation
+  temporaire pendant la commande.
+  La DualSense se déconnecte au clic et se reconnecte avec son bouton **PS**.
+  Aucun pilote n'est désactivé et l'appariement est conservé. Le survol précise
+  l'état et l'action ; un état indisponible n'est pas présenté comme déconnecté.
+  Voir [le fonctionnement et les preuves Bluetooth](docs/BLUETOOTH.md).
+  En mode **Réorganiser**, redimensionner le dock choisit automatiquement une
+  ligne, une colonne ou une grille ; les quatre appareils restent visibles.
+  Le bloc est ajoutable depuis **+ Ajouter**.
+- **Nudge** : texte Art déco, clic sur le rappel pour le modifier, **✓** pour
+  le terminer et **+** pour ajouter. Le passage au suivant apparaît seulement
+  lorsqu'il existe plusieurs rappels.
 - Clic droit sur un onglet terminal : couleur, nom et titre automatique. Les états
   Codex ont un indicateur animé ; voir [les onglets](docs/TERMINAL_TABS.md).
 - Le terminal dispose de ses propres onglets PowerShell/Codex ; retirer son bloc

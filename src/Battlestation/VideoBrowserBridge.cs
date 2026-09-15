@@ -6,8 +6,8 @@ using System.Threading.Channels;
 using System.Windows.Media.Imaging;
 
 namespace Battlestation;
-internal sealed record VideoTab(int Id,bool Ready,bool Playing,bool Active,long Used);
-internal sealed record BrowserVideoState(bool Connected,VideoTab[] Tabs,BitmapSource? Image,int? TabId,bool? Playing,long Frames,long LastFrame,string Error,long? DecodedFrames=null,double? EncodeMs=null,string? Visibility=null,string? Version=null,string? Diagnostic=null);
+internal sealed record VideoTab(int Id,bool Ready,bool Playing,bool Active,long Used,string Kind="youtube");
+internal sealed record BrowserVideoState(bool Connected,VideoTab[] Tabs,BitmapSource? Image,int? TabId,bool? Playing,long Frames,long LastFrame,string Error,long? DecodedFrames=null,double? EncodeMs=null,string? Visibility=null,string? Version=null,string? Diagnostic=null,string? Kind=null);
 internal sealed class VideoBrowserBridge : IDisposable
 {
     readonly object gate=new();
@@ -19,26 +19,35 @@ internal sealed class VideoBrowserBridge : IDisposable
     string captureId="";
     int targetWidth=1280,targetHeight=720;
     long nextDiscovery;
-    public void Configure(int width,int height){width=Math.Clamp(width,160,1920);height=Math.Clamp(height,90,1080);lock(gate){if(targetWidth==width&&targetHeight==height)return;targetWidth=width;targetHeight=height;if(state.TabId is int tab)Send(new{type="configure",tabId=tab,width,height});}}
+    internal static bool IsSupportedKind(string? kind)=>kind is "youtube" or "twitch";
+    static bool TryReadKind(JsonElement value,out string kind)
+    {
+        if(!value.TryGetProperty("kind",out var item)){kind="youtube";return true;}
+        kind=item.ValueKind==JsonValueKind.String?item.GetString()??"": "";
+        return IsSupportedKind(kind);
+    }
+    public void Configure(int width,int height){width=Math.Clamp(width,160,1920);height=Math.Clamp(height,90,1080);lock(gate){if(targetWidth==width&&targetHeight==height)return;targetWidth=width;targetHeight=height;if(state.TabId is int tab)Send(new{type="configure",tabId=tab,kind=state.Kind??"youtube",width,height});}}
     public void Discover(){lock(gate){if(!state.Connected||Environment.TickCount64<nextDiscovery)return;nextDiscovery=Environment.TickCount64+5000;Send(new{type="list"});}}
     readonly string pipeName;
     public event Action? FrameAvailable;
     public BrowserVideoState State {get{lock(gate)return state;}}
     public VideoBrowserBridge(string pipeName="Battlestation.Video.v1"){this.pipeName=pipeName;_=Run();}
-    public void Start(int tab,bool preserveError=false)
+    public void Start(int tab,bool preserveError=false)=>Start(tab,"youtube",preserveError);
+    public void Start(int tab,string kind,bool preserveError=false)
     {
-        lock(gate){captureId=Guid.NewGuid().ToString("N");state=state with{Image=null,TabId=tab,Frames=0,LastFrame=0,Error=preserveError?state.Error:"",DecodedFrames=null};Send(new{type="start",tabId=tab,captureId,width=targetWidth,height=targetHeight});}
+        if(!IsSupportedKind(kind))throw new ArgumentException("Source navigateur inconnue",nameof(kind));
+        lock(gate){captureId=Guid.NewGuid().ToString("N");state=state with{Image=null,TabId=tab,Kind=kind,Frames=0,LastFrame=0,Error=preserveError?state.Error:"",DecodedFrames=null};Send(new{type="start",tabId=tab,kind,captureId,width=targetWidth,height=targetHeight});}
     }
     public void Stop()
     {
         lock(gate)
         {
-            if(state.TabId is int tab){var sent=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);lastStop=sent.Task;Send(new{type="stop",tabId=tab},sent);}
-            captureId="";state=state with{Image=null,TabId=null,Playing=null,Frames=0,LastFrame=0,Error="",DecodedFrames=null};
+            if(state.TabId is int tab){var sent=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);lastStop=sent.Task;Send(new{type="stop",tabId=tab,kind=state.Kind??"youtube"},sent);}
+            captureId="";state=state with{Image=null,TabId=null,Kind=null,Playing=null,Frames=0,LastFrame=0,Error="",DecodedFrames=null};
         }
     }
-    public void Toggle(){lock(gate)if(state.TabId is int tab)Send(new{type="toggle",tabId=tab});}
-    public void Focus(){lock(gate)if(state.TabId is int tab)Send(new{type="focus",tabId=tab});}
+    public void Toggle(){lock(gate)if(state.TabId is int tab)Send(new{type="toggle",tabId=tab,kind=state.Kind??"youtube"});}
+    public void Focus(){lock(gate)if(state.TabId is int tab)Send(new{type="focus",tabId=tab,kind=state.Kind??"youtube"});}
     void Send(object value,TaskCompletionSource<bool>? sent=null){if(!outgoing.Writer.TryWrite(new(JsonSerializer.SerializeToUtf8Bytes(value),sent)))sent?.TrySetResult(false);}
     async Task Run()
     {
@@ -85,16 +94,25 @@ internal sealed class VideoBrowserBridge : IDisposable
             string? type=root.GetProperty("type").GetString();
             if(type=="tabs")
             {
-                var tabs=root.GetProperty("tabs").EnumerateArray().Take(32).Select(t=>new VideoTab(t.GetProperty("id").GetInt32(),t.GetProperty("ready").GetBoolean(),t.GetProperty("playing").GetBoolean(),t.GetProperty("active").GetBoolean(),t.GetProperty("used").GetInt64())).ToArray();
+                var tabsJson=root.GetProperty("tabs").EnumerateArray().Take(32).ToArray();var tabs=new List<VideoTab>(tabsJson.Length);
+                foreach(var tab in tabsJson)
+                {
+                    if(!TryReadKind(tab,out var kind))return;
+                    tabs.Add(new(tab.GetProperty("id").GetInt32(),tab.GetProperty("ready").GetBoolean(),tab.GetProperty("playing").GetBoolean(),tab.GetProperty("active").GetBoolean(),tab.GetProperty("used").GetInt64(),kind));
+                }
                 lock(gate)
                 {
                     var selected=tabs.FirstOrDefault(t=>t.Id==state.TabId);
-                    state=state with{Tabs=tabs,Playing=selected?.Playing,Image=selected?.Ready==true?state.Image:null};
+                    // Capture identity survives discovery gaps so Stop still
+                    // targets Twitch while its SPA replaces the player.
+                    bool sameKind=selected?.Kind==state.Kind;
+                    state=state with{Tabs=tabs.ToArray(),Playing=sameKind?selected?.Playing:null,Image=sameKind&&selected?.Ready==true?state.Image:null};
                 }
                 return;
             }
+            if(!TryReadKind(root,out var messageKind))return;
             int tabId=root.GetProperty("tabId").GetInt32();string? epoch=root.GetProperty("captureId").GetString();
-            lock(gate)if(tabId!=state.TabId||epoch!=captureId)return;
+            lock(gate)if(tabId!=state.TabId||epoch!=captureId||messageKind!=state.Kind)return;
             if(type=="error"||type=="ended")
             {
                 string error=type=="ended"?"video-ended":root.GetProperty("code").GetString()??"capture-unavailable";
@@ -115,7 +133,7 @@ internal sealed class VideoBrowserBridge : IDisposable
                 state=state with{Image=image,Playing=root.GetProperty("playing").GetBoolean(),Frames=state.Frames+1,LastFrame=Environment.TickCount64,Error="",Diagnostic=null,DecodedFrames=root.TryGetProperty("decodedFrames",out var decoded)?decoded.GetInt64():null,EncodeMs=root.TryGetProperty("encodeMs",out var encoding)?encoding.GetDouble():null,Visibility=root.TryGetProperty("visibility",out var visibility)?visibility.GetString():null,Version=root.TryGetProperty("version",out var version)?version.GetString():null};
             }
             FrameAvailable?.Invoke();
-            Send(new{type="ack",tabId,captureId=epoch,sequence=root.GetProperty("sequence").GetInt64()});
+            Send(new{type="ack",tabId,kind=messageKind,captureId=epoch,sequence=root.GetProperty("sequence").GetInt64()});
         }
         catch(Exception e) when(e is JsonException or KeyNotFoundException or InvalidOperationException or FormatException or ArgumentException or NotSupportedException or IOException or OverflowException){}
     }

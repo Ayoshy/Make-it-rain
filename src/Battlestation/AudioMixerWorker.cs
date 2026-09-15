@@ -28,6 +28,8 @@ internal sealed class AudioMixerWorker : IDisposable
     public string Error=>State.Error;
     public long PollCount {get;private set;}
     public double PollMilliseconds {get;private set;}
+    public long MeterCount {get;private set;}
+    public double MeterMilliseconds {get;private set;}
     internal AudioMixerWorker()
     {
         thread=new Thread(Run){IsBackground=true,Name="Battlestation audio"};thread.SetApartmentState(ApartmentState.MTA);thread.Start();
@@ -47,7 +49,7 @@ internal sealed class AudioMixerWorker : IDisposable
     {
         try
         {
-            using var mixer=new AudioMixer();long nextPoll=0;
+            using var mixer=new AudioMixer();long nextPoll=0,nextMeter=0;
             while(!disposed)
             {
                 bool changed=false;
@@ -58,8 +60,13 @@ internal sealed class AudioMixerWorker : IDisposable
                     var watch=System.Diagnostics.Stopwatch.StartNew();mixer.Poll();PollMilliseconds+=watch.Elapsed.TotalMilliseconds;PollCount++;
                     changed=true;nextPoll=Environment.TickCount64+500;
                 }
+                if(active&&Environment.TickCount64>=nextMeter)
+                {
+                    var watch=System.Diagnostics.Stopwatch.StartNew();mixer.PollPeaks();MeterMilliseconds+=watch.Elapsed.TotalMilliseconds;MeterCount++;
+                    changed=true;nextMeter=Environment.TickCount64+33;
+                }
                 if(changed)Volatile.Write(ref snapshot,new(mixer.Outputs.ToArray(),mixer.Apps.ToArray(),mixer.OutputName,mixer.OutputId,mixer.MicrophoneName,mixer.Volume,mixer.Muted,mixer.MicrophoneMuted,mixer.Error));
-                wake.WaitOne(active?(int)Math.Clamp(nextPoll-Environment.TickCount64,1,500):Timeout.Infinite);
+                wake.WaitOne(active?(int)Math.Clamp(Math.Min(nextPoll,nextMeter)-Environment.TickCount64,1,500):Timeout.Infinite);
             }
         }
         catch(Exception e) when(e is System.Runtime.InteropServices.COMException or InvalidOperationException)
