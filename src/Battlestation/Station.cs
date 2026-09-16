@@ -110,6 +110,12 @@ internal sealed class Station : IDisposable
         DesktopSettings.Write(Path.Combine(Data,"kilo-request.json"),JsonSerializer.Serialize(new{project,command=Kilo}));
         Terminal?.OpenKilo();
     }
+    public void OpenCodexDeepSeek(string project)
+    {
+        if(!Directory.Exists(project))throw new DirectoryNotFoundException("Ce projet a été déplacé ou supprimé.");
+        DesktopSettings.Write(Path.Combine(Data,"codex-ds-request.json"),JsonSerializer.Serialize(new{project}));
+        Terminal?.OpenCodexDeepSeek();
+    }
     public void SaveApps(List<DockApp> apps)
     {
         if(apps.Count>12||apps.Any(a=>string.IsNullOrWhiteSpace(a.Name)||string.IsNullOrWhiteSpace(a.Path)))throw new ArgumentException("Le dock accepte jusqu’à 12 applications nommées.");

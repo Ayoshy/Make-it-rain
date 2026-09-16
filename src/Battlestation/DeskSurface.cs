@@ -102,10 +102,11 @@ internal sealed class DeskSurface : Surface
         string selected=Native.Read("selectedPath");var status=Station.Projects.Read(selected);
         Text(ProjectStatus(status),32,rect.Y+42,9.6,ProjectStatusColor(status),width:Width-98);
         Button("CloseProject","×",Width-62,rect.Y+8,30,30,()=>popup=false);
-        double bw=(Width-88)/3;
+        double bw=(Width-100)/4;
         Button("Explorer","Explorateur",32,rect.Y+72,bw,36,()=>{Native.DeskCommand("OpenSelected");popup=false;},11,color:"#F4EDF9");
-        Button("OpenCodex","Codex CLI",44+bw,rect.Y+72,bw,36,()=>{Station.Terminal?.OpenCodex(Native.Read("selectedPath"));popup=false;},11,color:"#F4EDF9");
-        Button("OpenKilo","Kilo CLI",56+bw*2,rect.Y+72,bw,36,()=>{Station.OpenKilo(Native.Read("selectedPath"));popup=false;},11,color:"#F4EDF9");
+        Button("OpenCodex","Codex CLI (ChatGPT)",44+bw,rect.Y+72,bw,36,()=>{Station.Terminal?.OpenCodex(Native.Read("selectedPath"));popup=false;},11,color:"#F4EDF9");
+        Button("OpenCodexDs","Codex CLI (DS)",56+bw*2,rect.Y+72,bw,36,()=>{Station.OpenCodexDeepSeek(Native.Read("selectedPath"));popup=false;},11,color:"#F4EDF9");
+        Button("OpenKilo","Kilo CLI (DS)",68+bw*3,rect.Y+72,bw,36,()=>{Station.OpenKilo(Native.Read("selectedPath"));popup=false;},11,color:"#F4EDF9");
     }
     int ProjectCount=>int.TryParse(Native.Read("projectCount"),out int count)?Math.Max(0,count):0;
     internal IEnumerable<string> VisibleProjects(){int cols=Math.Max(1,(int)((Width-36)/330)),rows=Math.Max(1,(int)((Height-60)/73));return Enumerable.Range(Math.Min(projectRow*cols,ProjectCount),Math.Max(0,Math.Min(cols*rows,ProjectCount-projectRow*cols))).Select(i=>Native.Read($"project:{i}:path")).Append(Native.Read("selectedPath")).Where(p=>p!="").ToArray();}

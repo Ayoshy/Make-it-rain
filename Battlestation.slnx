@@ -12,6 +12,7 @@
     <Project Path="tests/Battlestation.BrowserVideo.Tests.csproj" />
     <Project Path="tests/Battlestation.DeepSeek.Tests.csproj" />
     <Project Path="tests/Battlestation.DockReview.Tests.csproj" />
+    <Project Path="tests/Battlestation.Palette.Tests.csproj" />
     <Project Path="tests/Battlestation.Scenes.Tests.csproj" />
     <Project Path="tests/Battlestation.Network.Tests.csproj" />
   </Folder>

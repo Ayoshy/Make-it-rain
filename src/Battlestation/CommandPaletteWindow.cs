@@ -1,8 +1,10 @@
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Markup;
 using System.Windows.Media;
 
 namespace Battlestation;
@@ -16,26 +18,30 @@ internal sealed class CommandPaletteWindow : Window
     readonly List<PaletteEntry> catalog;
     readonly Func<string>? currentProfile;
     readonly Dictionary<string,Border> profileCards=[];
+    readonly Dictionary<string,bool> hovered=[];
     readonly nint previous;
     IReadOnlyList<PaletteEntry>? actions;
     string previousQuery="";
     bool closing;
     internal CommandPaletteWindow(IEnumerable<PaletteEntry> entries,Func<string>? currentProfile=null)
     {
-        previous=Native.GetForegroundWindow();catalog=entries.ToList();this.currentProfile=currentProfile;Title="Battlestation · Palette";Width=660;Height=520;ShowInTaskbar=false;Topmost=true;
+        previous=Native.GetForegroundWindow();catalog=entries.ToList();this.currentProfile=currentProfile;Title="Battlestation · Palette";Width=886;Height=520;ShowInTaskbar=false;Topmost=true;
         OverlayStyle.Apply(this);
         var layout=new DockPanel();
         var top=new StackPanel();DockPanel.SetDock(top,Dock.Top);layout.Children.Add(top);
         var heading=new DockPanel();var close=OverlayStyle.Button("Échap",()=>Dismiss(true));close.FontSize=11;DockPanel.SetDock(close,Dock.Right);heading.Children.Add(close);heading.Children.Add(OverlayStyle.Text("BATTLESTATION",12,"#CDB9DF"));top.Children.Add(heading);
         var searchArea=new Grid{Margin=new Thickness(0,12,0,8)};placeholder.Margin=new Thickness(10,8,0,0);placeholder.IsHitTestVisible=false;searchArea.Children.Add(placeholder);searchArea.Children.Add(search);top.Children.Add(searchArea);top.Children.Add(context);
-        var previews=new ScrollViewer{HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled,Height=118,Margin=new Thickness(0,10,0,0)};
-        var previewRow=new StackPanel{Orientation=Orientation.Horizontal};
-        foreach(var entry in catalog.Where(e=>e.ProfileName is not null&&e.ProfileName!="Personnel"))previewRow.Children.Add(ProfileCard(entry));
-        previews.Content=previewRow;top.Children.Add(previews);
+        var cardStack=new StackPanel();
+        var railScroll=new ScrollViewer{VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,Focusable=false,Padding=new Thickness(0,0,4,0)};
+        railScroll.Resources[typeof(ScrollBar)]=RailScrollBar();railScroll.Content=cardStack;
+        var railLabel=OverlayStyle.Text("Dispositions",12,"#CDB9DF");railLabel.Margin=new Thickness(2,0,0,10);
+        var rail=new DockPanel{Width=196,Margin=new Thickness(0,0,14,0)};DockPanel.SetDock(railLabel,Dock.Top);rail.Children.Add(railLabel);rail.Children.Add(railScroll);
+        foreach(var entry in catalog.Where(e=>e.ProfileName is not null&&e.ProfileName!="Personnel"))cardStack.Children.Add(ProfileCard(entry));
+        var divider=new Border{Width=1,Background=OverlayStyle.B("#3CDBCAE8"),Margin=new Thickness(0,0,14,0)};
         top.Children.Add(new Border{Height=1,Background=OverlayStyle.B("#3CDBCAE8"),Margin=new Thickness(0,15,0,12)});
         var footer=OverlayStyle.Text("↑ ↓  Parcourir       Entrée  Ouvrir       >  Commandes",11,"#AB9ABB");footer.Margin=new Thickness(0,12,0,0);DockPanel.SetDock(footer,Dock.Bottom);layout.Children.Add(footer);
         var center=new Grid();center.Children.Add(results);empty.HorizontalAlignment=HorizontalAlignment.Center;empty.VerticalAlignment=VerticalAlignment.Center;center.Children.Add(empty);layout.Children.Add(center);
-        Content=OverlayStyle.Frame(layout);
+        var columns=new Grid();columns.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});columns.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});columns.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(1,GridUnitType.Star)});Grid.SetColumn(rail,0);Grid.SetColumn(divider,1);Grid.SetColumn(layout,2);columns.Children.Add(rail);columns.Children.Add(divider);columns.Children.Add(layout);Content=OverlayStyle.Frame(columns);
         var style=new Style(typeof(ListBoxItem));style.Setters.Add(new Setter(Control.PaddingProperty,new Thickness(12,10,12,10)));style.Setters.Add(new Setter(FrameworkElement.MarginProperty,new Thickness(0,2,0,2)));style.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty,HorizontalAlignment.Stretch));style.Setters.Add(new Setter(Control.BackgroundProperty,Brushes.Transparent));style.Setters.Add(new Setter(Control.BorderBrushProperty,Brushes.Transparent));style.Setters.Add(new Setter(Control.BorderThicknessProperty,new Thickness(1)));style.Setters.Add(new Setter(UIElement.FocusableProperty,false));
         var frame=new FrameworkElementFactory(typeof(Border));frame.SetValue(Border.CornerRadiusProperty,new CornerRadius(13));
         foreach(var pair in new[]{(Border.BackgroundProperty,"Background"),(Border.BorderBrushProperty,"BorderBrush"),(Border.BorderThicknessProperty,"BorderThickness"),(Border.PaddingProperty,"Padding")})frame.SetBinding(pair.Item1,new System.Windows.Data.Binding(pair.Item2){RelativeSource=System.Windows.Data.RelativeSource.TemplatedParent});
@@ -44,40 +50,49 @@ internal sealed class CommandPaletteWindow : Window
         AutomationProperties.SetName(search,"Rechercher une application, un projet ou une commande");AutomationProperties.SetName(results,"Résultats");
         search.TextChanged+=(_,_)=>{placeholder.Visibility=search.Text.Length==0?Visibility.Visible:Visibility.Collapsed;Rebuild();};PreviewKeyDown+=HandleKey;
         results.PreviewMouseLeftButtonUp+=(_,e)=>{var item=ItemsControl.ContainerFromElement(results,e.OriginalSource as DependencyObject) as ListBoxItem;if(item is not null){results.SelectedItem=item;Execute();e.Handled=true;}};
-        Deactivated+=(_,_)=>Dismiss(false);Loaded+=(_,_)=>{search.Focus();Keyboard.Focus(search);};Closed+=(_,_)=>closing=true;
+        Deactivated+=(_,_)=>Dismiss(false);Loaded+=(_,_)=>{search.Focus();Keyboard.Focus(search);var selected=currentProfile?.Invoke();if(selected is not null&&profileCards.TryGetValue(selected,out var active))active.BringIntoView();};Closed+=(_,_)=>closing=true;
         Rebuild();UpdateProfileSelection();
     }
     Border ProfileCard(PaletteEntry entry)
     {
-        var card=new Border{Width=188,Height=104,Margin=new Thickness(0,0,8,0),Padding=new Thickness(8),CornerRadius=new CornerRadius(12),BorderThickness=new Thickness(1),Background=Brush("#241A30D8"),BorderBrush=Brush("#3C334A80")};
-        var stack=new StackPanel();var title=OverlayStyle.Text(entry.ProfileName!,13,"#E6D9F0");title.Margin=new Thickness(2,0,0,4);stack.Children.Add(title);
-        var plan=new Border{Height=62,Background=Brush("#33253FCC"),CornerRadius=new CornerRadius(7),Child=MiniMap(entry.ProfileName!)};stack.Children.Add(plan);card.Child=stack;
+        var name=entry.ProfileName!;
+        var card=new Border{Width=180,MinHeight=98,Margin=new Thickness(0,0,0,8),Padding=new Thickness(8),CornerRadius=new CornerRadius(14),BorderThickness=new Thickness(1),Background=Brush("#241A30D8"),BorderBrush=Brush("#3C334A80"),Cursor=Cursors.Hand};
+        var stack=new StackPanel();var title=OverlayStyle.Text(name,13,"#E6D9F0");title.Margin=new Thickness(2,0,0,6);stack.Children.Add(title);
+        var plan=new Border{Height=56,Background=Brush("#2A1E38CC"),BorderBrush=Brush("#3C8C7BB0"),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(9),Child=MiniMap(name)};stack.Children.Add(plan);card.Child=stack;
         card.MouseLeftButtonUp+=(_,e)=>{entry.Execute();UpdateProfileSelection();e.Handled=true;};
-        profileCards[entry.ProfileName!]=card;return card;
+        card.MouseEnter+=(_,_)=>{hovered[name]=true;UpdateProfileSelection();};
+        card.MouseLeave+=(_,_)=>{hovered[name]=false;UpdateProfileSelection();};
+        profileCards[name]=card;return card;
     }
     UIElement MiniMap(string name)
     {
-        var canvas=new Canvas{Width=166,Height=60};
+        var canvas=new Canvas{Width=160,Height=54};
         foreach(var block in catalog.First(e=>e.ProfileName==name).Preview??[])
         {
-            var x=block.X/5120*162+2;var y=block.Y/1440*50+4;var w=Math.Max(3,block.Width/5120*162);var h=Math.Max(3,block.Height/1440*50);
-            canvas.Children.Add(new Border{Width=Math.Min(160-x,w),Height=Math.Min(50-y,h),Background=Brush("#A8D5B58C"),BorderBrush=Brush("#F3E7D7E8"),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(2),Margin=new Thickness(x,y,0,0)});
+            var x=block.X/5120*156+2;var y=block.Y/1440*46+4;var w=Math.Max(3,block.Width/5120*156);var h=Math.Max(3,block.Height/1440*46);
+            canvas.Children.Add(new Border{Width=Math.Min(154-x,w),Height=Math.Min(46-y,h),Background=Brush("#A8D5B58C"),BorderBrush=Brush("#F3E7D7E8"),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(2),Margin=new Thickness(x,y,0,0)});
         }
         return canvas;
     }
     void UpdateProfileSelection()
     {
         var selected=currentProfile?.Invoke();
-        foreach(var pair in profileCards)pair.Value.BorderBrush=Brush(pair.Key==selected?"#CDA9F0E8":"#3C334A80");
+        foreach(var pair in profileCards)
+        {
+            bool current=pair.Key==selected,over=hovered.GetValueOrDefault(pair.Key);
+            pair.Value.BorderBrush=Brush(current?"#CDA9F0E8":over?"#62CCB5E4":"#3C334A80");
+            pair.Value.Background=Brush(current?"#2E2140E8":over?"#2A1F3AD8":"#241A30D8");
+        }
     }
     static SolidColorBrush Brush(string value)=>DesktopTheme.Brush(value);
+    static Style RailScrollBar()=>(Style)XamlReader.Parse("<Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='ScrollBar'><Setter Property='Width' Value='12'/><Setter Property='Background' Value='Transparent'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='ScrollBar'><Grid Background='Transparent'><Track x:Name='PART_Track' Orientation='Vertical' IsDirectionReversed='True'><Track.Thumb><Thumb MinHeight='28'><Thumb.Template><ControlTemplate TargetType='Thumb'><Border Width='4' CornerRadius='2' HorizontalAlignment='Center' Background='#A9CDA9F0'/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.DecreaseRepeatButton><RepeatButton Command='ScrollBar.PageUpCommand' Opacity='0'/></Track.DecreaseRepeatButton><Track.IncreaseRepeatButton><RepeatButton Command='ScrollBar.PageDownCommand' Opacity='0'/></Track.IncreaseRepeatButton></Track></Grid></ControlTemplate></Setter.Value></Setter></Style>");
     internal void AddProjects(IEnumerable<PaletteEntry> entries)
     {
         if(closing)return;foreach(var entry in entries)if(!catalog.Any(e=>e.Id==entry.Id))catalog.Add(entry);if(actions is null)Rebuild();
     }
-    internal void ProjectActions(string name,Action explorer,Action codex,Action kilo)
+    internal void ProjectActions(string name,Action explorer,Action codex,Action codexDs,Action kilo)
     {
-        previousQuery=search.Text;actions=[new("explorer","Explorateur",name,"\uE8B7",explorer),new("codex","Codex CLI",name,"\uE756",codex),new("kilo","Kilo CLI",name,"\uE756",kilo)];context.Text=name+"  ·  Échap pour revenir";placeholder.Text="Choisir une action";search.Text="";Rebuild();search.Focus();
+        previousQuery=search.Text;actions=[new("explorer","Explorateur",name,"\uE8B7",explorer),new("codex","Codex CLI (ChatGPT)",name,"\uE756",codex),new("codex-ds","Codex CLI (DS)",name,"\uE756",codexDs),new("kilo","Kilo CLI (DS)",name,"\uE756",kilo)];context.Text=name+"  ·  Échap pour revenir";placeholder.Text="Choisir une action";search.Text="";Rebuild();search.Focus();
     }
     void Rebuild()
     {

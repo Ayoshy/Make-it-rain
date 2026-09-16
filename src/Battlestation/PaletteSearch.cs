@@ -19,10 +19,58 @@ internal static class PaletteSearch
         string title=Normalize(entry.Title),detail=Normalize(entry.Detail);int total=0;
         foreach(string token in query.Split(' ',StringSplitOptions.RemoveEmptyEntries))
         {
-            int score=title==token?1200:title.StartsWith(token)?950:title.Contains(token)?700:detail.Contains(token)?300:Subsequence(token,title)?100:0;
-            if(score==0)return 0;total+=score;
+            int score=Token(token,title,detail);
+            if(score==0)return 0;
+            total+=score;
         }
         return total;
     }
-    static bool Subsequence(string query,string candidate){int i=0;foreach(char c in candidate)if(c==query[i]&&++i==query.Length)return true;return false;}
+    static int Token(string token,string title,string detail)
+    {
+        if(title.Length>0)
+        {
+            if(title==token)return 1200;
+            if(title.StartsWith(token,StringComparison.Ordinal))return 950;
+            if(WordStart(title,token))return 820;
+            int index=title.IndexOf(token,StringComparison.Ordinal);
+            if(index>=0)return 700-Math.Min(140,index*6);
+        }
+        if(detail.Contains(token,StringComparison.Ordinal))return 300;
+        int fuzzy=Fuzzy(token,title);
+        if(fuzzy>0)return 180+fuzzy;
+        fuzzy=Fuzzy(token,detail);
+        return fuzzy>0?60+fuzzy:0;
+    }
+    static bool WordStart(string text,string token)
+    {
+        for(int i=1;i+token.Length<=text.Length;i++)
+            if((text[i-1]==' '||text[i-1]=='-'||text[i-1]=='·')&&text.AsSpan(i).StartsWith(token,StringComparison.Ordinal))return true;
+        return false;
+    }
+    static int Fuzzy(string query,string candidate)
+    {
+        if(query.Length<3||candidate.Length<query.Length-2)return 0;
+        const int gap=1,typo=14;
+        int n=query.Length,m=candidate.Length;
+        var previous=new int[m+1];var current=new int[m+1];
+        for(int j=1;j<=m;j++)previous[j]=previous[j-1]-gap;
+        for(int i=1;i<=n;i++)
+        {
+            current[0]=previous[0]-typo;
+            for(int j=1;j<=m;j++)
+            {
+                int best=Math.Max(previous[j]-typo,current[j-1]-gap);
+                if(query[i-1]==candidate[j-1])
+                {
+                    int bonus=10;
+                    if(i>1&&j>1&&query[i-2]==candidate[j-2])bonus+=14;
+                    if(j==1||candidate[j-2]==' '||candidate[j-2]=='-'||candidate[j-2]=='·')bonus+=18;
+                    best=Math.Max(best,previous[j-1]+bonus);
+                }
+                current[j]=best;
+            }
+            var swap=previous;previous=current;current=swap;
+        }
+        return Math.Max(0,previous[m]);
+    }
 }

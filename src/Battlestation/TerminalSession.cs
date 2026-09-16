@@ -84,6 +84,7 @@ internal sealed class TerminalSession : IDisposable
     public void Start()=>_=EnsureHost("start");
     public void Command(string command)=>_=EnsureHost("command:"+command);
     public void OpenCodex(string project)=>_=EnsureHost("codex:"+project);
+    public void OpenCodexDeepSeek()=>_=EnsureHost("command:NewShell");
     public void OpenKilo()=>_=EnsureHost("command:NewShell");
     public void SelectTab(Guid id)=>_=EnsureHost("select:"+id);
     public void CloseTab(Guid id)=>_=EnsureHost("close-tab:"+id);

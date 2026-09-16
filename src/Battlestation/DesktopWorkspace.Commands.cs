@@ -75,6 +75,7 @@ internal sealed partial class DesktopWorkspace
         PaletteEntry Project(string path)=>new("project:"+path,Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar)),"Projet","\uE8B7",()=>window.ProjectActions(Path.GetFileName(path),
             ()=>{if(!Directory.Exists(path))throw new DirectoryNotFoundException("Ce projet a été déplacé ou supprimé.");Process.Start(new ProcessStartInfo(path){UseShellExecute=true})?.Dispose();},
             ()=>{if(!Directory.Exists(path))throw new DirectoryNotFoundException("Ce projet a été déplacé ou supprimé.");if(!ChangeVisibility("terminal",true))throw new InvalidOperationException("Pas assez d’espace libre pour le terminal.");SetEditing(false);station.Terminal!.OpenCodex(path);},
+            ()=>{if(!Directory.Exists(path))throw new DirectoryNotFoundException("Ce projet a été déplacé ou supprimé.");station.OpenCodexDeepSeek(path);},
             ()=>{if(!Directory.Exists(path))throw new DirectoryNotFoundException("Ce projet a été déplacé ou supprimé.");station.OpenKilo(path);}));
         var recent=Enumerable.Range(0,6).Select(i=>Native.Read($"project:{i}:path")).Where(p=>!string.IsNullOrWhiteSpace(p)).Select(Project).ToArray();window.AddProjects(recent);
         OverlayStyle.Reveal(window,station.Settings.AnimateBackground);
