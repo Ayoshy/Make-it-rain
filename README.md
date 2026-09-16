@@ -9,7 +9,7 @@ liquid glass et terminal natif ConPTY. Les widgets restent au niveau du bureau,
 derrière les applications ordinaires.
 
 Blocs indépendants : horloge, météo, applications, lecteur, projets, terminal,
-compteur Vice City, matériel, compteurs Codex, Nudge, vidéo, audio, Bluetooth et
+compteur Vice City, matériel, compteurs Codex, solde DeepSeek, Nudge, vidéo, audio, Bluetooth et
 DualSense et Réseau. Le compteur Vice City peut être retiré sans toucher au reste.
 
 - **Applications** : cliquer une app déjà lancée réaffiche sa fenêtre existante,
@@ -100,7 +100,10 @@ DualSense et Réseau. Le compteur Vice City peut être retiré sans toucher au r
 - Les boutons Conrad/Codex remplacent les informations à l’intérieur du dock par
   une transition sous verre : glissement, fondu, flou doux ou facettes, alternés
   dans un ordre mélangé, chacun une fois par cycle. Recliquez le bouton actif pour revenir au résumé.
-  Le cadre et les boutons restent fixes ; quotas et modèles défilent à la molette.
+  Le cadre et les boutons restent fixes ; quotas, modèles et solde DeepSeek se
+  consultent par page, les listes défilant à la molette.
+  **DEEPSEEK** lit le solde du compte via l’API et `DEEPSEEK_API_KEY`, gardée dans
+  l’environnement utilisateur ; Actualiser relit Codex et DeepSeek.
   Voir [les transitions internes](docs/DOCK_PAGE_TRANSITIONS.md).
 - Fermer explicitement son dernier onglet termine l'hôte terminal ; la prochaine
   ouverture utilise le build du bureau courant. Les anciennes sessions d'avant

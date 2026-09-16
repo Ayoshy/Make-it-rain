@@ -1,4 +1,4 @@
-# Pages internes de Conrad et Codex
+# Pages internes de Conrad, Codex et DeepSeek
 
 Comportement et implémentation des transitions internes des deux docks.
 Le prochain build lancé est indiqué par `build/current.txt` ; vérifier le chemin
@@ -8,17 +8,27 @@ restent la validation d'usage à faire sur le bureau réel.
 ## Utilisation
 
 Conrad possède les pages Résumé, 6 cœurs et Refroidissement ; Codex les pages
-Résumé, Quotas et Modèles. Clic sur un bouton : sa page remplace le contenu central.
+Résumé, Quotas, Modèles et Solde DeepSeek. Clic sur un bouton : sa page remplace le contenu central.
 Reclic sur le bouton actif : retour au résumé. Le contenu sort à droite pendant
 que son remplaçant arrive de gauche pour le glissement ; les variantes utilisent
 un déplacement plus court ou restent sur place. Glissement et fondu durent 300 ms ;
 défocalisation et pixels durent 380 ms pour rendre leurs phases distinctes.
 
-Le cadre, le titre, le statut et les trois boutons restent fixes. Le bouton actif
-est nacré. Canicule et Actualiser conservent leurs actions propres. Les listes
-Quotas et Modèles défilent à la molette dans la zone centrale ; une jauge discrète
-indique leur position. La position de chaque liste est conservée entre les pages
-et bornée à la quantité de données disponible.
+Le cadre, le titre, le statut et les boutons restent fixes. Le bouton actif
+est nacré. Canicule et Actualiser conservent leurs actions propres ; Actualiser
+relit aussi le solde DeepSeek. Les listes Quotas et Modèles défilent à la molette
+dans la zone centrale ; une jauge discrète indique leur position. La position de
+chaque liste est conservée entre les pages et bornée à la quantité de données
+disponible.
+
+La page Solde DeepSeek lit `https://api.deepseek.com/user/balance` avec
+`DEEPSEEK_API_KEY`, cherchée d'abord dans l'environnement du processus puis dans
+celui de l'utilisateur. Elle affiche le solde total, le montant rechargé et le
+montant offert de la devise renvoyée, et note l'état du compte. La lecture a lieu
+toutes les 15 minutes ou sur Actualiser ; le statut en haut à droite suit la page
+consultée. Clé absente, clé refusée, erreur HTTP ou réponse sans solde restent
+indisponibles, jamais zéro. La clé n'est ni journalisée, ni écrite dans les
+données, ni affichée.
 
 Les six cœurs tiennent en grille 3 × 2 dès la taille minimale. Le refroidissement
 présente les deux curseurs côte à côte ; Appliquer reste visible. Ses modifications
@@ -58,7 +68,7 @@ jusqu’à sa fin accélérée. Aucun réglage ou menu supplémentaire n’est n
 - Fin, retrait, occultation, déchargement et redimensionnement libèrent les horloges.
   Un masquage retire aussi les dessins enfants et les zones de verre de l’affichage.
 - `DesktopWorkspace` n’agrandit plus les fenêtres de monitoring. La commande interne
-  `drawer:1..4` reste compatible et sélectionne maintenant une page.
+  `drawer:1..5` reste compatible et sélectionne maintenant une page.
 - Le seul raccordement au dessin partagé rend `Surface.SetDisplayed` redéfinissable
   pour masquer aussi les deux dessins conservés. Les autres surfaces sont inchangées
   par ce raccordement.

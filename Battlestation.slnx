@@ -10,6 +10,7 @@
     <Project Path="tests/Battlestation.AppActivity.Tests.csproj" />
     <Project Path="tests/Battlestation.Bluetooth.Tests.csproj" />
     <Project Path="tests/Battlestation.BrowserVideo.Tests.csproj" />
+    <Project Path="tests/Battlestation.DeepSeek.Tests.csproj" />
     <Project Path="tests/Battlestation.DockReview.Tests.csproj" />
     <Project Path="tests/Battlestation.Scenes.Tests.csproj" />
     <Project Path="tests/Battlestation.Network.Tests.csproj" />

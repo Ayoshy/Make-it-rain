@@ -33,7 +33,7 @@ internal sealed class DashboardSurface : Surface
     }
     public void Toggle(int next)
     {
-        if (sensors ? next is not (1 or 2) : next is not (3 or 4)) return;
+        if (sensors ? next is not (1 or 2) : next is not (3 or 4 or 5)) return;
         CancelDrag(); sliders.Clear();
         if (next == 2 && pages.Requested != 2 && !draftDirty)
         {
@@ -54,13 +54,22 @@ internal sealed class DashboardSurface : Surface
     }
     protected override void Paint()
     {
-        double w = ActualWidth, h = ActualHeight, buttonY = h - 44, buttonW = (w - 72) / 3;
+        double w = ActualWidth, h = ActualHeight, buttonY = h - 44, buttonW = (w - (sensors ? 72 : 84)) / (sensors ? 3 : 4);
         Header(sensors ? "CONRAD SENSOR" : "CODEX METER");
-        Text(Station.M(sensors ? "sensorStatus" : "codexStatus"), w - 24, 18, 8, align: "right", width: Math.Max(80, w - 235));
-        Nav(sensors ? "Cores" : "Quotas", sensors ? "6 CŒURS" : "QUOTAS", 24, sensors ? 1 : 3);
-        Nav(sensors ? "Cooling" : "Models", sensors ? (w < 600 ? "FROID ⚙" : "REFROIDISSEMENT ⚙") : "MODÈLES", 36 + buttonW, sensors ? 2 : 4);
-        Button(sensors ? "Heatwave" : "Refresh", sensors ? (Station.M("heatwave") == "1" ? "♨ ACTIVE" : "♨ CANICULE") : "ACTUALISER ↻",
-            48 + 2 * buttonW, buttonY, buttonW, 32, () => Station.Command(sensors ? "Heatwave" : "Refresh"), 8, Ink);
+        Text(Station.M(sensors ? "sensorStatus" : pages.Requested == 5 ? "deepseekStatus" : "codexStatus"), w - 24, 18, 8, align: "right", width: Math.Max(80, w - 235));
+        if (sensors)
+        {
+            Nav("Cores", "6 CŒURS", 24, 1);
+            Nav("Cooling", w < 600 ? "FROID ⚙" : "REFROIDISSEMENT ⚙", 36 + buttonW, 2);
+            Button("Heatwave", Station.M("heatwave") == "1" ? "♨ ACTIVE" : "♨ CANICULE", 48 + 2 * buttonW, buttonY, buttonW, 32, () => Station.Command("Heatwave"), 8, Ink);
+        }
+        else
+        {
+            Nav("DeepSeek", "DEEPSEEK", 24, 5);
+            Nav("Quotas", "QUOTAS", 36 + buttonW, 3);
+            Nav("Models", "MODÈLES", 48 + 2 * buttonW, 4);
+            Button("Refresh", "ACTUALISER ↻", 60 + 3 * buttonW, buttonY, buttonW, 32, () => Station.Command("Refresh"), 8, Ink);
+        }
         void Nav(string name, string label, double x, int page)
         {
             if (pages.Requested == page) Box(x, buttonY, buttonW, 32, "#26DBC5ED", "#72E7D5FA", DockAppearance.ButtonRadius);
@@ -85,6 +94,7 @@ internal sealed class DashboardSurface : Surface
                 case 2: Cooling(); break;
                 case 3: Quotas(); break;
                 case 4: Models(); break;
+                case 5: DeepSeek(); break;
             }
         });
         D = context; Pointer = pointer; drawingPage = false;
@@ -254,6 +264,17 @@ internal sealed class DashboardSurface : Surface
         }
         Text(Station.M("credits"), 0, body.Height - 15, 7.5, Muted, width: w - 10);
         ScrollMark(rows.Count, count, quotaOffset, 0, count * 48 - 5);
+    }
+    void DeepSeek()
+    {
+        double w = body.Width, right = w * .58;
+        string currency = Station.M("deepseekCurrency"), error = Station.M("deepseekError");
+        Text("SOLDE API" + (currency is "" or "—" ? "" : " · " + currency), 0, 0, 9);
+        Text(Station.M("deepseekTotal"), 0, 19, 30, "#96E7B2", DockAppearance.NumberFont);
+        string state = Station.M("deepseekAvailable") switch { "1" => "Compte actif", "0" => "Solde épuisé", _ => "" };
+        Text(error != "" ? error : state, 0, 86, 7.5, error != "" ? "#FF95C1" : Muted, width: right - 20);
+        Text("RECHARGÉ", right, 1, 8); Text(Station.M("deepseekToppedUp"), right, 19, 17, font: DockAppearance.NumberFont);
+        Text("OFFERT", right, 58, 8); Text(Station.M("deepseekGranted"), right, 75, 17, font: DockAppearance.NumberFont);
     }
     void Models()
     {

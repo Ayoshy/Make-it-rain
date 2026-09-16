@@ -218,7 +218,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
             if(!station.Layout.Move(parts[1],double.Parse(parts[2],System.Globalization.CultureInfo.InvariantCulture),double.Parse(parts[3],System.Globalization.CultureInfo.InvariantCulture)))return "FULL";
             Apply(parts[1]);station.Layout.Save();return "OK";
         }
-        if(command.StartsWith("drawer:")&&int.TryParse(command[7..],out int drawer)&&drawer is >=1 and <=4){((DashboardSurface)surfaces[drawer<=2?"hardware":"usage"]).Toggle(drawer);return "OK";}
+        if(command.StartsWith("drawer:")&&int.TryParse(command[7..],out int drawer)&&drawer is >=1 and <=5){((DashboardSurface)surfaces[drawer<=2?"hardware":"usage"]).Toggle(drawer);return "OK";}
         if(command=="capture"){Native.BackgroundCapture();return "OK";}
         throw new InvalidOperationException("Commande inconnue");
     }

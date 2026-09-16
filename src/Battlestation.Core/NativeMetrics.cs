@@ -14,12 +14,16 @@ internal sealed partial class Backend
     static string Number(double? n, string unit = "") => n is { } v && double.IsFinite(v) ? Math.Round(v).ToString(CultureInfo.InvariantCulture) + unit : "—";
     static string Count(long? n) => UsageFormatter.CompactNumber(n, AppLanguage.French);
     static string Money(decimal? n) => UsageFormatter.Dollars(n, AppLanguage.French);
+    static string Amount(decimal? n) => n is { } v ? v.ToString("#,##0.00", CultureInfo.GetCultureInfo("fr-FR")) : "—";
     public string Metric(string key)
     {
         if(!targetValid && key is "days" or "hours" or "minutes" or "seconds" or "date") return "—";
         var s = sensors is { } current && DateTimeOffset.Now - current.FetchedAt < TimeSpan.FromSeconds(15) ? current : null;
         var usage = meter.Snapshot;
         var quota = usage?.Limits.FirstOrDefault(l => l.Id == "codex") ?? usage?.Limits.FirstOrDefault();
+        var balanceState = deepseek;
+        var balance = balanceState.Snapshot;
+        var balanceInfo = balance?.Primary;
         var left = target - DateTimeOffset.Now;
         if (left < TimeSpan.Zero) left = TimeSpan.Zero;
         if (key.StartsWith("core") && int.TryParse(key[4..], out var core)) return Number(s?.CpuCores.ElementAtOrDefault(core)?.Celsius, "°");
@@ -45,6 +49,11 @@ internal sealed partial class Backend
             "credits" => usage?.ResetCredits is { } count ? count + " crédit(s) de reset · lecture seule" : "Crédits indisponibles",
             "codexStatus" => meter.Refreshing ? "ACTUALISATION…" : usage is null ? "INDISPONIBLE" : meter.Error is not null || DateTimeOffset.Now-usage.FetchedAt > TimeSpan.FromMinutes(16) ? "DERNIÈRE MESURE" : "MAJ " + usage.FetchedAt.ToString("HH:mm"),
             "codexError" => meter.Error ?? "", "modelsCount" => (usage?.Models.Count ?? 0).ToString(),
+            "deepseekCurrency" => balanceInfo?.Currency is { Length: > 0 } currency ? currency : "—",
+            "deepseekTotal" => Amount(balanceInfo?.Total), "deepseekGranted" => Amount(balanceInfo?.Granted), "deepseekToppedUp" => Amount(balanceInfo?.ToppedUp),
+            "deepseekAvailable" => balance is null ? "" : balance.Available ? "1" : "0",
+            "deepseekStatus" => balanceState.Refreshing ? "ACTUALISATION…" : balance is null ? "INDISPONIBLE" : balanceState.Error is not null || DateTimeOffset.Now - balance.FetchedAt > TimeSpan.FromMinutes(16) ? "DERNIÈRE MESURE" : "MAJ " + balance.FetchedAt.ToString("HH:mm"),
+            "deepseekError" => balanceState.Error ?? "",
             "quotaDetails" => usage is null ? "Indisponible" : string.Join("\n\n", usage.Limits.Select(l => l.Name + "\n" + string.Join("   ·   ", new[] { l.Primary, l.Secondary }.Where(q => q is not null).Select(q => Number(q!.UsedPercent is { } u ? 100-u : null, "% restant") + " / " + UsageFormatter.WindowLabel(q.WindowDurationMins, AppLanguage.French) + " / " + (q.ResetsAt is { } r ? DateTimeOffset.FromUnixTimeSeconds(r).ToLocalTime().ToString("dd/MM HH:mm") : "reset indisponible"))))),
             "fanAuto" => controls is null ? "—" : controls.FanAuto ? "1" : "0",
             "fanTarget" => controls is null ? "—" : controls.FanPercent.ToString(),

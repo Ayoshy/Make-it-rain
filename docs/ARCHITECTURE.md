@@ -90,6 +90,9 @@ Les lecteurs matériels et de compteurs sont issus des projets locaux Conrad et
 Codex Meter. Les écritures GPU restent protégées contre un autre Conrad actif.
 `Battlestation.GpuHelper.exe` est lancé à la demande, pas au démarrage de Windows.
 Les lectures Codex utilisent l'app-server existant sans demander de génération.
+Le solde DeepSeek est lu directement sur l'API du compte (`/user/balance`) avec
+la clé `DEEPSEEK_API_KEY` de l'environnement utilisateur ; la clé n'est ni
+journalisée ni conservée dans les données.
 
 Les sources et assets utilisent des chemins relatifs au projet. Les réglages
 utilisateur sont dans `%LOCALAPPDATA%\Battlestation` ; la date cible déjà choisie

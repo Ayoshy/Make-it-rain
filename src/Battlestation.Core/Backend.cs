@@ -10,12 +10,13 @@ internal sealed partial class Backend : IDisposable
 {
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     readonly CancellationTokenSource shutdown = new();
-    readonly SemaphoreSlim refresh = new(0, 1), gpuGate = new(1, 1);
+    readonly SemaphoreSlim refresh = new(0, 1), deepseekRefresh = new(0, 1), gpuGate = new(1, 1);
     readonly NativeGpuControlService gpu = new();
-    readonly Task sensorsTask, codexTask;
+    readonly Task sensorsTask, codexTask, deepseekTask;
     readonly string directory;
     volatile TemperatureSnapshot? sensors;
     volatile MeterState meter = new(null, false, null, 15);
+    volatile DeepSeekState deepseek = new(null, false, null);
     volatile string? hardwareError, gpuError;
     volatile bool gpuBusy, heatwave;
     public string Display => $"CPU {SensorFormatting.Temperature(sensors?.CpuPackageCelsius)}  ·  GPU {SensorFormatting.Temperature(sensors?.GpuCelsius)}\nCodex {QuotaText()}";
@@ -25,10 +26,11 @@ internal sealed partial class Backend : IDisposable
         Directory.CreateDirectory(directory);
         sensorsTask = Task.Run(ReadSensors);
         codexTask = Task.Run(ReadCodex);
+        deepseekTask = Task.Run(ReadDeepSeek);
     }
     public int Revision(bool hardware)=>hardware
         ? HashCode.Combine(sensors?.FetchedAt,hardwareError,gpuError,gpuBusy,heatwave,controls,Volatile.Read(ref writePending),sensors is {} sample&&DateTimeOffset.Now-sample.FetchedAt>TimeSpan.FromSeconds(15))
-        : HashCode.Combine(meter,meter.Snapshot is {} usage&&DateTimeOffset.Now-usage.FetchedAt>TimeSpan.FromMinutes(16));
+        : HashCode.Combine(meter,meter.Snapshot is {} usage&&DateTimeOffset.Now-usage.FetchedAt>TimeSpan.FromMinutes(16),deepseek,deepseek.Snapshot is {} balance&&DateTimeOffset.Now-balance.FetchedAt>TimeSpan.FromMinutes(16));
     string QuotaText()
     {
         var value = meter.Snapshot?.Limits.FirstOrDefault()?.Primary?.UsedPercent;
@@ -44,7 +46,7 @@ internal sealed partial class Backend : IDisposable
             {
                 try { sensors = hardware.Read(); hardwareError = null; }
                 catch (Exception e) { sensors = null; hardwareError = e.GetType().Name; }
-                var state = new { processId = Environment.ProcessId, runtime = Environment.Version.ToString(), sampledAt = DateTimeOffset.Now, sensors, hardwareError, codex = meter, gpuControl = controls, heatwaveActive = heatwave, gpuError, transport = "in-process + app-server stdio" };
+                var state = new { processId = Environment.ProcessId, runtime = Environment.Version.ToString(), sampledAt = DateTimeOffset.Now, sensors, hardwareError, codex = meter, deepseek, gpuControl = controls, heatwaveActive = heatwave, gpuError, transport = "in-process + app-server stdio" };
                 var file = Path.Combine(directory, "probe.json");
                 DiagnosticFile.TryWrite(file, JsonSerializer.Serialize(state, Json));
                 await Task.Delay(2000, shutdown.Token);
@@ -75,7 +77,23 @@ internal sealed partial class Backend : IDisposable
         catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { throw; }
         catch { meter = meter with { Refreshing = false, Error = "Codex indisponible. Dernière mesure conservée." }; }
     }
-    public void RequestRefresh() { if (refresh.CurrentCount == 0 && !meter.Refreshing) { try { refresh.Release(); } catch (SemaphoreFullException) { } } }
+    async Task ReadDeepSeek()
+    {
+        try { do { await UpdateDeepSeek(); } while (await deepseekRefresh.WaitAsync(TimeSpan.FromMinutes(15), shutdown.Token) || !shutdown.IsCancellationRequested); }
+        catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { }
+    }
+    async Task UpdateDeepSeek()
+    {
+        deepseek = deepseek with { Refreshing = true, Error = null };
+        try { deepseek = new(await DeepSeekBalanceReader.ReadAsync(shutdown.Token), false, null); }
+        catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { throw; }
+        catch (Exception e) { deepseek = deepseek with { Refreshing = false, Error = e is InvalidOperationException ? e.Message : "API DeepSeek indisponible." }; }
+    }
+    public void RequestRefresh()
+    {
+        if (refresh.CurrentCount == 0 && !meter.Refreshing) { try { refresh.Release(); } catch (SemaphoreFullException) { } }
+        if (deepseekRefresh.CurrentCount == 0 && !deepseek.Refreshing) { try { deepseekRefresh.Release(); } catch (SemaphoreFullException) { } }
+    }
     public async Task<object> RequestAsync(string channel, string path, JsonElement body)
     {
         if (channel == "codex")
@@ -119,7 +137,7 @@ internal sealed partial class Backend : IDisposable
     public void Dispose()
     {
         shutdown.Cancel();
-        try { Task.WaitAll([sensorsTask, codexTask], TimeSpan.FromSeconds(8)); } catch { }
+        try { Task.WaitAll([sensorsTask, codexTask, deepseekTask], TimeSpan.FromSeconds(8)); } catch { }
         gpu.Dispose();
     }
 }
