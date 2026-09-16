@@ -21,6 +21,8 @@ internal sealed class TerminalSession : IDisposable
     public int Pid {get;private set;}
     public nint RemoteHandle=>remoteHost;
     public string Status {get;private set;}="Terminal natif prêt";
+    public bool ThemeSupported {get;private set;}
+    string? sentTheme;
     public bool UseGlassTabs {get;private set;}
     public IReadOnlyList<TerminalTabInfo> Tabs {get;private set;}=[];
     public long Revision {get;private set;}
@@ -93,7 +95,7 @@ internal sealed class TerminalSession : IDisposable
             using var json=JsonDocument.Parse(await Send("inspect"));
             if(disposed)return;
             var root=json.RootElement;var handle=(nint)root.GetProperty("hwnd").GetInt64();bool changed=remoteHost!=handle;
-            remoteHost=handle;if(changed)sentExternalChrome=null;Pid=root.GetProperty("pid").GetInt32();Status=root.GetProperty("status").GetString()??"Terminal natif";
+            remoteHost=handle;if(changed){sentExternalChrome=null;sentTheme=null;}Pid=root.GetProperty("pid").GetInt32();Status=root.GetProperty("status").GetString()??"Terminal natif";
             var sessions=root.GetProperty("sessions").EnumerateArray().ToArray();
             rawTabs=sessions.Select(tab=>new TerminalTabInfo(tab.GetProperty("id").GetGuid(),tab.GetProperty("title").GetString()??"Terminal",tab.GetProperty("active").GetBoolean())).ToArray();
             shellPids=sessions.ToDictionary(tab=>tab.GetProperty("id").GetGuid(),tab=>tab.GetProperty("pid").GetInt32());
@@ -101,6 +103,8 @@ internal sealed class TerminalSession : IDisposable
             if(disposed)return;RefreshTabPresentation();
             bool external=root.TryGetProperty("chromeVersion",out var version)&&version.GetInt32()>=1;
             if(UseGlassTabs!=external){UseGlassTabs=external;HeaderChanged?.Invoke();}
+            ThemeSupported=root.TryGetProperty("themeVersion",out var themeVersion)&&themeVersion.GetInt32()>=1;
+            if(ThemeSupported&&sentTheme!=DesktopTheme.Current.Id){var desired=DesktopTheme.Current.Id;await Send("theme:"+desired);sentTheme=desired;}
             if(changed)await PlaceAsync();
         }
         catch{if(!starting){Pid=0;remoteHost=0;}}

@@ -23,10 +23,11 @@ public sealed class ApiEquivalentEstimator
     private static readonly IReadOnlyDictionary<string, ModelPrice> Prices =
         new Dictionary<string, ModelPrice>(StringComparer.OrdinalIgnoreCase)
         {
-            ["gpt-5.6"] = new(5m, 0.50m, 30m),
-            ["gpt-5.6-sol"] = new(5m, 0.50m, 30m),
-            ["gpt-5.6-terra"] = new(2.50m, 0.25m, 15m),
-            ["gpt-5.6-luna"] = new(1m, 0.10m, 6m),
+            ["gpt-6-astra"] = new(10m, 1m, 50m),
+            ["gpt-5.6"] = new(4m, 0.40m, 20m),
+            ["gpt-5.6-sol"] = new(4m, 0.40m, 20m),
+            ["gpt-5.6-terra"] = new(2m, 0.20m, 12m),
+            ["gpt-5.6-luna"] = new(0.20m, 0.02m, 1.20m),
             ["gpt-5.5"] = new(5m, 0.50m, 30m),
             ["gpt-5.4"] = new(2.50m, 0.25m, 15m),
             ["gpt-5.4-mini"] = new(0.75m, 0.075m, 4.50m),
@@ -55,7 +56,7 @@ public sealed class ApiEquivalentEstimator
         _cachePath = cachePath ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Battlestation",
-            "api-equivalent-cache-v1.json");
+            "api-equivalent-cache-v2.json");
     }
 
     public async Task<ApiEquivalentEstimate?> EstimateAsync(
@@ -306,20 +307,51 @@ public sealed class ApiEquivalentEstimator
             detectEncodingFromByteOrderMarks: startOffset == 0,
             bufferSize: 64 * 1024,
             leaveOpen: false);
+        var pendingUsage = new List<(TokenBreakdown Usage, DateTimeOffset? EventTime)>();
+        void AddUsage(TokenBreakdown delta, DateTimeOffset? eventTime)
+        {
+            var key = new ModelEffortKey(
+                NormalizeModel(currentModel),
+                NormalizeEffort(currentEffort));
+            if (!totals.TryGetValue(key, out var modelTotals))
+            {
+                modelTotals = new FileModelTotals();
+                totals[key] = modelTotals;
+            }
+            modelTotals.Add(delta);
+            if (eventTime is { } parsedTime)
+            {
+                var dayKey = parsedTime.ToLocalTime().ToString("yyyy-MM-dd") + "|" + key.Model;
+                dailyTotals.TryGetValue(dayKey, out var day);
+                dailyTotals[dayKey] = new DailyEstimate((day?.InputTokens ?? 0) + delta.InputTokens,
+                    (day?.CachedInputTokens ?? 0) + delta.CachedInputTokens, (day?.OutputTokens ?? 0) + delta.OutputTokens,
+                    (day?.TotalTokens ?? 0) + delta.TotalTokens);
+            }
+        }
+        void FlushPendingUsage()
+        {
+            foreach (var pending in pendingUsage)
+            {
+                AddUsage(pending.Usage, pending.EventTime);
+            }
+            pendingUsage.Clear();
+        }
 
         while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
         {
             if (line.Contains("\"type\":\"turn_context\"", StringComparison.Ordinal))
             {
                 var context = TryReadContext(line);
-                if (!string.IsNullOrWhiteSpace(context.Model))
+                bool hasModel = !string.IsNullOrWhiteSpace(context.Model);
+                if (hasModel)
                 {
-                    currentModel = context.Model;
+                    currentModel = context.Model!;
                 }
                 if (!string.IsNullOrWhiteSpace(context.Effort))
                 {
-                    currentEffort = context.Effort;
+                    currentEffort = context.Effort!;
                 }
+                if (hasModel) FlushPendingUsage();
                 continue;
             }
 
@@ -337,26 +369,18 @@ public sealed class ApiEquivalentEstimator
                 continue;
             }
 
-            var key = new ModelEffortKey(
-                NormalizeModel(currentModel),
-                NormalizeEffort(currentEffort));
-            if (!totals.TryGetValue(key, out var modelTotals))
-            {
-                modelTotals = new FileModelTotals();
-                totals[key] = modelTotals;
-            }
-            modelTotals.Add(delta);
+            DateTimeOffset? eventTime = null;
             using var eventDoc = JsonDocument.Parse(line);
             if (eventDoc.RootElement.TryGetProperty("timestamp", out var ts) &&
-                ts.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(ts.GetString(), out var eventTime))
+                ts.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(ts.GetString(), out var parsedTime))
             {
-                var dayKey = eventTime.ToLocalTime().ToString("yyyy-MM-dd") + "|" + key.Model;
-                dailyTotals.TryGetValue(dayKey, out var day);
-                dailyTotals[dayKey] = new DailyEstimate((day?.InputTokens ?? 0) + delta.InputTokens,
-                    (day?.CachedInputTokens ?? 0) + delta.CachedInputTokens, (day?.OutputTokens ?? 0) + delta.OutputTokens,
-                    (day?.TotalTokens ?? 0) + delta.TotalTokens);
+                eventTime = parsedTime;
             }
+            if (string.IsNullOrWhiteSpace(currentModel)) pendingUsage.Add((delta, eventTime));
+            else AddUsage(delta, eventTime);
         }
+
+        FlushPendingUsage();
 
         var processedLength = stream.Position;
         if (totals.Count == 0)

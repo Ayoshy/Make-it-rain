@@ -8,6 +8,10 @@ internal sealed record ReminderItem(string Text);
 internal sealed class Station
 {
     public string Root {get;set;}="";
+    public string Data=>System.IO.Path.Combine(Root,"artifacts/validation/network-fixture");
+    internal DesktopSettings Settings {get;private set;}=new(Environment.CurrentDirectory,"Aix",43.5,5.4);
+    internal string TargetDate=>"2026-11-19T00:00:00+01:00";
+    internal void ApplySettings(DesktopSettings settings,string target)=>Settings=settings;
     public List<DockApp> Apps {get;set;}=[];
     public event Action? DockChanged;
     public List<ReminderItem> Reminders {get;set;}=[];
@@ -29,8 +33,9 @@ internal static class Native
 internal static class OverlayStyle
 {
     public static Button Button(string text,Action action)=>new(){Content=text};
-    public static TextBlock Text(string text,double size)=>new(){Text=text,FontSize=size};
+    public static TextBlock Text(string text,double size,string? color=null)=>new(){Text=text,FontSize=size};
     public static Border Frame(UIElement child)=>new(){Child=child};
     public static void Apply(Window window)=>throw new InvalidOperationException("No modal during render tests");
+    public static void Reveal(Window window,bool animate)=>throw new InvalidOperationException("No modal during render tests");
     public static void Place(Window window)=>throw new InvalidOperationException("No modal during render tests");
 }

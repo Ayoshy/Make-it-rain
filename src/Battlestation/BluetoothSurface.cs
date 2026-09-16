@@ -33,7 +33,8 @@ internal sealed class BluetoothSurface : Surface,IDisposable
         busyTimer.Stop();SizeChanged+=(_,_)=>RefreshState();
     }
 
-    internal async void Poll(bool force=false)
+    internal int? ControllerBattery=>stateCurrent&&Environment.TickCount64<nextScan+5000?rows[2]?.CurrentBatteryPercent:null;
+    internal async void Poll(bool force=false,bool controllerOnly=false)
     {
         if(disposed||scanning||changing||!force&&Environment.TickCount64<nextScan)return;
         nextScan=Environment.TickCount64+5000;scanning=true;long generation=++scanGeneration;
@@ -44,7 +45,7 @@ internal sealed class BluetoothSurface : Surface,IDisposable
             if(disposed||changing||generation!=scanGeneration)return;
             rows=Favorites.Select(want=>found.FirstOrDefault(row=>string.Equals(row.Name,want,StringComparison.OrdinalIgnoreCase))).ToArray();
             if(waitingForController&&errorTarget>=0&&rows[errorTarget]?.Connected==true){waitingForController=false;error="";}
-            stateCurrent=true;scanError="";RefreshState();PollBuds();
+            stateCurrent=true;scanError="";RefreshState();if(!controllerOnly)PollBuds();
         }
         catch(BluetoothScanException e)
         {

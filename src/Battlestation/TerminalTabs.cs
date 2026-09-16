@@ -19,7 +19,7 @@ internal sealed class TerminalTabs : Grid
     public event Action? Added,PasteRequested;
     public event Action<Guid,TerminalTabAction,string?>? Customize;
     internal IReadOnlyList<TerminalTabInfo> Displayed=>current;
-    static SolidColorBrush B(string color)=>new((Color)ColorConverter.ConvertFromString(color));
+    static SolidColorBrush B(string color)=>DesktopTheme.Brush(color);
     internal static string Status(TerminalActivity state)=>state switch{TerminalActivity.Thinking=>"Réflexion",TerminalActivity.Working=>"En cours",TerminalActivity.Ready=>"Prêt",TerminalActivity.Attention=>"Action requise",TerminalActivity.Error=>"Erreur",_=>"État non exposé"};
     public TerminalTabs()
     {

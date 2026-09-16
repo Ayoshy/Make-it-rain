@@ -1,9 +1,11 @@
-# Cockpit — cinq ajouts préparés
+# Cockpit — notes historiques d'intégration
 
-Build de livraison : `build/battlestation-cockpit`. Non chargé sur le bureau :
-l'utilisateur a demandé de laisser la main à l'agent Vidéo pendant ses essais.
-Ne pas modifier `build/current.txt` ni recharger le bureau sans reprise explicite.
-Les fichiers Vidéo et leurs modifications non committées sont conservés.
+Ce document conserve le périmètre et les preuves du chantier initial
+`build/battlestation-cockpit`. La coordination avec le chantier Vidéo est terminée ;
+l'ancienne restriction de rechargement est levée. Les états, cadences et validations
+ci-dessous décrivent cette étape, pas nécessairement la version actuelle. Consulter
+README.md et ARCHITECTURE.md pour le fonctionnement actuel, AGENTS.md pour les
+règles de livraison, puis vérifier les sources et processus concernés.
 
 ## Audio et fond
 
@@ -45,7 +47,7 @@ Une absence de dépôt ou un échec ne devient pas un état « propre ».
 
 Le sous-texte est vert pour un dépôt propre, ambre pour des modifications et gris
 si l’état Git est inconnu. Les cartes et leur fenêtre d’actions utilisent les mêmes
-couleurs. Les seules actions du projet sont Explorateur et Codex CLI.
+couleurs. Les actions du projet sont Explorateur, Codex CLI et DeepSeek CLI.
 
 ## Liens médias
 
@@ -69,7 +71,7 @@ complet ; seul un lien média reconnu entre dans `media-reserve.json`.
   Enregistrement transparent, ouverture d'un média uniquement sur clic.
   La surveillance est désactivable dans Réglages → Liens médias.
 
-## État de livraison
+## État de livraison au moment du compte rendu
 
 Le cockpit est intégré au build courant. Les réglages audio ne sont pas modifiés
 au démarrage et le microphone n'est jamais capturé.
@@ -87,11 +89,11 @@ capacité et persistance ; métadonnées avec transport factice ; profils indép
 et rejet atomique des collisions ; dépôt Git temporaire réel, état propre,
 modifications et HEAD détachée. Aucun accès au presse-papiers utilisateur.
 
-Restent à vérifier après la fin du chantier Vidéo : chargement sur le bureau,
+À cette étape, restaient à vérifier après la fin du chantier Vidéo : chargement sur le bureau,
 clics/drag des curseurs, bascule physique de sortie et du micro, réaction à la
 musique en usage normal, changement de périphérique/veille, copies réelles de
 liens et métadonnées réseau, transitions de dispositions avec survie des onglets.
-Computer Use ne permet actuellement pas les clics : native pipe, erreur 2.
+Computer Use ne permettait alors pas les clics : native pipe, erreur 2.
 
 Les requêtes oEmbed publiques ont répondu pour YouTube et Spotify depuis ce PC.
 Un exemple Spotify indisponible a renvoyé HTTP 500 ; un autre a renvoyé une

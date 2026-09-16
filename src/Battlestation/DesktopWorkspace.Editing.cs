@@ -35,7 +35,7 @@ internal sealed partial class DesktopWorkspace
         {
             var drawing=(EditGrid)window.Content;drawing.Step=station.Settings.GridStep;
             drawing.Occupied=station.Layout.Blocks.Where(b=>b.Visible).Select(b=>new Rect(b.X-window.Left,b.Y-window.Top,b.Width,b.Height)).ToArray();drawing.InvalidateVisual();
-            if(editing&&station.Settings.GridEnabled){if(!window.IsVisible)window.Show();}else if(window.IsVisible)window.Hide();
+            if(editing&&station.Settings.GridEnabled&&(!station.Layout.SingleScreen||editGrids.IndexOf(window)==0)){if(!window.IsVisible)window.Show();}else if(window.IsVisible)window.Hide();
         }
         if(arrange)placement.Arrange();
     }
@@ -67,7 +67,7 @@ internal sealed partial class DesktopWorkspace
             if(!editing||e.OriginalSource is Button)return;
             EndGesture(false);var p=e.GetPosition(overlay);
             bool linked=station.Settings.LinkDocks^Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
-            gesture=new(station.Layout.Blocks,id,Handle(p,overlay.ActualWidth,overlay.ActualHeight),DesktopPointer(overlay),station.Settings.GridEnabled,station.Settings.GridStep,linked);
+            gesture=new(station.Layout.Blocks,id,Handle(p,overlay.ActualWidth,overlay.ActualHeight),DesktopPointer(overlay),station.Settings.GridEnabled,station.Settings.GridStep,linked,station.Layout.AvailableScreens);
             lastGestureBlocked=null;
             gestureCapture=overlay;toolbar.Activate();if(!overlay.CaptureMouse()){gesture=null;gestureCapture=null;return;}
             e.Handled=true;

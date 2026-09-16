@@ -1,9 +1,15 @@
 param([string]$Build,[switch]$AtLogon)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
-if(!$Build){$Build=if(Test-Path (Join-Path $root 'build/current.txt')){[IO.File]::ReadAllText((Join-Path $root 'build/current.txt')).Trim()}else{'build/battlestation'}}
+if(!$Build){
+    $pointer=Join-Path $root 'build/current.txt'
+    if(!(Test-Path -LiteralPath $pointer)){throw 'No current build selected. Restore build/current.txt to the validated build; no fallback will be launched.'}
+    $Build=[IO.File]::ReadAllText($pointer).Trim()
+    if(!$Build){throw 'The current build selection is empty'}
+}
 $directory=[IO.Path]::GetFullPath((Join-Path $root $Build))
-if(!$directory.StartsWith($root+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Build must remain inside this project'}
+$buildRoot=Join-Path $root 'build'
+if(!$directory.StartsWith($buildRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Only builds inside build/ can be launched; archived builds must be restored explicitly first'}
 $exe=Join-Path $directory 'Battlestation.exe'
 if(!(Test-Path -LiteralPath $exe)){throw 'Build Battlestation first'}
 if($AtLogon){

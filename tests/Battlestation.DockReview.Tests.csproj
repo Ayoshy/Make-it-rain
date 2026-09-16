@@ -7,6 +7,18 @@
   <ItemGroup>
     <Compile Include="DockReviewTests.cs"/><Compile Include="DockReviewFixtures.cs"/><Compile Include="BluetoothSurfaceChecks.cs"/>
     <Compile Include="../src/Battlestation/Surface.cs"/>
+    <Compile Include="../src/Battlestation/NetworkWire.cs"/>
+    <Compile Include="../src/Battlestation/NetworkSampler.cs"/>
+    <Compile Include="../src/Battlestation/NetworkSurface.cs"/>
+    <Compile Include="../src/Battlestation/NetworkDetailClient.cs"/>
+    <Compile Include="../src/Battlestation/NetworkSettingsWindow.cs"/>
+    <Compile Include="../src/Battlestation/DualSenseReader.cs"/>
+    <Compile Include="../src/Battlestation/DesktopSettings.cs"/>
+    <Compile Include="../src/Battlestation/DualSenseSurface.cs"/>
+    <Compile Include="../src/Battlestation/DualSenseArtwork.cs"/>
+    <Compile Include="../src/Battlestation/DualSenseTouchTrail.cs"/>
+    <Compile Include="../src/Battlestation/DesktopTheme.cs"/>
+    <EmbeddedResource Include="../src/Battlestation/Themes.json" LogicalName="Battlestation.Themes.json"/>
     <Compile Include="../src/Battlestation/DockAppearance.cs"/>
     <Compile Include="../src/Battlestation/ReminderSurface.cs"/>
     <Compile Include="../src/Battlestation/DockSurface.cs"/>

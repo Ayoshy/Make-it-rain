@@ -55,3 +55,7 @@ transmission de prompts de Neon n’a été intégré.
 
 Raccourci système : [RegisterHotKey](https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-registerhotkey),
 [activation du premier plan](https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-setforegroundwindow).
+
+- SDL3 3.4.16, licence zlib : https://github.com/libsdl-org/SDL/releases/tag/release-3.4.16. Archive VC vérifiée par SHA-256, runtime et licence dans chaque build DualSense.
+
+- Dessin interactif DualSense : géométrie WPF réalisée pour ce dock à partir des proportions de la [référence visuelle Sony](https://www.playstation.com/fr-fr/accessories/dualsense-wireless-controller/), sans intégrer la photographie au runtime. Logo PlayStation issu de [Simple Icons](https://github.com/simple-icons/simple-icons/blob/develop/icons/playstation.svg), [CC0](https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md).

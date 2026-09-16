@@ -9,3 +9,6 @@ extern "C" __declspec(dllexport) void BackgroundPanelFront(int slot){NativeBackg
 extern "C" __declspec(dllexport) void BackgroundGlass(float x,float cy,float my,float w,float ch,float mh){NativeBackground::SetGlass(x,cy,my,w,ch,mh);}
 extern "C" __declspec(dllexport) void BackgroundDock(float x,float y,float w,float h){NativeBackground::SetDockGlass(x,y,w,h);}
 extern "C" __declspec(dllexport) void BackgroundPanel(int slot,float x,float y,float w,float h){NativeBackground::SetPanelGlass(slot,x,y,w,h);}
+
+extern "C" __declspec(dllexport) void BackgroundPalette(int index,const unsigned int* colors){NativeBackground::SetPalette(index,colors);}
+extern "C" __declspec(dllexport) void BackgroundTheme(int index,int immediate){NativeBackground::SetTheme(index,immediate!=0);}

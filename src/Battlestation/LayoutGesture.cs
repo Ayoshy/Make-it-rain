@@ -17,14 +17,16 @@ internal sealed class LayoutGesture
     readonly int step;
     readonly bool grid;
     readonly bool linkNeighbors;
+    readonly Rect[] screens;
     bool? pushHorizontal;
     int pushSign;
     LayoutPreview last;
     public IReadOnlyList<DesktopBlock> Start=>start;
-    public LayoutGesture(IEnumerable<DesktopBlock> blocks,string selected,LayoutEdge handle,Point pointer,bool snap,int gridStep,bool linkNeighbors=true)
+    public LayoutGesture(IEnumerable<DesktopBlock> blocks,string selected,LayoutEdge handle,Point pointer,bool snap,int gridStep,bool linkNeighbors=true,IEnumerable<Rect>? screens=null)
     {
         start=blocks.ToArray();id=selected;edge=handle;pointerStart=pointer;grid=snap;step=Math.Clamp(gridStep,4,64);
         this.linkNeighbors=linkNeighbors;
+        this.screens=(screens??DesktopLayout.Screens).ToArray();
         last=new(start,new HashSet<string>{id},false);
     }
     static bool Overlap(double a,double b,double c,double d)=>a<d-.001&&b>c+.001;
@@ -48,7 +50,7 @@ internal sealed class LayoutGesture
         if(edge==LayoutEdge.Move)
         {
             if(pushHorizontal is null){pushHorizontal=Math.Abs(dx)>=Math.Abs(dy);pushSign=Math.Sign(pushHorizontal.Value?dx:dy);}
-            var target=DesktopLayout.Screens.FirstOrDefault(s=>s.Contains(pointer));
+            var target=screens.FirstOrDefault(s=>s.Contains(pointer));
             if(target.IsEmpty||target.Width==0)target=screen;
             double x=Math.Clamp(Snap(selected.X+dx,target.Left),target.Left,target.Right-selected.Width);
             double y=Math.Clamp(Snap(selected.Y+dy,target.Top),target.Top,target.Bottom-selected.Height);

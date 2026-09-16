@@ -100,7 +100,8 @@ commande multimédia globale.
 
 ## État actif
 
-Le build courant est indiqué par `build/current.txt`. Le bridge vidéo est enregistré
+Le prochain build lancé est indiqué par `build/current.txt` ; le chemin du processus
+identifie le build chargé. Le bridge vidéo est enregistré
 pour le build actif par `scripts/Install-VideoBridge.ps1` ; aucun démarrage Windows
 supplémentaire n'est ajouté par cette association.
 

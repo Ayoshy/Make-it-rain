@@ -3,6 +3,7 @@
     <Project Path="src/Battlestation.Core/Battlestation.Core.csproj" />
     <Project Path="src/Battlestation.GpuHelper/Battlestation.GpuHelper.csproj" />
     <Project Path="src/Battlestation.VideoBridge/Battlestation.VideoBridge.csproj" />
+    <Project Path="src/Battlestation.NetworkHelper/Battlestation.NetworkHelper.csproj" />
     <Project Path="src/Battlestation/Battlestation.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -10,5 +11,7 @@
     <Project Path="tests/Battlestation.Bluetooth.Tests.csproj" />
     <Project Path="tests/Battlestation.BrowserVideo.Tests.csproj" />
     <Project Path="tests/Battlestation.DockReview.Tests.csproj" />
+    <Project Path="tests/Battlestation.Scenes.Tests.csproj" />
+    <Project Path="tests/Battlestation.Network.Tests.csproj" />
   </Folder>
 </Solution>

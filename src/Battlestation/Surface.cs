@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Media.Animation;
 
 namespace Battlestation;
 internal abstract class Surface : FrameworkElement
@@ -13,17 +14,26 @@ internal abstract class Surface : FrameworkElement
     readonly List<(Rect Rect,Action Action,string Name)> hits=[];
     readonly Dictionary<string,BitmapImage> images=[];
     readonly HashSet<string> missingImages=[];
-    static readonly Dictionary<string,SolidColorBrush> brushes=[];
     static readonly Dictionary<(string,double),Pen> pens=[];
     readonly FontFamily artDeco;
     readonly int dockSlot;
     readonly HashSet<int> glassSlots=[];
     readonly Dictionary<(string Text,double Points,string Color,string Font,bool Bold,double Width,double Dpi),FormattedText> textCache=[];
     bool displayed=true;
+    string previousImageTheme=DesktopTheme.Current.Id;
+    static readonly DependencyProperty ThemeBlendProperty=DependencyProperty.Register("ThemeBlend",typeof(double),typeof(Surface),new FrameworkPropertyMetadata(1d,FrameworkPropertyMetadataOptions.AffectsRender));
+    void ThemeChanged()
+    {
+        previousImageTheme=DesktopTheme.PreviousId;
+        BeginAnimation(ThemeBlendProperty,null);
+        if(displayed)BeginAnimation(ThemeBlendProperty,new DoubleAnimation(0,1,TimeSpan.FromMilliseconds(240)){FillBehavior=FillBehavior.Stop});
+        InvalidateVisual();
+    }
     internal long RenderCount {get;private set;}
     internal virtual void SetDisplayed(bool value)
     {
         displayed=value;
+        if(!value)BeginAnimation(ThemeBlendProperty,null);
         if(!value){hits.Clear();foreach(int slot in glassSlots)Native.BackgroundPanel(slot,0,0,0,0);}
     }
     protected Point Pointer=new(-1,-1);
@@ -38,7 +48,7 @@ internal abstract class Surface : FrameworkElement
     }
     protected static readonly CultureInfo French=CultureInfo.GetCultureInfo("fr-FR");
     protected const string Ink=DockAppearance.Ink,Muted=DockAppearance.Muted,Pink="#FF6FD3",Purple="#BE81FF";
-    public Surface(Station station,int dockSlot=-1){Station=station;this.dockSlot=dockSlot;artDeco=new FontFamily(new Uri("pack://application:,,,/"),"./Assets/Fonts/#GTAArtDeco Condensed");SnapsToDevicePixels=true;FocusVisualStyle=null;TextOptions.SetTextFormattingMode(this,TextFormattingMode.Display);}
+    public Surface(Station station,int dockSlot=-1){Station=station;DesktopTheme.Changed+=ThemeChanged;this.dockSlot=dockSlot;artDeco=new FontFamily(new Uri("pack://application:,,,/"),"./Assets/Fonts/#GTAArtDeco Condensed");SnapsToDevicePixels=true;FocusVisualStyle=null;TextOptions.SetTextFormattingMode(this,TextFormattingMode.Display);}
     public void Refresh()=>InvalidateVisual();
     internal void UpdateGlassBounds(){if(dockSlot>=0&&displayed)Native.BackgroundPanel(dockSlot,(float)DesktopX,(float)DesktopY,(float)Width,(float)Height);}
     protected override void OnRender(DrawingContext dc)
@@ -49,8 +59,8 @@ internal abstract class Surface : FrameworkElement
         Paint();
     }
     protected abstract void Paint();
-    protected static SolidColorBrush B(string color){if(brushes.TryGetValue(color,out var cached))return cached;var b=new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));b.Freeze();if(brushes.Count>=256)brushes.Clear();return brushes[color]=b;}
-    static Pen Stroke(string color,double width){if(pens.TryGetValue((color,width),out var p))return p;p=new Pen(B(color),width);p.Freeze();if(pens.Count>=256)pens.Clear();return pens[(color,width)]=p;}
+    protected static SolidColorBrush B(string color)=>DesktopTheme.Brush(color);
+    static Pen Stroke(string color,double width){if(pens.TryGetValue((color,width),out var p))return p;p=new Pen(B(color),width);if(pens.Count>=256)pens.Clear();return pens[(color,width)]=p;}
     protected void Box(double x,double y,double w,double h,string fill,string stroke="#00000000",double radius=0,double thickness=1)=>D.DrawRoundedRectangle(B(fill),Stroke(stroke,thickness),new Rect(x,y,Math.Max(0,w),Math.Max(0,h)),radius,radius);
     protected void Line(double x,double y,double x2,double y2,string color,double width=1)=>D.DrawLine(Stroke(color,width),new Point(x,y),new Point(x2,y2));
     protected void Text(string text,double x,double y,double points=11,string color=Ink,string font=DockAppearance.TextFont,string align="left",bool bold=false,double width=0,double tracking=0)
@@ -79,6 +89,19 @@ internal abstract class Surface : FrameworkElement
         }
     }
     protected void Image(string path,double x,double y,double w,double h,double opacity=1)
+    {
+        path=Path.GetFullPath(path);
+        var icons=Path.Combine(Station.Root,"dock","icons")+Path.DirectorySeparatorChar;
+        if(path.StartsWith(icons,StringComparison.OrdinalIgnoreCase)&&!Path.GetRelativePath(icons,path).StartsWith("themes"))
+        {
+            string Themed(string id)=>id=="vice-city"?path:Path.Combine(icons,"themes",id,Path.GetRelativePath(icons,path));
+            double mix=(double)GetValue(ThemeBlendProperty);
+            if(mix<1)DrawImageFile(Themed(previousImageTheme),x,y,w,h,opacity*(1-mix));
+            DrawImageFile(Themed(DesktopTheme.Current.Id),x,y,w,h,opacity*mix);return;
+        }
+        DrawImageFile(path,x,y,w,h,opacity);
+    }
+    void DrawImageFile(string path,double x,double y,double w,double h,double opacity)
     {
         if(missingImages.Contains(path))return;
         if(!images.TryGetValue(path,out var image)){if(!File.Exists(path)){missingImages.Add(path);return;}image=new BitmapImage();image.BeginInit();image.UriSource=new Uri(path);image.CacheOption=BitmapCacheOption.OnLoad;image.EndInit();image.Freeze();images[path]=image;}

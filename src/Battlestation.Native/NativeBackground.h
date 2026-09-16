@@ -6,6 +6,8 @@ void Start(HWND parent, const std::wstring& resources);
 void Stop();
 void SetVisibility(int monitors);
 void Capture();
+void SetPalette(int index,const unsigned int* colors);
+void SetTheme(int index,bool immediate);
 void SetAppearance(bool animate,float opacity);
 void SetAudio(float bass,float middle,float treble,float intensity);
 void SetPanelFront(int slot);

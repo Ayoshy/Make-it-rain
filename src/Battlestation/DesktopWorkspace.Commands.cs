@@ -13,6 +13,12 @@ internal sealed partial class DesktopWorkspace
     void InitializeCommands()
     {
         profiles=new DesktopProfiles(Path.Combine(station.Data,"profiles.json"));
+        // An upgrade must snapshot the live scene, never redesign the user's saved scenes.
+        profiles.SaveCurrent(station.Layout,station.Settings);
+        ReadDisplays();
+        if(profiles.MatchDisplays(connectedScreens==1,station.Layout,station.Settings) is {} scene){station.ApplyAppearance(scene);station.Layout.Save();}
+        station.Layout.Saved+=()=>{if(gesture is null)profiles.SaveCurrent(station.Layout,station.Settings);};
+        station.SettingsChanged+=()=>{if(gesture is null)profiles.SaveCurrent(station.Layout,station.Settings);};
         mediaClipboard=new MediaClipboard(station.Reserve,()=>station.Settings.KeepMediaLinks);station.ClipboardRegistered=mediaClipboard.Registered;
         station.ReserveRequested+=ShowReserve;
         paletteHotkey=new PaletteHotkey(TogglePalette);
@@ -42,7 +48,7 @@ internal sealed partial class DesktopWorkspace
     {
         palette?.Dismiss(false);
         if(settingsWindow is not null){if(settingsWindow.WindowState==WindowState.Minimized)settingsWindow.WindowState=WindowState.Normal;settingsWindow.Activate();return;}
-        settingsWindow=new SettingsWindow(station,paletteHotkey,ChangeVisibility,()=>SetEditing(true),owner=>((DockSurface)surfaces["apps"]).OpenEditor(owner),SelectProfile,SaveUserProfile,DeleteUserProfile,()=>profiles.UserNames,profiles.Current);
+        settingsWindow=new SettingsWindow(station,paletteHotkey,ChangeVisibility,()=>SetEditing(true),owner=>((DockSurface)surfaces["apps"]).OpenEditor(owner),SelectProfile,SaveUserProfile,DeleteUserProfile,ResetSceneTemplate,()=>profiles.UserNames,profiles.Current);
         settingsWindow.Closed+=(_,_)=>settingsWindow=null;
         OverlayStyle.Reveal(settingsWindow,station.Settings.AnimateBackground);
     }
@@ -53,10 +59,10 @@ internal sealed partial class DesktopWorkspace
         foreach(var app in station.Apps)entries.Add(new("app:"+app.Path,app.Name,"Application","\uE71D",()=>{station.Launch(app);if(station.Error!="")throw new InvalidOperationException(station.Error);}));
         entries.Add(new("settings","Réglages","Paramètres · settings · transparence · météo","\uE713",ShowSettings,true));
         entries.Add(new("reserve","À regarder, à écouter","Réserve · YouTube · Spotify · liens copiés","\uE8B7",ShowReserve,true));
-        foreach(string name in DesktopProfiles.Names)
+        foreach(string name in profiles.AllNames)
         {
-            var preview=name=="Personnel"?null:DesktopProfiles.Preset(name,DesktopLayout.Defaults(station.Apps.Count)).Where(b=>b.Visible).Select(b=>new PalettePreviewBlock(b.X,b.Y,b.Width,b.Height)).ToArray();
-            entries.Add(new("profile:"+name,"Disposition "+name,profiles.Current==name?"Disposition actuelle":"Bureau · ambiance","\uE8A9",()=>SelectProfile(name),true,name,preview));
+            var preview=profiles.Preview(name,station.Layout,station.Settings).Where(b=>b.Visible).Select(b=>new PalettePreviewBlock(b.X,b.Y,b.Width,b.Height)).ToArray();
+            entries.Add(new("profile:"+name,"Scène "+name,profiles.Current==name?"Scène actuelle":"Scènes","\uE8A9",()=>SelectProfile(name),true,name,preview));
         }
         entries.Add(new("organize",editing?"Terminer la réorganisation":"Réorganiser le bureau","Déplacer les blocs sur la grille","\uE8A9",()=>SetEditing(!editing),true));
         entries.Add(new("terminal","Ouvrir le terminal","Retrouver les sessions actives","\uE756",()=>{if(!ChangeVisibility("terminal",true))throw new InvalidOperationException("Pas assez d’espace libre pour le terminal.");SetEditing(false);station.Terminal!.Start();},true));
@@ -68,7 +74,8 @@ internal sealed partial class DesktopWorkspace
         window.Closed+=(_,_)=>{if(palette==window)palette=null;};
         PaletteEntry Project(string path)=>new("project:"+path,Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar)),"Projet","\uE8B7",()=>window.ProjectActions(Path.GetFileName(path),
             ()=>{if(!Directory.Exists(path))throw new DirectoryNotFoundException("Ce projet a été déplacé ou supprimé.");Process.Start(new ProcessStartInfo(path){UseShellExecute=true})?.Dispose();},
-            ()=>{if(!Directory.Exists(path))throw new DirectoryNotFoundException("Ce projet a été déplacé ou supprimé.");if(!ChangeVisibility("terminal",true))throw new InvalidOperationException("Pas assez d’espace libre pour le terminal.");SetEditing(false);station.Terminal!.OpenCodex(path);}));
+            ()=>{if(!Directory.Exists(path))throw new DirectoryNotFoundException("Ce projet a été déplacé ou supprimé.");if(!ChangeVisibility("terminal",true))throw new InvalidOperationException("Pas assez d’espace libre pour le terminal.");SetEditing(false);station.Terminal!.OpenCodex(path);},
+            ()=>{if(!Directory.Exists(path))throw new DirectoryNotFoundException("Ce projet a été déplacé ou supprimé.");station.OpenDeepSeek(path);}));
         var recent=Enumerable.Range(0,6).Select(i=>Native.Read($"project:{i}:path")).Where(p=>!string.IsNullOrWhiteSpace(p)).Select(Project).ToArray();window.AddProjects(recent);
         OverlayStyle.Reveal(window,station.Settings.AnimateBackground);
         // Index only directory names; no file contents, credentials or terminal output.

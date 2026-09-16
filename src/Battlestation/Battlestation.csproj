@@ -12,6 +12,7 @@
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Themes.json" LogicalName="Battlestation.Themes.json" />
     <Resource Include="../../assets/Fonts/art-deco.ttf" Link="Assets/Fonts/art-deco.ttf" />
     <ProjectReference Include="../Battlestation.Core/Battlestation.Core.csproj" />
     <PackageReference Include="CI.Microsoft.Terminal.Wpf" Version="1.25.260303002" />

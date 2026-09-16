@@ -32,5 +32,5 @@ applications externes ne sont pas des menus WPF et ne reçoivent pas ce template
 Les anciens hôtes terminal en cours ne sont jamais fermés pour mettre à jour leur
 habillage interne.
 
-Les rendus historiques ne font plus partie du dossier de livraison ; l'état actif
-est celui du build indiqué par `build/current.txt`.
+Les rendus historiques ne prouvent pas l'état actif. `build/current.txt` désigne
+le prochain lancement ; vérifier le chemin du processus pour le build chargé.

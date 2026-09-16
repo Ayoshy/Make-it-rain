@@ -17,6 +17,12 @@ using Microsoft::WRL::ComPtr;
 namespace NativeBackground {
 static HANDLE thread=nullptr, stopEvent=nullptr,wakeEvent=nullptr;
 static std::atomic<bool> capture=false;
+static std::atomic<int> pendingTheme=-1;
+static D2D1_COLOR_F palettes[3][6];
+static float weights[3]={1,0,0},fromWeights[3]={1,0,0};
+static int themeIndex=0;
+static double themeFade=1;
+static D2D1_COLOR_F ThemeColor(int role,float alpha=1){D2D1_COLOR_F c={0,0,0,alpha};for(int i=0;i<3;i++){c.r+=palettes[i][role].r*weights[i];c.g+=palettes[i][role].g*weights[i];c.b+=palettes[i][role].b*weights[i];}return c;}
 static HWND parentWindow=nullptr;
 static std::wstring images;
 static double elapsed=0, easedX=0, easedY=0;
@@ -47,10 +53,12 @@ struct Paint {
     ComPtr<ID2D1Bitmap> art,glows[3],bokeh[3],vignette;
     ComPtr<ID2D1SolidColorBrush> brush;
     ComPtr<ID2D1LinearGradientBrush> fade;
-    ComPtr<ID2D1Layer> layer;
+    ComPtr<ID2D1Layer> layer,themeLayer;
+    ComPtr<ID2D1RadialGradientBrush> clouds[2][2];
+    ComPtr<ID2D1PathGeometry> ribbons[4];
     ComPtr<ID2D1BitmapRenderTarget> frost;
     std::unique_ptr<Paint> frostPaint;
-    ComPtr<ID2D1LinearGradientBrush> sheen;
+    ComPtr<ID2D1LinearGradientBrush> sheen,themeSheen[2];
     ComPtr<ID2D1RoundedRectangleGeometry> masks[16];
     D2D1_ROUNDED_RECT maskShapes[16]={};
     Paint(ID2D1RenderTarget* rt,IWICImagingFactory* wic,bool auxiliary=false):target(rt){
@@ -78,7 +86,21 @@ struct Paint {
         D2D1_GRADIENT_STOP stops[]={{0,D2D1::ColorF(1,1,1,1)},{.88f,D2D1::ColorF(1,1,1,1)},{1,D2D1::ColorF(1,1,1,0)}};
         ComPtr<ID2D1GradientStopCollection> collection;Check(rt->CreateGradientStopCollection(stops,3,&collection));
         Check(rt->CreateLinearGradientBrush(D2D1::LinearGradientBrushProperties(D2D1::Point2F(0,0),D2D1::Point2F(2714,0)),collection.Get(),&fade));
-        Check(rt->CreateLayer(&layer));
+        Check(rt->CreateLayer(&layer));Check(rt->CreateLayer(&themeLayer));
+        for(int theme=0;theme<2;theme++)for(int light=0;light<2;light++){
+            auto color=palettes[theme+1][light+1];auto transparent=color;transparent.a=0;
+            D2D1_GRADIENT_STOP stops[]={{0,color},{1,transparent}};ComPtr<ID2D1GradientStopCollection> collection;
+            Check(rt->CreateGradientStopCollection(stops,2,&collection));
+            Check(rt->CreateRadialGradientBrush(D2D1::RadialGradientBrushProperties(D2D1::Point2F(0,0),D2D1::Point2F(0,0),1,1),collection.Get(),&clouds[theme][light]));
+        }
+        ComPtr<ID2D1Factory> factory;rt->GetFactory(&factory);
+        for(int i=0;i<4;i++){
+            Check(factory->CreatePathGeometry(&ribbons[i]));ComPtr<ID2D1GeometrySink> sink;Check(ribbons[i]->Open(&sink));
+            sink->BeginFigure(D2D1::Point2F(-800,550+i*150.f),D2D1_FIGURE_BEGIN_FILLED);
+            sink->AddBezier(D2D1::BezierSegment(D2D1::Point2F(900,-850+i*180.f),D2D1::Point2F(1800,1600-i*100.f),D2D1::Point2F(6000,100+i*140.f)));
+            sink->AddBezier(D2D1::BezierSegment(D2D1::Point2F(2200,1500-i*90.f),D2D1::Point2F(1100,-700+i*170.f),D2D1::Point2F(-800,680+i*150.f)));
+            sink->EndFigure(D2D1_FIGURE_END_CLOSED);Check(sink->Close());
+        }
         if(!auxiliary){
             D2D1_SIZE_F logical=D2D1::SizeF(5120,1440);D2D1_SIZE_U pixels=D2D1::SizeU(640,180);
             Check(rt->CreateCompatibleRenderTarget(&logical,&pixels,nullptr,D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,&frost));
@@ -86,15 +108,19 @@ struct Paint {
             D2D1_GRADIENT_STOP shine[]={{0,D2D1::ColorF(1,.86f,1,.17f)},{.38f,D2D1::ColorF(.9f,.65f,1,.02f)},{1,D2D1::ColorF(.7f,.6f,1,.07f)}};
             ComPtr<ID2D1GradientStopCollection> collection;Check(rt->CreateGradientStopCollection(shine,3,&collection));
             Check(rt->CreateLinearGradientBrush(D2D1::LinearGradientBrushProperties(D2D1::Point2F(0,0),D2D1::Point2F(1,1)),collection.Get(),&sheen));
+            for(int i=0;i<2;i++){
+                auto edge=palettes[i+1][5],light=palettes[i+1][1],rim=palettes[i+1][4];edge.a=.17f;light.a=.02f;rim.a=.07f;
+                D2D1_GRADIENT_STOP stops[]={{0,edge},{.38f,light},{1,rim}};ComPtr<ID2D1GradientStopCollection> colors;
+                Check(rt->CreateGradientStopCollection(stops,3,&colors));Check(rt->CreateLinearGradientBrush(D2D1::LinearGradientBrushProperties(D2D1::Point2F(0,0),D2D1::Point2F(1,1)),colors.Get(),&themeSheen[i]));
+            }
         }
     }
+    D2D1_COLOR_F GlassColor(float alpha){auto c=ThemeColor(3,alpha);c.r+=(.06f-palettes[0][3].r)*weights[0];c.g+=(.022f-palettes[0][3].g)*weights[0];c.b+=(.10f-palettes[0][3].b)*weights[0];return c;}
+    D2D1_COLOR_F RimColor(float alpha){auto c=ThemeColor(4,alpha);c.r+=(.95f-palettes[0][4].r)*weights[0];c.g+=(.77f-palettes[0][4].g)*weights[0];c.b+=(1-palettes[0][4].b)*weights[0];return c;}
+    D2D1_COLOR_F EdgeColor(float alpha){auto c=ThemeColor(5,alpha);c.r+=(1-palettes[0][5].r)*weights[0];c.g+=(.92f-palettes[0][5].g)*weights[0];c.b+=(1-palettes[0][5].b)*weights[0];return c;}
     void Fill(D2D1_RECT_F rect,D2D1_COLOR_F color){brush->SetColor(color);target->FillRectangle(rect,brush.Get());}
-    void Draw(int monitors=3){
-        ComPtr<ID2D1Bitmap> frosted;
-        if(frostPaint){frostPaint->Draw(monitors);Check(frost->GetBitmap(&frosted));}
-        auto rt=target;rt->BeginDraw();rt->SetTransform(D2D1::Matrix3x2F::Identity());
-        rt->PushAxisAlignedClip(D2D1::RectF(monitors==2?2560.f:0.f,0,monitors==1?2560.f:5120.f,1440),D2D1_ANTIALIAS_MODE_ALIASED);
-        rt->Clear(D2D1::ColorF(.09f,.055f,.14f));
+    void ViceCity(){auto rt=target;
+        Fill(D2D1::RectF(0,0,5120,1440),D2D1::ColorF(.09f,.055f,.14f));
         rt->DrawBitmap(art.Get(),D2D1::RectF(0,0,5120,1440),.5f,D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,D2D1::RectF(2880,830,3840,1100));
         Fill(D2D1::RectF(0,0,5120,1440),D2D1::ColorF(.16f,.08f,.24f,.75f));
         float dx=float(std::sin(elapsed*.14)*20.48-easedX*15),dy=float(std::cos(elapsed*.11)*5.76-easedY*10);
@@ -150,6 +176,40 @@ struct Paint {
             rt->DrawBitmap(glows[i].Get(),D2D1::RectF(x-12,y-12,x+12,y+12),.5f*quiet(x,y));
         }
         rt->DrawBitmap(vignette.Get(),D2D1::RectF(0,0,5120,1440));
+    }
+    void Abstract(int theme){
+        auto rt=target;Fill(D2D1::RectF(0,0,5120,1440),palettes[theme][0]);
+        float t=float(elapsed),energy=bass*.3f+middle*.2f;
+        for(int i=0;i<7;i++){
+            auto light=clouds[theme-1][i%2].Get();
+            float x=500+i*720.f+std::sin(t*.045f+i*1.7f)*260;
+            float y=500+std::sin(t*.036f+i*1.2f)*580;
+            light->SetCenter(D2D1::Point2F(x,y));light->SetRadiusX(1150+std::sin(t*.027f+i)*260);light->SetRadiusY(500+i%3*130.f);
+            light->SetOpacity((theme==1?.055f:.13f)+energy*.045f);
+            rt->FillRectangle(D2D1::RectF(0,0,5120,1440),light);
+        }
+        for(int i=0;i<4;i++){
+            auto light=clouds[theme-1][i%2].Get();light->SetCenter(D2D1::Point2F(1700+i*700.f,600));light->SetRadiusX(2400);light->SetRadiusY(850);
+            light->SetOpacity((theme==1?.047f:.11f)+treble*.025f);
+            rt->SetTransform(D2D1::Matrix3x2F::Translation(std::sin(t*.028f+i)*180,std::cos(t*.037f+i)*90));
+            rt->FillGeometry(ribbons[i].Get(),light);
+        }
+        rt->SetTransform(D2D1::Matrix3x2F::Identity());
+        rt->DrawBitmap(vignette.Get(),D2D1::RectF(0,0,5120,1440),.65f);
+    }
+    void Draw(int monitors=3){
+        ComPtr<ID2D1Bitmap> frosted;
+        if(frostPaint){frostPaint->Draw(monitors);Check(frost->GetBitmap(&frosted));}
+        auto rt=target;rt->BeginDraw();rt->SetTransform(D2D1::Matrix3x2F::Identity());
+        rt->PushAxisAlignedClip(D2D1::RectF(monitors==2?2560.f:0.f,0,monitors==1?2560.f:5120.f,1440),D2D1_ANTIALIAS_MODE_ALIASED);
+        float accumulated=0;
+        for(int theme=0;theme<3;theme++){
+            if(weights[theme]<.0001f)continue;
+            accumulated+=weights[theme];float opacity=weights[theme]/accumulated;
+            if(opacity<.9999f)rt->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(),nullptr,D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,D2D1::Matrix3x2F::Identity(),opacity),themeLayer.Get());
+            if(theme==0)ViceCity();else Abstract(theme);
+            if(opacity<.9999f)rt->PopLayer();
+        }
         if(frosted){
             D2D1_RECT_F rects[16];{std::lock_guard<std::mutex> lock(glassMutex);std::copy(std::begin(glassRects),std::end(glassRects),rects);}
             ComPtr<ID2D1Factory> factory;rt->GetFactory(&factory);
@@ -170,13 +230,16 @@ struct Paint {
                 rt->PushLayer(D2D1::LayerParameters(r,masks[index].Get()),layer.Get());
                 float shift=float(easedX*3);
                 rt->DrawBitmap(frosted.Get(),r,clearPopup?.22f:1.f,D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,D2D1::RectF(r.left-4+shift,r.top-3,r.right+4+shift,r.bottom+3));
-                Fill(r,D2D1::ColorF(.06f,.022f,.10f,glassOpacity.load()*(clearPopup?.08f/.46f:1.f)));
+                Fill(r,GlassColor(glassOpacity.load()*(clearPopup?.08f/.46f:1.f)));
                 sheen->SetStartPoint(D2D1::Point2F(r.left,r.top));sheen->SetEndPoint(D2D1::Point2F(r.right,r.bottom));
-                if(!clearPopup)rt->FillRectangle(r,sheen.Get());rt->PopLayer();
+                if(!clearPopup){
+                    if(weights[0]>0){sheen->SetOpacity(weights[0]);rt->FillRectangle(r,sheen.Get());}
+                    for(int i=0;i<2;i++)if(weights[i+1]>0){auto tint=themeSheen[i].Get();tint->SetStartPoint(D2D1::Point2F(r.left,r.top));tint->SetEndPoint(D2D1::Point2F(r.right,r.bottom));tint->SetOpacity(weights[i+1]);rt->FillRectangle(r,tint);}
+                }rt->PopLayer();
                 if(clearPopup)continue; // The WPF rim shares the exact popup shape.
-                brush->SetColor(D2D1::ColorF(.95f,.77f,1,.25f));rt->DrawRoundedRectangle(D2D1::RoundedRect(r,radius,radius),brush.Get(),1);
+                brush->SetColor(RimColor(.25f));rt->DrawRoundedRectangle(D2D1::RoundedRect(r,radius,radius),brush.Get(),1);
                 rt->PushAxisAlignedClip(D2D1::RectF(r.left,r.top,r.right,r.top+25),D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-                brush->SetColor(D2D1::ColorF(1,.92f,1,.34f));rt->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(r.left+1,r.top+1,r.right-1,r.bottom-1),radius-1,radius-1),brush.Get(),1);rt->PopAxisAlignedClip();
+                brush->SetColor(EdgeColor(.34f));rt->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(r.left+1,r.top+1,r.right-1,r.bottom-1),radius-1,radius-1),brush.Get(),1);rt->PopAxisAlignedClip();
             }
         }
         rt->PopAxisAlignedClip();Check(rt->EndDraw());
@@ -213,7 +276,11 @@ static DWORD WINAPI Run(void*){
             float intensity=audioIntensity.load();
             auto smooth=[&](float value,float desired){return value+(desired-value)*float(1-std::exp(-dt*(desired>value?12:3)));};
             bass=smooth(bass,audioBass.load()*intensity);middle=smooth(middle,audioMiddle.load()*intensity);treble=smooth(treble,audioTreble.load()*intensity);
-            bool dirty=glassDirty.exchange(false);
+            int requested=pendingTheme.exchange(-1);
+            if(requested>=0){themeIndex=requested%4;themeFade=requested>=4?1:0;for(int i=0;i<3;i++){fromWeights[i]=weights[i];if(requested>=4)weights[i]=i==themeIndex?1.f:0.f;}}
+            bool transitioning=themeFade<1;
+            if(transitioning){themeFade=std::min(1.0,themeFade+dt/.24);for(int i=0;i<3;i++)weights[i]=fromWeights[i]+((i==themeIndex?1.f:0.f)-fromWeights[i])*float(themeFade);}
+            bool dirty=glassDirty.exchange(false)||transitioning;
             if(monitors!=0&&(!paused||first||dirty)&&GetTickCount64()>=retryAt){
                 try{
                     if(!paint){Check(factory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(),D2D1::HwndRenderTargetProperties(window,D2D1::SizeU(5120,1440),D2D1_PRESENT_OPTIONS_IMMEDIATELY),&target));paint=std::make_unique<Paint>(target.Get(),wic.Get());}
@@ -233,11 +300,13 @@ static DWORD WINAPI Run(void*){
                 std::lock_guard<std::mutex> lock(glassMutex);bool comma=false;
                 for(int i=0;i<16;i++){auto r=glassRects[i];if(r.right<=r.left||r.bottom<=r.top)continue;if(comma)state<<",";comma=true;state<<"{\"slot\":"<<i<<",\"x\":"<<r.left<<",\"y\":"<<r.top<<",\"width\":"<<r.right-r.left<<",\"height\":"<<r.bottom-r.top<<"}";}state<<"]}";
             }
-            HANDLE events[]={stopEvent,wakeEvent};WaitForMultipleObjects(2,events,FALSE,paused?500:33);
+            HANDLE events[]={stopEvent,wakeEvent};WaitForMultipleObjects(2,events,FALSE,paused&&!transitioning?500:33);
         }
     }catch(HRESULT hr){std::ofstream log(Output()/L"native-renderer-error.txt");log<<stage<<": HRESULT "<<std::hex<<hr;}catch(...){std::ofstream log(Output()/L"native-renderer-error.txt");log<<stage<<": native renderer failed";}
     if(window)DestroyWindow(window);UnregisterClassW(L"BattlestationBackground",GetModuleHandleW(nullptr));CoUninitialize();return 0;
 }
+void SetPalette(int index,const unsigned int* colors){if(index<0||index>2||!colors)return;for(int i=0;i<6;i++)palettes[index][i]=D2D1::ColorF(colors[i]);}
+void SetTheme(int index,bool immediate){if(index<0||index>2)return;pendingTheme=index+(immediate?4:0);glassDirty=true;if(wakeEvent)SetEvent(wakeEvent);}
 void Start(HWND parent,const std::wstring& resources){if(thread)return;images=resources;parentWindow=parent;stopEvent=CreateEventW(nullptr,TRUE,FALSE,nullptr);wakeEvent=CreateEventW(nullptr,FALSE,FALSE,nullptr);thread=CreateThread(nullptr,0,Run,nullptr,0,nullptr);}
 void Stop(){if(!thread)return;SetEvent(stopEvent);WaitForSingleObject(thread,INFINITE);CloseHandle(thread);CloseHandle(stopEvent);CloseHandle(wakeEvent);thread=nullptr;stopEvent=nullptr;wakeEvent=nullptr;}
 void Capture(){capture=true;if(wakeEvent)SetEvent(wakeEvent);}

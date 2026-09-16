@@ -153,6 +153,64 @@ static class DockReviewTests
         if(args.Contains("--bluetooth-read-only"))
             foreach(var device in new BluetoothDevices().Scan())
                 Console.WriteLine(JsonSerializer.Serialize(new{device.Name,device.Connected,device.ContainerId,device.Address}));
+        foreach(var theme in DesktopTheme.Definitions)
+        {
+            DesktopTheme.Select(theme.Id,false);
+            var themedApps=new DockSurface(station){Width=1120,Height=116};
+            themedApps.ApplyActivitySnapshot(AppActivity.Snapshot(station.Apps,[]));themedApps.SetDisplayed(false);themedApps.SetDisplayed(true);
+            Render(themedApps,Path.Combine(output,"theme-"+theme.Id+"-apps.png"));themedApps.Dispose();
+            bluetooth.SetDisplayed(false);bluetooth.SetDisplayed(true);Render(bluetooth,Path.Combine(output,"theme-"+theme.Id+"-bluetooth.png"));
+        }
+        DesktopTheme.Select("vice-city",false);
+        foreach(var size in new[]{new Size(480,380),new Size(654,382),new Size(720,440),new Size(936,480),new Size(1692,994)})
+        {
+            using var controller=new DualSenseSurface(station){Width=size.Width,Height=size.Height};
+            var state=new DualSenseState(1,2,-1,0,640,-1024,0,128,16000,32000,(1u<<0)|(1u<<9),14,0);
+            typeof(DualSenseReader).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(controller.Reader,new DualSenseSnapshot(state,"Bluetooth"));
+            Render(controller,Path.Combine(output,$"dualsense-{size.Width}.png"));
+            var art=(DualSenseArtwork)typeof(DualSenseSurface).GetField("artwork",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(controller)!;
+            var frame=new System.Windows.Threading.DispatcherFrame();var deadline=DateTime.UtcNow.AddSeconds(8);
+            var wait=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromMilliseconds(20)};
+            wait.Tick+=(_,_)=>{if(art.CacheReady||DateTime.UtcNow>=deadline)frame.Continue=false;};wait.Start();
+            try{System.Windows.Threading.Dispatcher.PushFrame(frame);}finally{wait.Stop();}
+            Check(art.CacheReady,"High resolution artwork completes off the UI thread");
+            controller.Refresh();Render(controller,Path.Combine(output,$"dualsense-{size.Width}.png"));
+            Check(Has(controller,"DualSenseAxes")&&!Has(controller,"DualSenseRumble"),"Bluetooth exposes raw axes and cannot vibrate");
+            typeof(DualSenseSurface).GetField("details",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(controller,true);controller.Refresh();
+            Render(controller,Path.Combine(output,$"dualsense-{size.Width}-axes.png"));
+            Check(state.BatteryPercent is null,"Unknown battery stays unknown");
+            Check(DualSenseState.Offset(0,0)==0&&Math.Abs(DualSenseState.Offset(32768,0)-100)<.001,"Drift readout retains the unfiltered centre offset");
+        }
+        var trails=new DualSenseTouchTrail();
+        var touch=new DualSenseState(1,2,75,0,0,0,0,0,0,0,0,1,1,TouchAvailable:1,Touch1:1,Touch1X:.2f,Touch1Y:.3f);
+        trails.Update(touch,0,true);trails.Update(touch with{Touch1X=.6f,Touch1Y=.8f},.1,true);
+        Check(trails.Points(0).Count==2&&trails.Down(0),"Real contacts create a bounded trail");
+        trails.Update(touch with{Touch1=0},.2,true);trails.Update(touch with{Touch1X=.8f},.3,true);
+        Check(trails.Points(0)[^1].Stroke!=trails.Points(0)[^2].Stroke,"Lifting a finger prevents a connecting line to the next contact");
+        trails.Update(touch with{Touch1=0},2,true);Check(trails.Points(0).Count==0,"Released trails expire completely");
+        trails.Update(touch,3,false);Check(trails.Points(0).Count==0,"Compatible mode never invents touch positions");
+        station.ApplySettings(station.Settings with{DualSenseTouchTrail=true},station.TargetDate);
+        using(var controller=new DualSenseSurface(station){Width=1000,Height=740})
+        {
+            var history=(DualSenseTouchTrail)typeof(DualSenseSurface).GetField("touchTrail",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(controller)!;
+            for(int i=0;i<=30;i++)history.Update(touch with{Touch1X=.1f+i*.025f,Touch1Y=.55f+(float)Math.Sin(i*.18)*.18f,Touch2=1,Touch2X=.85f-i*.02f,Touch2Y=.25f+(float)Math.Cos(i*.16)*.12f},i/60d,true);
+            typeof(DualSenseReader).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(controller.Reader,new DualSenseSnapshot(touch,"Bluetooth"));
+            typeof(DualSenseSurface).GetField("seconds",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(controller,.5d);
+            Render(controller,Path.Combine(output,"dualsense-touch-trails.png"));
+            Check(Has(controller,"DualSenseTrail")&&!Has(controller,"DualSenseRumble"),"Touch mode stays separate from removed vibration controls");
+        }
+        foreach(var size in new[]{new Size(440,280),new Size(872,328),new Size(832,480)})
+        {
+            using var network=new NetworkSurface(station){Width=size.Width,Height=size.Height};
+            var samples=Enumerable.Range(0,60).Select(i=>new NetworkSample(Environment.TickCount64-(59-i)*1000,12000+Math.Sin(i*.22)*10000+i*800,4000+Math.Cos(i*.3)*3000)).ToArray();
+            typeof(NetworkSampler).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(network.Sampler,new NetworkSnapshot("fixture","Ethernet",samples,null,"1.1.1.1","",[new("fixture","Ethernet",true)]));
+            Render(network,Path.Combine(output,$"network-{size.Width}.png"));
+            Check(Has(network,"NetworkApplications")&&Has(network,"NetworkSettings"),"Network controls remain inside resized docks");
+            Check(NetworkSurface.Rate(null)=="—","Unavailable rates are never zero");
+            typeof(NetworkDetailClient).GetField("frame",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(network.Details,new NetworkDetailFrame(true,"TCP + UDP",Enumerable.Range(0,5).Select(i=>new NetworkAppRate("Application "+i,50000/(i+1),6000/(i+1),i+1)).ToArray()));
+            typeof(NetworkSurface).GetField("detailView",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(network,true);network.Refresh();
+            Render(network,Path.Combine(output,$"network-{size.Width}-apps.png"));
+        }
         Console.WriteLine("PASS: font, reminders, app packs and compact add button, audio bounds and meter smoothing, Bluetooth targets, native icon fallback. Render fixtures are not live click validation.");
     }
 }

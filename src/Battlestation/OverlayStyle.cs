@@ -9,7 +9,7 @@ using Forms=System.Windows.Forms;
 namespace Battlestation;
 internal static class OverlayStyle
 {
-    internal static SolidColorBrush B(string color)=>new((Color)ColorConverter.ConvertFromString(color));
+    internal static SolidColorBrush B(string color)=>DesktopTheme.Brush(color);
     internal static TextBlock Text(string text,double size=14,string color="#E9E0F2")=>new(){Text=text,FontSize=size,Foreground=B(color),TextWrapping=TextWrapping.Wrap};
     internal static Button Button(string text,Action action)
     {
@@ -53,7 +53,7 @@ internal static class OverlayStyle
         var checkDisabled=new Trigger{Property=UIElement.IsEnabledProperty,Value=false};checkDisabled.Setters.Add(new Setter(UIElement.OpacityProperty,.4,"CheckRoot"));checkTemplate.Triggers.Add(checkDisabled);
         check.Setters.Add(new Setter(Control.TemplateProperty,checkTemplate));check.Setters.Add(new Setter(Control.FocusVisualStyleProperty,null));window.Resources[typeof(CheckBox)]=check;
     }
-    internal static Border Frame(UIElement child)=>new(){CornerRadius=new CornerRadius(24),Padding=new Thickness(22),BorderThickness=new Thickness(1),BorderBrush=new LinearGradientBrush((Color)ColorConverter.ConvertFromString("#A4E7D4F5"),(Color)ColorConverter.ConvertFromString("#4579C3D5"),55),Background=new LinearGradientBrush((Color)ColorConverter.ConvertFromString("#F038293F"),(Color)ColorConverter.ConvertFromString("#F21D162A"),60),Child=child};
+    internal static Border Frame(UIElement child)=>new(){CornerRadius=new CornerRadius(24),Padding=new Thickness(22),BorderThickness=new Thickness(1),BorderBrush=DesktopTheme.Gradient("#A4E7D4F5","#4579C3D5",55),Background=DesktopTheme.Gradient("#F038293F","#F21D162A",60),Child=child};
     internal static void Place(Window window)
     {
         Native.GetCursorPos(out var cursor);var area=Forms.Screen.FromPoint(new System.Drawing.Point(cursor.X,cursor.Y)).WorkingArea;

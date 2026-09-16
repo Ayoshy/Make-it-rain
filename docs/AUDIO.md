@@ -1,12 +1,13 @@
-# Audio et fond musical — préparés
+# Audio et fond musical — notes historiques d'intégration
 
 Cette tranche possède AudioMixer.cs, AudioSurface.cs, AudioPolicy.cs,
 Spectrum.cs, AudioEnvelope.cs et le rendu musical NativeBackground.
 Raccordements ponctuels dans DesktopWorkspace, DesktopLayout, DeskSurface,
-DesktopSettings, SettingsWindow et Native. Préserver les ajouts Vidéo concurrents.
+DesktopSettings, SettingsWindow et Native. La coordination Vidéo de ce chantier
+est terminée ; ces notes ne donnent pas de consigne active de rechargement.
 Build intermédiaire : build/battlestation-audio. La livraison complète est dans
 build/battlestation-cockpit, avec -NoActivate. Voir [COCKPIT.md](COCKPIT.md)
-pour le périmètre final, les preuves et les validations encore à faire.
+pour le périmètre et les preuves historiques ; README.md décrit l'usage actuel.
 
 Le mixer utilise NAudio 2.2.1 / Core Audio. Les échantillons de sortie restent
 en mémoire pour le calcul du spectre ; aucun son ni contenu terminal enregistré.

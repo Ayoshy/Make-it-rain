@@ -24,6 +24,7 @@ internal sealed class Station : IDisposable
     internal bool ClipboardRegistered {get;set;}
     internal void ShowReserve()=>ReserveRequested?.Invoke();
     public string Codex {get;}
+    public string DeepSeek {get;}
     public string ProjectRoot=>Settings.ProjectRoot;
     public DesktopSettings Settings {get;private set;}
     internal bool? PreviewReactiveAudio {get;set;}
@@ -44,9 +45,11 @@ internal sealed class Station : IDisposable
         Reserve=new MediaReserve(Path.Combine(Data,"media-reserve.json"));
         using var settings=JsonDocument.Parse(File.ReadAllText(Path.Combine(root,"desk/settings.json")));
         var s=settings.RootElement;Codex=Environment.ExpandEnvironmentVariables(s.GetProperty("codex").GetString()!);
+        DeepSeek=s.TryGetProperty("deepseek",out var deepSeek)?Environment.ExpandEnvironmentVariables(deepSeek.GetString()!):"dsh.cmd";
         var weather=s.GetProperty("weather");
         var defaults=new DesktopSettings(Environment.ExpandEnvironmentVariables(s.GetProperty("projectRoot").GetString()!),weather.GetProperty("city").GetString()!,weather.GetProperty("latitude").GetDouble(),weather.GetProperty("longitude").GetDouble());
         Settings=DesktopSettings.Load(Path.Combine(Data,"preferences.json"),defaults);
+        DesktopTheme.Select(Settings.ThemeId,false);
         File.WriteAllLines(Path.Combine(Data,"desk.ini"),Settings.DeskIni(),Encoding.Unicode);
         Native.DeskStart(Path.Combine(Data,"desk.ini"));
         Backend=new DesktopBackend(Data);
@@ -70,9 +73,9 @@ internal sealed class Station : IDisposable
     public string M(string metric)=>Backend.Read(metric);
     internal void ApplyAppearance(DesktopProfile profile)
     {
-        var next=(Settings with{AnimateBackground=profile.Animate,ReactiveAudio=profile.Reactive,AudioIntensity=profile.Intensity,GlassOpacity=profile.Glass}).Validate(false);
+        var next=(Settings with{AnimateBackground=profile.Animate,ReactiveAudio=profile.Reactive,AudioIntensity=profile.Intensity,GlassOpacity=profile.Glass,ThemeId=profile.ThemeId}).Validate(false);
         next.Save(Path.Combine(Data,"preferences.json"));Settings=next;
-        Native.BackgroundAppearance(next.AnimateBackground?1:0,(float)next.GlassOpacity);SettingsChanged?.Invoke();
+        PreviewAppearance(next.ThemeId,next.AnimateBackground,next.GlassOpacity);SettingsChanged?.Invoke();
     }
     public void ApplySettings(DesktopSettings next,string target)
     {
@@ -88,13 +91,24 @@ internal sealed class Station : IDisposable
             try{File.WriteAllLines(Path.Combine(Data,"desk.ini"),next.DeskIni(),Encoding.Unicode);}
             finally{Native.DeskStart(Path.Combine(Data,"desk.ini"));}
         }
-        Native.BackgroundAppearance(next.AnimateBackground?1:0,(float)next.GlassOpacity);
+        PreviewAppearance(next.ThemeId,next.AnimateBackground,next.GlassOpacity);
         SettingsChanged?.Invoke();
+    }
+    internal void PreviewAppearance(string themeId,bool animate,double opacity)
+    {
+        DesktopTheme.Select(themeId);
+        Native.BackgroundTheme(Array.FindIndex(DesktopTheme.Definitions,t=>t.Id==themeId),0);
+        Native.BackgroundAppearance(animate?1:0,(float)opacity);
     }
     public double N(string metric)=>double.TryParse(M(metric).TrimEnd('%','°','W',' '),NumberStyles.Float,CultureInfo.InvariantCulture,out var n)?n:double.NaN;
     public void Command(string command){try{Backend.Command(command);Error="";}catch(Exception e){Error=e.Message;}}
     readonly AppLauncher launcher=new();
     public void Launch(DockApp app){try{launcher.Open(app);Error="";}catch(Exception e){Error=e.Message;}}
+    public void OpenDeepSeek(string project)
+    {
+        if(!Directory.Exists(project))throw new DirectoryNotFoundException("Ce projet a été déplacé ou supprimé.");
+        var start=new ProcessStartInfo(DeepSeek){UseShellExecute=true,WorkingDirectory=project};start.ArgumentList.Add("web");Process.Start(start)?.Dispose();
+    }
     public void SaveApps(List<DockApp> apps)
     {
         if(apps.Count>12||apps.Any(a=>string.IsNullOrWhiteSpace(a.Name)||string.IsNullOrWhiteSpace(a.Path)))throw new ArgumentException("Le dock accepte jusqu’à 12 applications nommées.");

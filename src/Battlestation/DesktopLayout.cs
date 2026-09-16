@@ -15,7 +15,7 @@ internal sealed class DesktopLayout
         "clock"=>new(360,144),"weather"=>new(360,112),"music"=>new(400,168),
         "projects"=>new(360,240),"apps"=>new(240,112),"terminal"=>new(480,300),
         "countdown"=>new(400,360),"hardware"=>new(440,218),"usage"=>new(440,209),
-        "video"=>new(480,270),"audio"=>new(440,220),"bluetooth"=>new(128,128),"reminders"=>new(440,112),_=>new(120,100)
+        "network"=>new(440,280),"dualsense"=>new(480,380),"video"=>new(480,270),"audio"=>new(440,220),"bluetooth"=>new(128,128),"reminders"=>new(440,112),_=>new(120,100)
     };
     static DesktopBlock Dimensions(DesktopBlock original,DesktopBlock saved)=>original with
     {
@@ -26,6 +26,9 @@ internal sealed class DesktopLayout
     readonly string path;
     public List<DesktopBlock> Blocks {get;private set;}
     public static readonly Rect[] Screens=[new(0,0,2560,1440),new(2560,0,2560,1440)];
+    internal bool SingleScreen {get;set;}
+    internal IEnumerable<Rect> AvailableScreens=>Screens.Take(SingleScreen?1:2);
+    bool Fits(DesktopBlock block,IEnumerable<DesktopBlock> others)=>Valid(block,others)&&(!block.Visible||!SingleScreen||Screens[0].Contains(block.Bounds));
     public DesktopBlock this[string id]=>Blocks.Single(b=>b.Id==id);
     public static List<DesktopBlock> Defaults(int apps)=>[
         new("clock","Horloge",720,164,2688,0),
@@ -40,7 +43,9 @@ internal sealed class DesktopLayout
         new("reminders","Nudge",779,112,4212,0),
         new("video","Vidéo",576,372,3396,312,false),
         new("audio","Audio",720,264,2616,360,false),
-        new("bluetooth","Bluetooth",560,280,2616,720,false)
+        new("bluetooth","Bluetooth",560,280,2616,720,false),
+        new("dualsense","DualSense",720,440,24,384,false),
+        new("network","Réseau",720,336,24,912,false)
     ];
     static double TerminalY(int apps)=>Math.Max(720,Math.Ceiling((336+DockHeight(apps)-116+293+Gap)/Grid)*Grid);
     public static double DockHeight(int apps)=>Math.Max(1,Math.Ceiling(apps/6d))*88+28;
@@ -78,20 +83,20 @@ internal sealed class DesktopLayout
         });
     }
     static Rect Inflated(Rect r){r.Inflate(Gap/2d,Gap/2d);return r;}
-    static DesktopBlock? FindFree(DesktopBlock block,double x,double y,IEnumerable<DesktopBlock> others)
+    DesktopBlock? FindFree(DesktopBlock block,double x,double y,IEnumerable<DesktopBlock> others)
     {
         if(!double.IsFinite(x+y))return null;
         var occupied=others.Where(b=>b.Visible&&b.Id!=block.Id).ToArray();
         var wanted=block with{X=Math.Round(x/Grid)*Grid,Y=Math.Round(y/Grid)*Grid};
-        if(Valid(wanted,occupied))return wanted;
+        if(Fits(wanted,occupied))return wanted;
         DesktopBlock? best=null;double distance=double.PositiveInfinity;
-        foreach(var screen in Screens)
+        foreach(var screen in AvailableScreens)
             for(double yy=screen.Top;yy+block.Height<=screen.Bottom;yy+=Grid)
                 for(double xx=Math.Ceiling(screen.Left/Grid)*Grid;xx+block.Width<=screen.Right;xx+=Grid)
                 {
                     double d=(xx-x)*(xx-x)+(yy-y)*(yy-y);if(d>=distance)continue;
                     var candidate=block with{X=xx,Y=yy};
-                    if(Valid(candidate,occupied)){best=candidate;distance=d;}
+                    if(Fits(candidate,occupied)){best=candidate;distance=d;}
                 }
         return best;
     }
@@ -108,7 +113,7 @@ internal sealed class DesktopLayout
     public bool SetVisible(string id,bool visible)
     {
         var b=this[id];var shown=b with{Visible=true};
-        var next=visible?(Valid(shown,Blocks)?shown:FindFree(shown,b.X,b.Y,Blocks)):b with{Visible=false};
+        var next=visible?(Fits(shown,Blocks)?shown:FindFree(shown,b.X,b.Y,Blocks)):b with{Visible=false};
         if(next is null)return false;Blocks[Blocks.FindIndex(b=>b.Id==id)]=next;return true;
     }
     public void Reset(int apps)=>Blocks=Defaults(apps);
@@ -119,14 +124,16 @@ internal sealed class DesktopLayout
         {
             var old=incoming.FirstOrDefault(b=>b.Id==block.Id);
             var candidate=old is null?block with{Visible=false}:Dimensions(block,old);
-            if(!Valid(candidate,next))return false;next.Add(candidate);
+            if(!Fits(candidate,next))return false;next.Add(candidate);
         }
         Blocks=next;return true;
     }
+    internal event Action? Saved;
     public void Save()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         File.WriteAllText(path+".tmp",JsonSerializer.Serialize(Blocks,new JsonSerializerOptions{WriteIndented=true}));
         File.Move(path+".tmp",path,true);
+        Saved?.Invoke();
     }
 }

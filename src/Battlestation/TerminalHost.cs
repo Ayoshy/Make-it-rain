@@ -41,11 +41,13 @@ internal sealed class NativeTerminalWindow : IDisposable
     public bool HasTabs=>tabs.Count>0;
     public event Action? LastTabClosed;
     nint Handle=>new WindowInteropHelper(window).Handle;
-    static SolidColorBrush B(string value)=>new((Color)ColorConverter.ConvertFromString(value));
+    static SolidColorBrush B(string value)=>DesktopTheme.Brush(value);
     static string Quote(string value)=>"\""+value.Replace("\"","\\\"")+"\"";
     public NativeTerminalWindow(string sourceRoot)
     {
         root=sourceRoot;
+        var preferences=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Battlestation/preferences.json");
+        if(File.Exists(preferences)){using var json=JsonDocument.Parse(File.ReadAllText(preferences));if(json.RootElement.TryGetProperty("ThemeId",out var theme)&&DesktopTheme.Definitions.Any(d=>d.Id==theme.GetString()))DesktopTheme.Select(theme.GetString()!,false);}
         var settings=JsonDocument.Parse(File.ReadAllText(Path.Combine(root,"desk/settings.json"))).RootElement;
         projectRoot=Environment.ExpandEnvironmentVariables(settings.GetProperty("projectRoot").GetString()!);
         codex=Environment.ExpandEnvironmentVariables(settings.GetProperty("codex").GetString()!);
@@ -62,7 +64,7 @@ internal sealed class NativeTerminalWindow : IDisposable
     static TerminalTheme Theme()
     {
         uint Color(string color)=>ColorValue(color);
-        return new TerminalTheme{DefaultBackground=Color("#21182B"),DefaultForeground=Color("#DAD2E7"),DefaultSelectionBackground=Color("#665077"),CursorStyle=CursorStyle.BlinkingBar,
+        return new TerminalTheme{DefaultBackground=Color(DesktopTheme.Color("#21182B").ToString()),DefaultForeground=Color(DesktopTheme.Color("#DAD2E7").ToString()),DefaultSelectionBackground=Color(DesktopTheme.Color("#665077").ToString()),CursorStyle=CursorStyle.BlinkingBar,
             ColorTable=new[]{"#45475A","#F38BA8","#A6E3A1","#F9E2AF","#89B4FA","#F5C2E7","#94E2D5","#BAC2DE","#585B70","#F38BA8","#A6E3A1","#F9E2AF","#89B4FA","#F5C2E7","#94E2D5","#CDD6F4"}.Select(Color).ToArray()};
     }
     void Add(string? project=null)
@@ -70,9 +72,12 @@ internal sealed class NativeTerminalWindow : IDisposable
         string directory=project??projectRoot;
         if(!Directory.Exists(directory))throw new DirectoryNotFoundException("Projet introuvable.");
         var file=project is null?"Start-Shell.ps1":"Start-Codex.ps1";
-        var command="powershell.exe -NoLogo -NoProfile "+(project is null?"-NoExit ":"")+"-File "+Quote(Path.Combine(root,"terminal",file))+" -CodexPath "+Quote(codex)+(project is null?"":" -ProjectPath "+Quote(directory));
+        var command=project is null
+            ?"powershell.exe -NoLogo -NoProfile -NoExit -File "+Quote(Path.Combine(root,"terminal",file))+" -CodexPath "+Quote(codex)
+            :"powershell.exe -NoLogo -NoProfile -File "+Quote(Path.Combine(root,"terminal",file))+" -CodexPath "+Quote(codex)+" -ProjectPath "+Quote(directory);
         var view=new TerminalView(command,directory,Theme());
-        var tab=new Tab(Guid.NewGuid(),project is null?"PowerShell "+(++shellNumber):string.Equals(project,root,StringComparison.OrdinalIgnoreCase)?"Battlestation":Path.GetFileName(project),view);
+        var title=project is null?"PowerShell "+(++shellNumber):string.Equals(project,root,StringComparison.OrdinalIgnoreCase)?"Battlestation":Path.GetFileName(project);
+        var tab=new Tab(Guid.NewGuid(),title,view);
         tabs.Add(tab);content.Children.Add(view);Select(tab);
     }
     void Select(Tab tab)
@@ -105,11 +110,12 @@ internal sealed class NativeTerminalWindow : IDisposable
         if(!attached){placement.Add(window,true);attached=true;}
     }
     bool attached;
-    object Inspect()=>new{chromeVersion=1,externalChrome,headerVisible=header.Visibility==Visibility.Visible,hostPid=Environment.ProcessId,pid=tabs.Count==0?0:Environment.ProcessId,status=tabs.Count==0?"Terminal natif prêt":$"{tabs.Count} onglet{(tabs.Count>1?"s":"")} · {active?.Title}",hwnd=(long)Handle,visible=window.IsVisible,
+    object Inspect()=>new{chromeVersion=1,themeVersion=1,theme=DesktopTheme.Current.Id,externalChrome,headerVisible=header.Visibility==Visibility.Visible,hostPid=Environment.ProcessId,pid=tabs.Count==0?0:Environment.ProcessId,status=tabs.Count==0?"Terminal natif prêt":$"{tabs.Count} onglet{(tabs.Count>1?"s":"")} · {active?.Title}",hwnd=(long)Handle,visible=window.IsVisible,
         sessions=tabs.Select(t=>new{id=t.Id,title=t.Title,pid=t.View.Session.Pid,ready=t.View.Session.Ready.IsCompletedSuccessfully&&t.View.Session.Ready.Result,error=t.View.Session.Error,input=t.View.Session.InputCharacters,output=t.View.Session.OutputCharacters,columns=t.View.Terminal.Columns,rows=t.View.Terminal.Rows,active=t==active}).ToArray()};
     public string Command(string command)
     {
         if(command=="inspect")return JsonSerializer.Serialize(Inspect());
+        if(command.StartsWith("theme:")){DesktopTheme.Select(command[6..]);foreach(var tab in tabs)tab.View.ApplyTheme(Theme());header.InvalidateVisual();return "OK";}
         if(command=="chrome:external"||command=="chrome:internal"){SetExternalChrome(command.EndsWith("external"));return "OK";}
         if(command.StartsWith("select:")&&Guid.TryParse(command[7..],out var select)){Select(FindTab(select));return "OK";}
         if(command.StartsWith("close-tab:")&&Guid.TryParse(command[10..],out var close)){CloseTab(FindTab(close));return "OK";}

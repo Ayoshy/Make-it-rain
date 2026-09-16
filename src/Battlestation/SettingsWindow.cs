@@ -25,9 +25,10 @@ internal sealed class SettingsWindow : Window
     readonly Action<string> deleteProfile;
     readonly Func<IReadOnlyList<string>> userProfiles;
     bool ready;
-    internal SettingsWindow(Station state,PaletteHotkey shortcut,Func<string,bool,bool> visibility,Action organize,Action<Window> editApps,Action<string> selectProfile,Action saveProfile,Action<string> deleteProfile,Func<IReadOnlyList<string>> userProfiles,string currentProfile)
+    string themeId;
+    internal SettingsWindow(Station state,PaletteHotkey shortcut,Func<string,bool,bool> visibility,Action organize,Action<Window> editApps,Action<string> selectProfile,Action saveProfile,Action<string> deleteProfile,Action resetTemplate,Func<IReadOnlyList<string>> userProfiles,string currentProfile)
     {
-        station=state;hotkey=shortcut;this.saveProfile=saveProfile;this.deleteProfile=deleteProfile;this.userProfiles=userProfiles;Title="Battlestation · Réglages";Width=760;Height=660;ShowInTaskbar=true;OverlayStyle.Apply(this);
+        themeId=state.Settings.ThemeId;station=state;hotkey=shortcut;this.saveProfile=saveProfile;this.deleteProfile=deleteProfile;this.userProfiles=userProfiles;Title="Battlestation · Réglages";Width=760;Height=660;ShowInTaskbar=true;OverlayStyle.Apply(this);
         var root=new DockPanel();var header=new DockPanel{Margin=new Thickness(0,0,0,18)};DockPanel.SetDock(header,Dock.Top);root.Children.Add(header);
         var close=OverlayStyle.Button("×",Close);close.ToolTip="Fermer";DockPanel.SetDock(close,Dock.Right);header.Children.Add(close);var title=OverlayStyle.Text("Réglages",25);title.FontWeight=FontWeights.SemiBold;header.Children.Add(title);
         header.MouseLeftButtonDown+=(_,e)=>{if(e.OriginalSource is TextBlock){DragMove();e.Handled=true;}};
@@ -54,20 +55,29 @@ internal sealed class SettingsWindow : Window
         gridEnabled=new CheckBox{Content="Accrocher à la grille",IsChecked=state.Settings.GridEnabled};desktop.Children.Add(gridEnabled);
         gridStep=Field(desktop,"Pas de grille · 4 à 64",state.Settings.GridStep.ToString(CultureInfo.InvariantCulture));
         linkDocks=new CheckBox{Content="Lier les docks · redimensionnement partagé et poussée",IsChecked=state.Settings.LinkDocks,Margin=new Thickness(0,14,0,8)};desktop.Children.Add(linkDocks);
-        Heading(desktop,"Disposition · "+currentProfile);var modes=new WrapPanel();desktop.Children.Add(modes);
+        Heading(desktop,"Scènes · "+currentProfile);var modes=new WrapPanel();desktop.Children.Add(modes);
         foreach(string name in DesktopProfiles.Names.Concat(userProfiles()))modes.Children.Add(OverlayStyle.Button(name,()=>{Close();selectProfile(name);}));
-        Heading(desktop,"Dispositions personnelles");desktop.Children.Add(OverlayStyle.Text("Les setups intégrés restent fixes. Les dispositions personnelles sont sauvegardées séparément.",12,"#BCAACD"));
-        desktop.Children.Add(OverlayStyle.Button("Sauver la disposition actuelle",saveProfile));
+        desktop.Children.Add(OverlayStyle.Button("Rétablir le modèle",()=>{Close();resetTemplate();}));
+        Heading(desktop,"Scènes personnelles");
+        desktop.Children.Add(OverlayStyle.Button("Sauver sous…",()=>{Close();saveProfile();}));
         foreach(string name in userProfiles())
         {
             var row=new DockPanel{Margin=new Thickness(0,5,0,0)};var select=OverlayStyle.Button(name,()=>{Close();selectProfile(name);});DockPanel.SetDock(select,Dock.Left);row.Children.Add(select);
             var remove=OverlayStyle.Button("Supprimer",()=>deleteProfile(name));DockPanel.SetDock(remove,Dock.Right);row.Children.Add(remove);desktop.Children.Add(row);
         }
-        var look=Page("Apparence");Heading(look,"Verre et mouvement");look.Children.Add(OverlayStyle.Text("Transparence des panneaux",14));
+        var look=Page("Apparence");Heading(look,"Thème");
+        var themes=new WrapPanel();look.Children.Add(themes);var choices=new List<Button>();
+        foreach(var definition in DesktopTheme.Definitions)
+        {
+            Button? choice=null;choice=OverlayStyle.Button(definition.Name,()=>{themeId=definition.Id;if(ready)station.PreviewAppearance(themeId,animation!.IsChecked==true,1-transparency!.Value/100);foreach(var item in choices)item.Opacity=(string)item.Tag==themeId?1:.55;});
+            choice.Tag=definition.Id;choice.Opacity=themeId==definition.Id?1:.55;choice.ToolTip=definition.Name;choices.Add(choice);themes.Children.Add(choice);
+        }
+        if(state.Terminal?.Pid>0&&state.Terminal.ThemeSupported==false)look.Children.Add(OverlayStyle.Text("Les onglets déjà ouverts conservent leur ancien habillage jusqu’à leur fermeture.",11,"#BCAACD"));
+        Heading(look,"Verre et mouvement");look.Children.Add(OverlayStyle.Text("Transparence des panneaux",14));
         var percentage=OverlayStyle.Text("",12,"#BCAACD");transparency=new Slider{Minimum=15,Maximum=95,Value=(1-state.Settings.GlassOpacity)*100,TickFrequency=5,IsSnapToTickEnabled=true,Margin=new Thickness(0,14,0,5)};look.Children.Add(transparency);look.Children.Add(percentage);
         animation=new CheckBox{Content="Animer le fond du bureau",IsChecked=state.Settings.AnimateBackground,Margin=new Thickness(0,25,0,0)};look.Children.Add(animation);
         look.Children.Add(OverlayStyle.Text("Aperçu immédiat · Enregistrer pour conserver",11,"#BCAACD"));
-        void Preview(){percentage.Text=$"{transparency.Value:0} %";if(ready)Native.BackgroundAppearance(animation.IsChecked==true?1:0,(float)(1-transparency.Value/100));}
+        void Preview(){percentage.Text=$"{transparency.Value:0} %";if(ready)station.PreviewAppearance(themeId,animation.IsChecked==true,1-transparency.Value/100);}
         transparency.ValueChanged+=(_,_)=>Preview();animation.Click+=(_,_)=>Preview();Preview();
         reactiveAudio=new CheckBox{Content="Faire réagir le fond au son",IsChecked=state.Settings.ReactiveAudio,Margin=new Thickness(0,25,0,0)};look.Children.Add(reactiveAudio);
         audioIntensity=new Slider{Minimum=0,Maximum=100,Value=state.Settings.AudioIntensity*100,TickFrequency=5,IsSnapToTickEnabled=true,Margin=new Thickness(0,12,0,5)};look.Children.Add(audioIntensity);
@@ -89,7 +99,7 @@ internal sealed class SettingsWindow : Window
         media.Children.Add(OverlayStyle.Button("Ouvrir la réserve",state.ShowReserve));
         pageHost.Content=desktop;foreach(var item in pages)item.Button.Opacity=item.Page==desktop?1:.55;
         Content=OverlayStyle.Frame(root);ready=true;
-        Closed+=(_,_)=>{station.PreviewReactiveAudio=null;station.PreviewAudioIntensity=null;Native.BackgroundAppearance(station.Settings.AnimateBackground?1:0,(float)station.Settings.GlassOpacity);};
+        Closed+=(_,_)=>{station.PreviewReactiveAudio=null;station.PreviewAudioIntensity=null;station.PreviewAppearance(station.Settings.ThemeId,station.Settings.AnimateBackground,station.Settings.GlassOpacity);};
         PreviewKeyDown+=(_,e)=>{if(e.Key==Key.Escape){Close();e.Handled=true;}};
     }
     void UpdateHotkey()=>hotkeyStatus.Text=hotkey.Registered?"Raccourci actif":"Ctrl + Espace est indisponible. Libère-le dans l’autre application, puis réessaie.";
@@ -104,7 +114,7 @@ internal sealed class SettingsWindow : Window
             bool same=DateTimeOffset.TryParse(station.TargetDate,CultureInfo.InvariantCulture,DateTimeStyles.None,out var old)&&old.LocalDateTime.Date==day.Date&&old.LocalDateTime.ToString("HH:mm")==time.Text.Trim();
             string target=same?station.TargetDate:new DateTimeOffset(local,TimeZoneInfo.Local.GetUtcOffset(local)).ToString("O",CultureInfo.InvariantCulture);
             if(!int.TryParse(gridStep.Text,out int step)||step is <4 or >64)throw new ArgumentException("Le pas de grille doit être un entier entre 4 et 64.");
-            station.ApplySettings(new DesktopSettings(projectRoot.Text,city.Text,Number(latitude.Text),Number(longitude.Text),animation.IsChecked==true,1-transparency.Value/100,reactiveAudio.IsChecked==true,audioIntensity.Value/100,keepMediaLinks.IsChecked==true,gridEnabled.IsChecked==true,step,linkDocks.IsChecked==true),target);feedback.Text="Réglages enregistrés";
+            station.ApplySettings(new DesktopSettings(projectRoot.Text,city.Text,Number(latitude.Text),Number(longitude.Text),animation.IsChecked==true,1-transparency.Value/100,reactiveAudio.IsChecked==true,audioIntensity.Value/100,keepMediaLinks.IsChecked==true,gridEnabled.IsChecked==true,step,linkDocks.IsChecked==true,themeId,station.Settings.DualSenseTouchTrail),target);feedback.Text="Réglages enregistrés";
         }
         catch(Exception e) when(e is ArgumentException or System.IO.IOException or UnauthorizedAccessException){feedback.Text=e.Message;}
     }

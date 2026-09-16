@@ -1,7 +1,8 @@
 # Pages internes de Conrad et Codex
 
 Comportement et implémentation des transitions internes des deux docks.
-Le build réellement chargé est indiqué par `build/current.txt` ; les clics physiques
+Le prochain build lancé est indiqué par `build/current.txt` ; vérifier le chemin
+du processus pour connaître le build réellement chargé. Les clics physiques
 restent la validation d'usage à faire sur le bureau réel.
 
 ## Utilisation

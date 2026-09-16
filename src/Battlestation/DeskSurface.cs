@@ -102,9 +102,10 @@ internal sealed class DeskSurface : Surface
         string selected=Native.Read("selectedPath");var status=Station.Projects.Read(selected);
         Text(ProjectStatus(status),32,rect.Y+42,9.6,ProjectStatusColor(status),width:Width-98);
         Button("CloseProject","×",Width-62,rect.Y+8,30,30,()=>popup=false);
-        double bw=(Width-76)/2;
+        double bw=(Width-88)/3;
         Button("Explorer","Explorateur",32,rect.Y+72,bw,36,()=>{Native.DeskCommand("OpenSelected");popup=false;},11,color:"#F4EDF9");
         Button("OpenCodex","Codex CLI",44+bw,rect.Y+72,bw,36,()=>{Station.Terminal?.OpenCodex(Native.Read("selectedPath"));popup=false;},11,color:"#F4EDF9");
+        Button("OpenDeepSeek","DeepSeek CLI",56+bw*2,rect.Y+72,bw,36,()=>{Station.OpenDeepSeek(Native.Read("selectedPath"));popup=false;},11,color:"#F4EDF9");
     }
     int ProjectCount=>int.TryParse(Native.Read("projectCount"),out int count)?Math.Max(0,count):0;
     internal IEnumerable<string> VisibleProjects(){int cols=Math.Max(1,(int)((Width-36)/330)),rows=Math.Max(1,(int)((Height-60)/73));return Enumerable.Range(Math.Min(projectRow*cols,ProjectCount),Math.Max(0,Math.Min(cols*rows,ProjectCount-projectRow*cols))).Select(i=>Native.Read($"project:{i}:path")).Append(Native.Read("selectedPath")).Where(p=>p!="").ToArray();}
@@ -131,7 +132,7 @@ internal sealed class DeskSurface : Surface
             cachedSize=new(Width,Height);
             projectBackdrop=new DrawingGroup();var context=D;
             try{using var artwork=projectBackdrop.Open();D=artwork;ProjectCards(false);}finally{D=context;}
-            projectBackdrop.Freeze();
+            if(projectBackdrop.CanFreeze)projectBackdrop.Freeze();
             var visual=new DrawingVisual{Effect=new BlurEffect{Radius=7,RenderingBias=RenderingBias.Quality}};
             using(var artwork=visual.RenderOpen())artwork.DrawDrawing(projectBackdrop);
             var dpi=VisualTreeHelper.GetDpi(this);
@@ -153,17 +154,17 @@ internal sealed class DeskSurface : Surface
             D.PushTransform(new ScaleTransform(scale,scale,Width/2,rect.Y+rect.Height/2));
             D.PushOpacity(.48);D.DrawImage(projectFrost,new Rect(0,0,Width,Height));D.Pop();D.Pop();D.Pop();
         }
-        var wash=new LinearGradientBrush(Color.FromArgb(18,246,239,255),Color.FromArgb(10,151,193,225),75);
-        D.DrawRoundedRectangle(new LinearGradientBrush(Color.FromArgb(16,27,18,39),Color.FromArgb(38,27,18,39),90),null,rect,22,22);
+        var wash=DesktopTheme.Gradient("#12F6EFFF","#0A97C1E1",75);
+        D.DrawRoundedRectangle(DesktopTheme.Gradient("#101B1227","#261B1227",90),null,rect,22,22);
         D.DrawRoundedRectangle(wash,null,rect,22,22);
         var rim=new LinearGradientBrush();rim.StartPoint=new Point(0,0);rim.EndPoint=new Point(1,1);
-        rim.GradientStops.Add(new GradientStop(Color.FromArgb(150,255,243,255),0));
-        rim.GradientStops.Add(new GradientStop(Color.FromArgb(22,228,218,248),.4));
-        rim.GradientStops.Add(new GradientStop(Color.FromArgb(100,184,224,248),1));
+        rim.GradientStops.Add(new GradientStop(DesktopTheme.Color("#96FFF3FF"),0));
+        rim.GradientStops.Add(new GradientStop(DesktopTheme.Color("#16E4DAF8"),.4));
+        rim.GradientStops.Add(new GradientStop(DesktopTheme.Color("#64B8E0F8"),1));
         D.DrawRoundedRectangle(null,new Pen(rim,1),rect,22,22);
         if(rect.Contains(Pointer))
         {
-            var light=new RadialGradientBrush(Color.FromArgb(140,255,250,255),Colors.Transparent){MappingMode=BrushMappingMode.Absolute,Center=Pointer,GradientOrigin=Pointer,RadiusX=160,RadiusY=100};
+            var light=new RadialGradientBrush(DesktopTheme.Color("#8CFFFAFF"),Colors.Transparent){MappingMode=BrushMappingMode.Absolute,Center=Pointer,GradientOrigin=Pointer,RadiusX=160,RadiusY=100};
             D.DrawRoundedRectangle(null,new Pen(light,1.5),rect,22,22);
         }
     }

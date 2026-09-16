@@ -69,7 +69,7 @@ internal sealed class AudioSurface : Surface,IDisposable
         if(volume.HasValue)
         {
             double x=left+track*Math.Clamp(volume.Value,0,1);
-            var pearl=new LinearGradientBrush(Color.FromRgb(255,245,255),Color.FromRgb(166,203,228),45);
+            var pearl=DesktopTheme.Gradient("#FFF5FF","#A6CBE4",45);
             D.DrawEllipse(pearl,new Pen(B("#F2E5FF"),1),new Point(x,y+15),7,7);
             Hit("AudioVolume:"+(key??"master"),left,y-3,track,34,()=>Mixer.SetVolume(key,(float)((Pointer.X-left)/track)));
         }

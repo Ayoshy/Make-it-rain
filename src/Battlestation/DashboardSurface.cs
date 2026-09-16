@@ -209,17 +209,20 @@ internal sealed class DashboardSurface : Surface
         if (drag is not null) { CancelDrag(); e.Handled = true; } else base.OnMouseLeftButtonUp(e);
     }
     protected override void OnLostMouseCapture(MouseEventArgs e) { drag = null; base.OnLostMouseCapture(e); }
-    List<(string Name, string Remaining, string Duration, string Reset)> QuotaRows()
+    List<(string Name, string Remaining, string Duration, string Reset, bool IsReserve)> QuotaRows()
     {
-        var rows = new List<(string, string, string, string)>(); string name = "";
+        var rows = new List<(string, string, string, string, bool)>(); string name = "";
         foreach (var line in Station.M("quotaDetails").Split('\n'))
         {
             if (line.Length == 0) { name = ""; continue; }
             if (name == "") { name = line; continue; }
+            bool isCodex = name.Equals("codex", StringComparison.OrdinalIgnoreCase);
+            bool isReserve = name.Equals("gpt-reserve", StringComparison.OrdinalIgnoreCase);
+            if (!isCodex && !isReserve) continue;
             foreach (var item in line.Split('·'))
             {
                 var parts = item.Split(" / ");
-                if (parts.Length == 3) rows.Add((name, parts[0].Trim(), parts[1].Trim(), parts[2].Trim()));
+                if (parts.Length == 3) rows.Add((isCodex ? "Codex" : "gpt Reserve", parts[0].Trim(), parts[1].Trim(), parts[2].Trim(), isReserve));
             }
         }
         return rows;
@@ -235,14 +238,19 @@ internal sealed class DashboardSurface : Surface
         for (int i = 0; i < count && quotaOffset + i < rows.Count; i++)
         {
             var row = rows[quotaOffset + i]; double y = i * 48;
-            Box(0, y, w - 8, 43, "#12804DAE", "#37B77DDF", 9);
-            Text(row.Name == "codex" ? "Codex" : row.Name, 10, y + 3, 9, bold: true, width: w * .45);
+            const string reserveFill = "#2F3569C0", reserveStroke = "#8A8FD1CC", reserveInk = "#D9DEFF", reserveBar = "#AEB8F4";
+            string fill = row.IsReserve ? reserveFill : "#12804DAE";
+            string stroke = row.IsReserve ? reserveStroke : "#37B77DDF";
+            string ink = row.IsReserve ? reserveInk : Purple;
+            string bar = row.IsReserve ? reserveBar : Purple;
+            Box(0, y, w - 8, 43, fill, stroke, 9);
+            Text(row.Name, 10, y + 3, 9, bold: true, width: w * .45);
             Text(row.Duration.ToUpperInvariant(), w - 87, y + 6, 7.5, align: "right");
             var match = Regex.Match(row.Remaining, @"(\d+)%");
             double percent = match.Success ? double.Parse(match.Groups[1].Value) : double.NaN;
-            Text(match.Success ? percent + "%" : "N/D", w - 18, y + 1, 17, Purple, DockAppearance.NumberFont, "right");
+            Text(match.Success ? percent + "%" : "N/D", w - 18, y + 1, 17, ink, DockAppearance.NumberFont, "right");
             Text("Reset  " + row.Reset, 10, y + 23, 7.5, width: w - 30);
-            Track(10, y + 40, w - 38, percent, Purple, 2);
+            Track(10, y + 40, w - 38, percent, bar, 2);
         }
         Text(Station.M("credits"), 0, body.Height - 15, 7.5, Muted, width: w - 10);
         ScrollMark(rows.Count, count, quotaOffset, 0, count * 48 - 5);

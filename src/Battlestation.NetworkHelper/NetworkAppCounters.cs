@@ -1,0 +1,39 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.IO;
+namespace Battlestation;
+internal sealed class NetworkAppCounters
+{
+    sealed class Counter {internal long Received,Sent;}
+    readonly ConcurrentDictionary<int,Counter> counters=[];
+    readonly Dictionary<int,(string Key,string Name,long Seen)> names=[];
+    long last=Stopwatch.GetTimestamp();
+    internal void Add(int pid,int bytes,bool incoming)
+    {
+        if(pid<=0||bytes<=0)return;
+        var counter=counters.GetOrAdd(pid,_=>new());
+        if(incoming)Interlocked.Add(ref counter.Received,bytes);else Interlocked.Add(ref counter.Sent,bytes);
+    }
+    internal NetworkAppRate[] Drain()
+    {
+        long now=Stopwatch.GetTimestamp();double seconds=(now-last)/(double)Stopwatch.Frequency;last=now;
+        var groups=new Dictionary<string,(string Name,long Received,long Sent,int Processes)>(StringComparer.OrdinalIgnoreCase);
+        foreach(var (pid,counter) in counters)
+        {
+            long incoming=Interlocked.Exchange(ref counter.Received,0),outgoing=Interlocked.Exchange(ref counter.Sent,0);
+            if(incoming+outgoing==0)continue;
+            if(!names.TryGetValue(pid,out var identity)||Environment.TickCount64-identity.Seen>30000)
+            {
+                string key="pid:"+pid,name="PID "+pid;
+                try{using var process=Process.GetProcessById(pid);name=process.ProcessName;key=process.MainModule?.FileName??key;}
+                catch(Exception e) when(e is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception){}
+                names[pid]=identity=(key,name,Environment.TickCount64);
+            }
+            var group=groups.GetValueOrDefault(identity.Key,(identity.Name,0,0,0));
+            groups[identity.Key]=(identity.Name,group.Received+incoming,group.Sent+outgoing,group.Processes+1);
+        }
+        foreach(int pid in names.Where(p=>Environment.TickCount64-p.Value.Seen>60000).Select(p=>p.Key).ToArray()){names.Remove(pid);counters.TryRemove(pid,out _);}
+        return groups.Values.OrderByDescending(g=>g.Received+g.Sent).ThenBy(g=>g.Name,StringComparer.OrdinalIgnoreCase).Take(5)
+            .Select(g=>new NetworkAppRate(g.Name,g.Received/seconds,g.Sent/seconds,g.Processes)).ToArray();
+    }
+}

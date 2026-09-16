@@ -11,7 +11,7 @@ boutons et arrondis. Le dictionnaire `GlassMenus.xaml` habille les composants
 WPF de menus et sous-menus au niveau de l'application, sans remplacer leur
 logique de navigation. Voir [l'apparence commune](HARMONIZATION.md).
 
-`DesktopLayout` gère onze identifiants de blocs, leurs positions, les collisions,
+`DesktopLayout` gère les identifiants de blocs, leurs positions, les collisions,
 la recherche d'un emplacement libre et la persistance atomique de `layout.json`.
 `DesktopWorkspace` relie ce modèle aux fenêtres, aux gestes de déplacement et au
 menu de notification. Horloge, météo, lecteur, projets, compteur, matériel et
@@ -94,3 +94,5 @@ Les lectures Codex utilisent l'app-server existant sans demander de génération
 Les sources et assets utilisent des chemins relatifs au projet. Les réglages
 utilisateur sont dans `%LOCALAPPDATA%\Battlestation` ; la date cible déjà choisie
 reste prioritaire sur la valeur initiale de `desk/settings.json`.
+
+Les trois palettes embarquées, le protocole terminal de thème et la persistance des scènes sont décrits dans [THEMES_SCENES.md](THEMES_SCENES.md).

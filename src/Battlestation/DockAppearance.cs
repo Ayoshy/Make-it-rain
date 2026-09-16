@@ -11,7 +11,7 @@ internal static class DockAppearance
     public static readonly LinearGradientBrush ButtonFill=Fill(false),ButtonHover=Fill(true);
     static LinearGradientBrush Fill(bool hover)
     {
-        var brush=new LinearGradientBrush((Color)ColorConverter.ConvertFromString(hover?"#26EEE1F8":"#14DED2EE"),(Color)ColorConverter.ConvertFromString(hover?"#18B8A8D4":"#0CB29CCC"),90);
-        brush.Freeze();return brush;
+        var brush=DesktopTheme.Gradient(hover?"#26EEE1F8":"#14DED2EE",hover?"#18B8A8D4":"#0CB29CCC",90);
+        return brush;
     }
 }
