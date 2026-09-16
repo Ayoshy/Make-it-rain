@@ -24,7 +24,7 @@ internal sealed class Station : IDisposable
     internal bool ClipboardRegistered {get;set;}
     internal void ShowReserve()=>ReserveRequested?.Invoke();
     public string Codex {get;}
-    public string DeepSeek {get;}
+    public string Kilo {get;}
     public string ProjectRoot=>Settings.ProjectRoot;
     public DesktopSettings Settings {get;private set;}
     internal bool? PreviewReactiveAudio {get;set;}
@@ -45,7 +45,7 @@ internal sealed class Station : IDisposable
         Reserve=new MediaReserve(Path.Combine(Data,"media-reserve.json"));
         using var settings=JsonDocument.Parse(File.ReadAllText(Path.Combine(root,"desk/settings.json")));
         var s=settings.RootElement;Codex=Environment.ExpandEnvironmentVariables(s.GetProperty("codex").GetString()!);
-        DeepSeek=s.TryGetProperty("deepseek",out var deepSeek)?Environment.ExpandEnvironmentVariables(deepSeek.GetString()!):"deepseek-cli";
+        Kilo=s.TryGetProperty("kilo",out var kilo)?Environment.ExpandEnvironmentVariables(kilo.GetString()!):"kilo";
         var weather=s.GetProperty("weather");
         var defaults=new DesktopSettings(Environment.ExpandEnvironmentVariables(s.GetProperty("projectRoot").GetString()!),weather.GetProperty("city").GetString()!,weather.GetProperty("latitude").GetDouble(),weather.GetProperty("longitude").GetDouble());
         Settings=DesktopSettings.Load(Path.Combine(Data,"preferences.json"),defaults);
@@ -104,11 +104,11 @@ internal sealed class Station : IDisposable
     public void Command(string command){try{Backend.Command(command);Error="";}catch(Exception e){Error=e.Message;}}
     readonly AppLauncher launcher=new();
     public void Launch(DockApp app){try{launcher.Open(app);Error="";}catch(Exception e){Error=e.Message;}}
-    public void OpenDeepSeek(string project)
+    public void OpenKilo(string project)
     {
         if(!Directory.Exists(project))throw new DirectoryNotFoundException("Ce projet a été déplacé ou supprimé.");
-        DesktopSettings.Write(Path.Combine(Data,"deepseek-request.json"),JsonSerializer.Serialize(new{project,command=DeepSeek}));
-        Terminal?.OpenDeepSeek();
+        DesktopSettings.Write(Path.Combine(Data,"kilo-request.json"),JsonSerializer.Serialize(new{project,command=Kilo}));
+        Terminal?.OpenKilo();
     }
     public void SaveApps(List<DockApp> apps)
     {

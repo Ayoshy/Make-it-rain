@@ -86,12 +86,12 @@ DualSense et Réseau. Le compteur Vice City peut être retiré sans toucher au r
   masque son affichage et conserve ses sessions.
 - **Projets** : le statut Git est vert quand le dépôt est propre, ambre avec des
   modifications, gris quand il est inconnu. Ouvrir un projet propose Explorateur,
-  Codex CLI et DeepSeek CLI ; DeepSeek ouvre un nouvel onglet du terminal sur le
-  projet sélectionné.
+  Codex CLI et Kilo CLI ; Kilo ouvre un nouvel onglet du terminal sur le
+  projet sélectionné et y démarre `kilo`.
 - **Ctrl+Espace** ouvre la palette : recherche d’applications et projets,
   flèches pour choisir, Entrée pour ouvrir, Échap pour revenir/fermer. Le préfixe
   **>** limite la recherche aux commandes. Un projet propose Explorateur, Codex CLI
-  et DeepSeek CLI. DeepSeek demande une variable `DEEPSEEK_API_KEY` valide.
+  et Kilo CLI ; Kilo démarre le CLI dans le projet sélectionné.
 - **Réglages** est accessible dans la palette, le menu de notification et le clic
   droit d’un bloc : blocs visibles, applications, dossier des projets, météo,
   compteur, transparence du verre et animation du fond. L’apparence est prévisualisée

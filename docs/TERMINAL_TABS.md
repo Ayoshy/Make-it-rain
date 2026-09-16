@@ -18,8 +18,16 @@ Le lanceur local fournit ces champs aux nouvelles sessions ; les CLI déjà ouve
 doivent régler leur titre individuellement. Le nom du champ est `run-state`,
 pas `Status`. Un nom manuel reste prioritaire jusqu'au retour à Titre automatique.
 
+Depuis Kilo 7.7.2, le CLI écrit `Kilo CLI | <sujet de session>` (tronqué à
+40 caractères), et `Kilo CLI` seul sur l'écran d'accueil. Battlestation reprend le
+sujet comme titre automatique, sans le préfixe ; seul ce format est reconnu, les
+titres transitoires du lanceur sont ignorés. Les icônes d'état `◔`, `⚠` et `✓`
+n'apparaissent que si l'option `title_icon` vaut `unicode` ou `emojis` dans
+`%USERPROFILE%\.config\kilo\tui.json` (fichier TUI séparé de `kilo.jsonc`,
+défaut `none`) ; elles correspondent à Working, Attention et Ready.
+
 Un helper isolé lit le titre des consoles ConPTY existantes et vérifie la présence
-de Codex dans leur liste de processus. Il ne lit ni sortie terminal, ni historique,
+de Codex ou de Kilo dans leur liste de processus. Il ne lit ni sortie terminal, ni historique,
 ni configuration de compte ; il n'envoie aucune saisie et ne lance aucune génération.
 Le titre dynamique reste en mémoire. Les préférences seules sont sauvegardées.
 Le helper appartient au bureau et peut être remplacé sans redémarrer l'hôte terminal.
@@ -31,3 +39,9 @@ confirmés par les clics utilisateur. Working, Ready et le titre réel
 anneau a été contrôlé en aperçu WPF et en tests ; sa lisibilité en usage réel reste
 à confirmer par l'utilisateur. Tests : préférences, parsing, menu, stabilité des
 cartes, animation et lecture du titre d'une console synthétique sans saisie.
+
+Validation du 16 septembre 2026 : les titres Kilo live `Kilo CLI | <sujet>` sont
+repris comme titres automatiques d'onglets sur le bureau (sujets observés dans
+l'inspection des onglets). Le parsing Kilo (icônes comprises) et la non-régression
+Codex sont vérifiés par harnais temporaire ; les icônes d'état restent à observer
+avec `tui.title_icon` activé.

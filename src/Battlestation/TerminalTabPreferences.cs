@@ -28,16 +28,27 @@ internal sealed class TerminalTabPreferences
     static TerminalTabPreference Normalize(TerminalTabPreference value){string name=Clean(value.Name).Trim();return value with{Name=name.Length==0?null:name,Color=Color(value.Color)};}
     public TerminalTabInfo Decorate(TerminalTabInfo tab,ConsoleTitleInfo? metadata)
     {
-        var preference=Get(tab.Id);var parsed=TerminalTitle.Parse(metadata?.Title,metadata?.Codex==true);
-        string automatic=metadata?.Codex!=true||string.IsNullOrWhiteSpace(parsed.Title)?tab.Title:parsed.Title;
+        var preference=Get(tab.Id);bool cli=metadata?.Codex==true||metadata?.Kilo==true;
+        var parsed=TerminalTitle.Parse(metadata?.Title,metadata?.Codex==true,metadata?.Kilo==true);
+        string automatic=!cli||string.IsNullOrWhiteSpace(parsed.Title)?tab.Title:parsed.Title;
         return tab with{Title=preference.AutomaticTitle?automatic:preference.Name??tab.Title,Accent=preference.Color,Activity=parsed.Activity,Effects=preference.Effects,AutomaticTitle=preference.AutomaticTitle,SourceTitle=metadata?.Title};
     }
 }
 internal static class TerminalTitle
 {
-    public static (string Title,TerminalActivity Activity) Parse(string? title,bool codex)
+    // Kilo writes "[icon] Kilo CLI | session title"; the icon only appears when
+    // tui.title_icon enables it in the user's Kilo configuration.
+    static readonly (string Icon,TerminalActivity Activity)[] KiloStatus=
+    [
+        ("\u25D4",TerminalActivity.Working),("\uD83D\uDCAD",TerminalActivity.Working),
+        ("\u26A0",TerminalActivity.Attention),("\uD83D\uDD36",TerminalActivity.Attention),
+        ("\u2713",TerminalActivity.Ready),("\u2705",TerminalActivity.Ready),
+    ];
+    const string KiloBase="Kilo CLI";
+    public static (string Title,TerminalActivity Activity) Parse(string? title,bool codex,bool kilo=false)
     {
         string clean=TerminalTabPreferences.Clean(title).Trim();
+        if(kilo)return Kilo(clean);
         if(!codex)return(clean,TerminalActivity.Unknown);
         var parts=clean.Split(" | ",StringSplitOptions.TrimEntries);
         if(parts.Length<2)return(clean,TerminalActivity.Unknown);
@@ -48,6 +59,17 @@ internal static class TerminalTitle
         if(attention>=0)state=TerminalActivity.Attention;
         string name=string.Join(" | ",parts.Where((part,i)=>i!=index&&i!=attention&&!Spinner(part)));
         return(string.IsNullOrWhiteSpace(name)?clean:name,state);
+    }
+    static (string Title,TerminalActivity Activity) Kilo(string clean)
+    {
+        var activity=TerminalActivity.Unknown;string rest=clean;
+        foreach(var (icon,state) in KiloStatus)
+            if(rest.StartsWith(icon+" ",StringComparison.Ordinal)){activity=state;rest=rest[(icon.Length+1)..];break;}
+        if(rest.Equals(KiloBase,StringComparison.Ordinal))return(KiloBase,activity);
+        // Ignore shell and launcher titles: only the CLI's own format is used.
+        if(!rest.StartsWith(KiloBase+" | ",StringComparison.Ordinal))return(string.Empty,TerminalActivity.Unknown);
+        string name=rest[(KiloBase.Length+3)..].Trim();
+        return(string.IsNullOrWhiteSpace(name)?KiloBase:name,activity);
     }
     static bool Spinner(string value)=>value.Length==1&&(value[0] is >= '\u2800' and <= '\u28ff'||"◐◓◑◒◴◷◶◵⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏".Contains(value));
     static TerminalActivity State(string value)=>value.Trim().ToLowerInvariant() switch

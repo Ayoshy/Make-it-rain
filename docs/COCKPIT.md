@@ -47,8 +47,9 @@ Une absence de dépôt ou un échec ne devient pas un état « propre ».
 
 Le sous-texte est vert pour un dépôt propre, ambre pour des modifications et gris
 si l’état Git est inconnu. Les cartes et leur fenêtre d’actions utilisent les mêmes
-couleurs. Les actions du projet sont Explorateur, Codex CLI et DeepSeek CLI ; ce
-dernier ouvre un nouvel onglet du terminal dans le projet sélectionné.
+couleurs. Les actions du projet sont Explorateur, Codex CLI et Kilo CLI ; ce
+dernier ouvre un nouvel onglet du terminal dans le projet sélectionné et y
+démarre `kilo`.
 
 ## Liens médias
 

@@ -75,9 +75,9 @@ internal sealed class CommandPaletteWindow : Window
     {
         if(closing)return;foreach(var entry in entries)if(!catalog.Any(e=>e.Id==entry.Id))catalog.Add(entry);if(actions is null)Rebuild();
     }
-    internal void ProjectActions(string name,Action explorer,Action codex,Action deepSeek)
+    internal void ProjectActions(string name,Action explorer,Action codex,Action kilo)
     {
-        previousQuery=search.Text;actions=[new("explorer","Explorateur",name,"\uE8B7",explorer),new("codex","Codex CLI",name,"\uE756",codex),new("deepseek","DeepSeek CLI",name,"\uE756",deepSeek)];context.Text=name+"  ·  Échap pour revenir";placeholder.Text="Choisir une action";search.Text="";Rebuild();search.Focus();
+        previousQuery=search.Text;actions=[new("explorer","Explorateur",name,"\uE8B7",explorer),new("codex","Codex CLI",name,"\uE756",codex),new("kilo","Kilo CLI",name,"\uE756",kilo)];context.Text=name+"  ·  Échap pour revenir";placeholder.Text="Choisir une action";search.Text="";Rebuild();search.Focus();
     }
     void Rebuild()
     {

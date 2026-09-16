@@ -6,7 +6,7 @@ using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
 
 namespace Battlestation;
-internal sealed record ConsoleTitleInfo(int Pid,string? Title,bool Codex,int Error=0);
+internal sealed record ConsoleTitleInfo(int Pid,string? Title,bool Codex,int Error=0,bool Kilo=false);
 internal static class TerminalMetadataWorker
 {
     [DllImport("kernel32.dll")] static extern nint GetStdHandle(int id);
@@ -53,14 +53,19 @@ internal static class TerminalMetadataWorker
             if(!AttachConsole((uint)pid))return new(pid,null,false,Marshal.GetLastWin32Error());
             try
             {
-                var title=new StringBuilder(512);GetConsoleTitle(title,512);bool codex=false;
+                var title=new StringBuilder(512);GetConsoleTitle(title,512);bool codex=false,kilo=false;
                 var processes=new uint[128];uint count=GetConsoleProcessList(processes,(uint)processes.Length);
                 foreach(uint id in processes.Take((int)Math.Min(count,(uint)processes.Length)))
                 {
-                    try{using var process=Process.GetProcessById((int)id);if(process.ProcessName.Equals("codex",StringComparison.OrdinalIgnoreCase)){codex=true;break;}}
+                    try
+                    {
+                        using var process=Process.GetProcessById((int)id);string name=process.ProcessName;
+                        if(name.Equals("codex",StringComparison.OrdinalIgnoreCase))codex=true;
+                        else if(name.Equals("kilo",StringComparison.OrdinalIgnoreCase))kilo=true;
+                    }
                     catch(Exception e) when(e is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception){}
                 }
-                return new(pid,TerminalTabPreferences.Clean(title.ToString()),codex);
+                return new(pid,TerminalTabPreferences.Clean(title.ToString()),codex,0,kilo);
             }
             finally{FreeConsole();}
         }
