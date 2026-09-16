@@ -14,6 +14,9 @@ collage d'image au CLI. Le contenu du terminal n'est pas journalisé.
 
 `Start-Shell.ps1` prépare les couleurs et la commande Codex dans l'onglet seulement.
 `Start-Codex.ps1` démarre le CLI dans le projet choisi sans envoyer de prompt.
+Aucun identifiant DeepSeek n'est fourni par Battlestation : l'action DeepSeek CLI
+crée un onglet PowerShell dans le projet et lance `deepseek-cli`, qui demande
+`DEEPSEEK_API_KEY` pour l'API distante.
 Aucun paramètre global ni identifiant Codex n'est lu ou modifié par ces scripts.
 
 Des sessions de l'ancien terminal peuvent rester ouvertes pendant la transition.

@@ -45,7 +45,7 @@ internal sealed class Station : IDisposable
         Reserve=new MediaReserve(Path.Combine(Data,"media-reserve.json"));
         using var settings=JsonDocument.Parse(File.ReadAllText(Path.Combine(root,"desk/settings.json")));
         var s=settings.RootElement;Codex=Environment.ExpandEnvironmentVariables(s.GetProperty("codex").GetString()!);
-        DeepSeek=s.TryGetProperty("deepseek",out var deepSeek)?Environment.ExpandEnvironmentVariables(deepSeek.GetString()!):"dsh.cmd";
+        DeepSeek=s.TryGetProperty("deepseek",out var deepSeek)?Environment.ExpandEnvironmentVariables(deepSeek.GetString()!):"deepseek-cli";
         var weather=s.GetProperty("weather");
         var defaults=new DesktopSettings(Environment.ExpandEnvironmentVariables(s.GetProperty("projectRoot").GetString()!),weather.GetProperty("city").GetString()!,weather.GetProperty("latitude").GetDouble(),weather.GetProperty("longitude").GetDouble());
         Settings=DesktopSettings.Load(Path.Combine(Data,"preferences.json"),defaults);
@@ -107,7 +107,8 @@ internal sealed class Station : IDisposable
     public void OpenDeepSeek(string project)
     {
         if(!Directory.Exists(project))throw new DirectoryNotFoundException("Ce projet a été déplacé ou supprimé.");
-        var start=new ProcessStartInfo(DeepSeek){UseShellExecute=true,WorkingDirectory=project};start.ArgumentList.Add("web");Process.Start(start)?.Dispose();
+        DesktopSettings.Write(Path.Combine(Data,"deepseek-request.json"),JsonSerializer.Serialize(new{project,command=DeepSeek}));
+        Terminal?.OpenDeepSeek();
     }
     public void SaveApps(List<DockApp> apps)
     {

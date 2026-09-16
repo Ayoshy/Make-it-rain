@@ -2,7 +2,7 @@
   "projectRoot": "%USERPROFILE%\\Documents\\Project",
   "projectCount": 6,
   "codex": "%LOCALAPPDATA%\\Programs\\OpenAI\\Codex\\bin\\codex.exe",
-  "deepseek": "%LOCALAPPDATA%\\Programs\\node-v24.21.0-win-x64\\dsh.cmd",
+  "deepseek": "%APPDATA%\\npm\\deepseek-cli.cmd",
   "weather": {
     "city": "Aix-en-Provence",
     "latitude": 43.5283,
