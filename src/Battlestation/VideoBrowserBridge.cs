@@ -1,8 +1,11 @@
 using System.Buffers.Binary;
 using System.IO;
 using System.IO.Pipes;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Channels;
+using System.Windows;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
 namespace Battlestation;
@@ -17,6 +20,12 @@ internal sealed class VideoBrowserBridge : IDisposable
     Task<bool>? lastStop;
     BrowserVideoState state=new(false,[],null,null,null,0,0,"");
     string captureId="";
+    Guid captureIdentity=Guid.Empty;
+    WriteableBitmap? frameSurface;
+    byte[] pendingPixels=[],writePixels=[];
+    int pendingWidth,pendingHeight;
+    bool pendingPlaying;
+    ulong pendingSerial,presented;
     int targetWidth=1280,targetHeight=720;
     long nextDiscovery;
     internal static bool IsSupportedKind(string? kind)=>kind is "youtube" or "twitch";
@@ -36,14 +45,14 @@ internal sealed class VideoBrowserBridge : IDisposable
     public void Start(int tab,string kind,bool preserveError=false)
     {
         if(!IsSupportedKind(kind))throw new ArgumentException("Source navigateur inconnue",nameof(kind));
-        lock(gate){captureId=Guid.NewGuid().ToString("N");state=state with{Image=null,TabId=tab,Kind=kind,Frames=0,LastFrame=0,Error=preserveError?state.Error:"",DecodedFrames=null};Send(new{type="start",tabId=tab,kind,captureId,width=targetWidth,height=targetHeight});}
+        lock(gate){captureIdentity=Guid.NewGuid();captureId=captureIdentity.ToString("N");pendingSerial=0;presented=0;state=state with{Image=null,TabId=tab,Kind=kind,Frames=0,LastFrame=0,Error=preserveError?state.Error:"",DecodedFrames=null};Send(new{type="start",tabId=tab,kind,captureId,width=targetWidth,height=targetHeight});}
     }
     public void Stop()
     {
         lock(gate)
         {
             if(state.TabId is int tab){var sent=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);lastStop=sent.Task;Send(new{type="stop",tabId=tab,kind=state.Kind??"youtube"},sent);}
-            captureId="";state=state with{Image=null,TabId=null,Kind=null,Playing=null,Frames=0,LastFrame=0,Error="",DecodedFrames=null};
+            captureId="";captureIdentity=Guid.Empty;pendingSerial=0;presented=0;frameSurface=null;pendingPixels=[];writePixels=[];state=state with{Image=null,TabId=null,Kind=null,Playing=null,Frames=0,LastFrame=0,Error="",DecodedFrames=null};
         }
     }
     public void Toggle(){lock(gate)if(state.TabId is int tab)Send(new{type="toggle",tabId=tab,kind=state.Kind??"youtube"});}
@@ -70,12 +79,15 @@ internal sealed class VideoBrowserBridge : IDisposable
                     }
                 },connection.Token);
                 var read=Task.Run(async()=>{
-                    var header=new byte[4];
+                    var header=new byte[4];byte[] message=[];
                     while(!connection.IsCancellationRequested)
                     {
                         await pipe.ReadExactlyAsync(header,connection.Token);int length=BinaryPrimitives.ReadInt32LittleEndian(header);
                         if(length<=0||length>4*1024*1024)throw new IOException("Invalid frame length");
-                        var message=new byte[length];await pipe.ReadExactlyAsync(message,connection.Token);Receive(message);
+                        // One reusable buffer: a message is consumed before the next read,
+                        // so no frame-sized array is allocated per image.
+                        if(message.Length<length)message=new byte[Math.Min(4*1024*1024,Math.Max(length,message.Length*2))];
+                        await pipe.ReadExactlyAsync(message.AsMemory(0,length),connection.Token);Receive(message,length);
                     }
                 },connection.Token);
                 await Task.WhenAny(write,read);connection.Cancel();pipe.Dispose();
@@ -86,11 +98,12 @@ internal sealed class VideoBrowserBridge : IDisposable
             if(!lifetime.IsCancellationRequested)try{await Task.Delay(1000,lifetime.Token);}catch(OperationCanceledException){}
         }
     }
-    void Receive(byte[] message)
+    void Receive(byte[] message,int length)
     {
+        if(length>0&&message[0]==VideoFrameRecord.Marker){ReceiveBinary(message,length);return;}
         try
         {
-            using var doc=JsonDocument.Parse(message);var root=doc.RootElement;
+            using var doc=JsonDocument.Parse(message.AsMemory(0,length));var root=doc.RootElement;
             string? type=root.GetProperty("type").GetString();
             if(type=="tabs")
             {
@@ -137,7 +150,63 @@ internal sealed class VideoBrowserBridge : IDisposable
         }
         catch(Exception e) when(e is JsonException or KeyNotFoundException or InvalidOperationException or FormatException or ArgumentException or NotSupportedException or IOException or OverflowException){}
     }
-    internal static bool ValidJpeg(byte[] bytes,int width,int height)
+    // Binary records avoid JSON and base64 per image in this process. The pipe
+    // reader decodes the JPEG into a reused buffer off the UI thread; the surface
+    // is presented on the UI thread, which owns it (WPF bitmaps are thread-affine).
+    void ReceiveBinary(byte[] message,int length)
+    {
+        if(!VideoFrameRecord.TryRead(message.AsSpan(0,length),out var header))return;
+        string? kind=VideoFrameRecord.KindName(header.Kind);if(kind is null)return;
+        lock(gate)if(header.TabId!=state.TabId||header.CaptureId!=captureIdentity||kind!=state.Kind)return;
+        if(!ValidJpeg(message.AsSpan(header.JpegOffset,header.JpegLength),header.Width,header.Height))return;
+        long? decoded=null;double? encode=null;string? visibility=null,version=null;
+        if(header.ExtraLength>0)try
+        {
+            using var document=JsonDocument.Parse(message.AsMemory(header.ExtraOffset,header.ExtraLength));var extra=document.RootElement;
+            if(extra.TryGetProperty("decodedFrames",out var frames)&&frames.TryGetInt64(out long framesValue))decoded=framesValue;
+            if(extra.TryGetProperty("encodeMs",out var encoded)&&encoded.TryGetDouble(out double encodedValue))encode=encodedValue;
+            if(extra.TryGetProperty("visibility",out var shown)&&shown.ValueKind==JsonValueKind.String)visibility=shown.GetString();
+            if(extra.TryGetProperty("version",out var build)&&build.ValueKind==JsonValueKind.String)version=build.GetString();
+        }
+        catch(JsonException){}
+        int size=header.Width*4*header.Height;if(writePixels.Length<size)writePixels=new byte[size];
+        if(!DecodeJpeg(message,header.JpegOffset,header.JpegLength,header.Width,header.Height))return;
+        lock(gate)
+        {
+            if(header.CaptureId!=captureIdentity||header.TabId!=state.TabId||kind!=state.Kind)return;
+            (pendingPixels,writePixels)=(writePixels,pendingPixels);
+            pendingWidth=header.Width;pendingHeight=header.Height;pendingPlaying=header.Playing;pendingSerial++;
+            state=state with{Playing=header.Playing,Frames=state.Frames+1,LastFrame=Environment.TickCount64,Error="",Diagnostic=null,DecodedFrames=decoded,EncodeMs=encode,Visibility=visibility,Version=version};
+        }
+        FrameAvailable?.Invoke();
+        Send(new{type="ack",tabId=header.TabId,kind,captureId,sequence=header.Sequence});
+    }
+    // Called on the UI thread: presents the newest decoded frame into the reused
+    // surface. The copy shares the lock that swaps buffers, so the decoded buffer
+    // is never overwritten while it is being read.
+    public bool Read()
+    {
+        lock(gate)
+        {
+            if(pendingSerial==0||pendingSerial==presented)return false;
+            if(frameSurface is null||frameSurface.PixelWidth!=pendingWidth||frameSurface.PixelHeight!=pendingHeight)frameSurface=new WriteableBitmap(pendingWidth,pendingHeight,96,96,PixelFormats.Bgra32,null);
+            frameSurface.WritePixels(new Int32Rect(0,0,pendingWidth,pendingHeight),pendingPixels,pendingWidth*4,0);
+            presented=pendingSerial;state=state with{Image=frameSurface,Playing=pendingPlaying};return true;
+        }
+    }
+    bool DecodeJpeg(byte[] jpeg,int offset,int length,int width,int height)
+    {
+        try
+        {
+            using var stream=new MemoryStream(jpeg,offset,length,false);
+            var decoder=new JpegBitmapDecoder(stream,BitmapCreateOptions.PreservePixelFormat,BitmapCacheOption.OnLoad);
+            var frame=decoder.Frames[0];if(frame.PixelWidth!=width||frame.PixelHeight!=height)return false;
+            BitmapSource source=frame.Format==PixelFormats.Bgra32?frame:new FormatConvertedBitmap(frame,PixelFormats.Bgra32,null,0);
+            source.CopyPixels(new Int32Rect(0,0,width,height),writePixels,width*4,0);return true;
+        }
+        catch(Exception e) when(e is NotSupportedException or FileFormatException or ArgumentException or InvalidOperationException or OverflowException or IOException or COMException){return false;}
+    }
+    internal static bool ValidJpeg(ReadOnlySpan<byte> bytes,int width,int height)
     {
         if(width is <1 or >1920||height is <1 or >1080||bytes.Length is <12 or >2097152||bytes[0]!=255||bytes[1]!=216)return false;
         for(int i=2;i+4<bytes.Length;)

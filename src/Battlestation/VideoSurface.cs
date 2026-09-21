@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Interop;
@@ -34,13 +35,20 @@ internal sealed class VideoSurface : Surface,IDisposable
     void BrowserFrame()
     {
         if(Interlocked.Exchange(ref renderQueued,1)!=0)return;
-        Dispatcher.BeginInvoke(()=>{Interlocked.Exchange(ref renderQueued,0);if(!disposed&&visible&&!editing&&armed){if(kind=="stremio")capture.Read();Refresh();}},DispatcherPriority.Render);
+        Dispatcher.BeginInvoke(()=>{Interlocked.Exchange(ref renderQueued,0);if(!disposed&&visible&&!editing&&armed){if(kind=="stremio")capture.Read();if(VideoSelection.IsBrowserKind(kind))browser.Read();Refresh();}},DispatcherPriority.Render);
     }
     public void SetActive(bool value,bool organizing)
     {
         if(visible==value&&editing==organizing)return;
-        visible=value;editing=organizing;if(!visible)armed=false;
+        visible=value;editing=organizing;if(!visible)SetArmed(false);
         if(visible&&!editing&&!occluded){timer.Start();nextScan=0;Update();}else{timer.Stop();Release();}
+    }
+    // Mirrored playback tolerates a delayed full collection while it is armed;
+    // the rest of the desktop keeps the interactive mode.
+    void SetArmed(bool value)
+    {
+        armed=value;
+        try{GCSettings.LatencyMode=value?GCLatencyMode.SustainedLowLatency:GCLatencyMode.Interactive;}catch(InvalidOperationException){}
     }
     void Release(bool keepPlayer=false)
     {
@@ -48,8 +56,8 @@ internal sealed class VideoSurface : Surface,IDisposable
         if(!keepPlayer){lease?.Dispose();lease=null;leasedSource=null;}
         source=null;kind="";lastBrowserFrame=0;browserDrawn=lastDrawn=0;transportError="";
     }
-    public void StartMirror(){armed=true;Release();nextScan=0;Update();}
-    public void StopMirror(){armed=false;Release();nextScan=0;Update();}
+    public void StartMirror(){SetArmed(true);Release();nextScan=0;Update();}
+    public void StopMirror(){SetArmed(false);Release();nextScan=0;Update();}
     public void Select(string value)
     {
         if(value is not ("auto" or "youtube" or "twitch" or "stremio"))throw new ArgumentException("Source vidéo inconnue");
@@ -77,7 +85,7 @@ internal sealed class VideoSurface : Surface,IDisposable
         if(source is not null&&(!Native.IsWindow(source.Handle)||!Native.IsWindowVisible(source.Handle))){Release();nextScan=0;}
         bool fresh=kind=="stremio"&&capture.Read();
         if(kind=="stremio"&&capture.Age>1500&&controls.Playing==true)lease?.ParkForMirror();
-        if(VideoSelection.IsBrowserKind(kind)){web=browser.State;fresh=web.Frames!=lastBrowserFrame;lastBrowserFrame=web.Frames;}
+        if(VideoSelection.IsBrowserKind(kind)){browser.Read();web=browser.State;fresh=web.Frames!=lastBrowserFrame;lastBrowserFrame=web.Frames;}
         if(capture.Error<0){lease?.Dispose();lease=null;}
         timer.Interval=TimeSpan.FromMilliseconds(1000);if(fresh||scanned)Refresh();
     }
@@ -174,5 +182,5 @@ internal sealed class VideoSurface : Surface,IDisposable
         }
         if(transportError!="")Text(transportError,w/2,screen.Bottom-25,9,Muted,align:"center");D.Pop();
     }
-    public void Dispose(){disposed=true;timer.Stop();browser.FrameAvailable-=BrowserFrame;capture.FrameAvailable-=BrowserFrame;Release();capture.Dispose();browser.Dispose();}
+    public void Dispose(){SetArmed(false);disposed=true;timer.Stop();browser.FrameAvailable-=BrowserFrame;capture.FrameAvailable-=BrowserFrame;Release();capture.Dispose();browser.Dispose();}
 }

@@ -5,6 +5,8 @@ using System.Windows.Media.Imaging;
 
 namespace Battlestation;
 // The worker owns WGC/D3D; WPF only copies the newest completed, bounded frame.
+// A WPF bitmap is thread-affine: the copy stays on the UI thread until a
+// D3DImage-style shared surface removes it entirely.
 internal sealed class VideoCapture : IDisposable
 {
     const string Library="Battlestation.Video.dll";

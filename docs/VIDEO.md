@@ -32,6 +32,24 @@ n'est envoyé au bureau. Aucune donnée ne part vers un service distant. Les ima
 JPEG passent en mémoire par le pont .NET et un pipe limité à l'utilisateur courant.
 Aucune piste audio n'est transmise ou enregistrée ; le son reste dans Brave.
 
+Le base64 reste imposé sur la liaison native messaging : le pont le décode une fois
+et transmet au bureau des enregistrements binaires bornés — en-tête fixe, JPEG brut,
+diagnostic optionnel — pour que le processus du bureau ne relise ni JSON ni base64
+par image. Le bureau décode ensuite le JPEG hors du fil d'interface dans un tampon
+réutilisé, puis présente l'image dans une surface WPF réutilisée. Un ancien pont
+qui envoie encore le JSON est toujours accepté ; le bureau essaie d'abord le format
+binaire, puis retombe sur le JSON pour la compatibilité.
+
+La mémoire par image est réutilisée (tampon de lecture du pipe, tampon de décodage,
+surface) ; la présentation sur le fil d'interface se limite à la copie dans la
+surface. Tant qu'un miroir est armé, le bureau passe le GC en `SustainedLowLatency`
+et rétablit le mode interactif à l'arrêt.
+
+La mémoire par image est réutilisée (tampon de lecture du pipe, tampon de décodage,
+surface) ; la présentation sur le fil d'interface se limite à la copie dans la
+surface. Tant qu'un miroir est armé, le bureau passe le GC en `SustainedLowLatency`
+et rétablit le mode interactif à l'arrêt.
+
 Version de l'extension : 0.4.0. La résolution suit le cadre du dock,
 jusqu'à 1920 × 1080, sans agrandir la source à la capture. Encodage JPEG dans un
 worker chargé depuis une page interne de l'extension, cadence plafonnée à

@@ -1,11 +1,15 @@
 using System.Buffers.Binary;
 using System.IO.Pipes;
-using System.Text;
 using System.Threading.Channels;
+using Battlestation;
 
 // Chrome native messaging uses stdout as a binary transport. Never log there,
 // or persist received messages. Only this extension's public origin is accepted.
+// Frames are decoded here (base64 is imposed by native messaging) and forwarded
+// to the desktop as bounded binary records; everything else is relayed verbatim.
+// The second argument is only used by the protocol tests to isolate the pipe.
 if(args.Length==0||args[0]!="chrome-extension://bbbkiomcecimmpndgliccmeagfhbednp/")return;
+var pipeName=args.Length>1?args[1]:"Battlestation.Video.v1";
 using var lifetime=new CancellationTokenSource();
 var queue=Channel.CreateBounded<byte[]>(new BoundedChannelOptions(4){FullMode=BoundedChannelFullMode.DropOldest,SingleReader=true,SingleWriter=true});
 var input=Console.OpenStandardInput();var output=Console.OpenStandardOutput();
@@ -18,14 +22,14 @@ var receive=Task.Run(async()=>{
             await input.ReadExactlyAsync(header,lifetime.Token);int length=BinaryPrimitives.ReadInt32LittleEndian(header);
             if(length<=0||length>4*1024*1024)break;
             var bytes=new byte[length];await input.ReadExactlyAsync(bytes,lifetime.Token);
-            queue.Writer.TryWrite(bytes);
+            queue.Writer.TryWrite(FramePacker.Pack(bytes));
         }
     }catch(Exception e) when(e is IOException or OperationCanceledException){}
     finally {lifetime.Cancel();queue.Writer.TryComplete();}
 });
 while(!lifetime.IsCancellationRequested)
 {
-    using var pipe=new NamedPipeClientStream(".","Battlestation.Video.v1",PipeDirection.InOut,PipeOptions.Asynchronous);
+    using var pipe=new NamedPipeClientStream(".",pipeName,PipeDirection.InOut,PipeOptions.Asynchronous);
     using var connected=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
     try
     {
