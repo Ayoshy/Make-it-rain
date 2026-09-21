@@ -13,6 +13,10 @@ namespace CodexUsageTray;
 public sealed class ApiEquivalentEstimator
 {
     private const string SparkModel = "gpt-5.3-codex-spark";
+    // Bumping this re-reads every rollout once. Entries older than this version
+    // are ignored, so a parser fix heals the counters already on disk instead of
+    // keeping them wrong forever (their file length never changes again).
+    private const int ParserVersion = 2;
 
     private static readonly JsonSerializerOptions CacheJsonOptions = new()
     {
@@ -34,6 +38,10 @@ public sealed class ApiEquivalentEstimator
             ["gpt-5.3-codex"] = new(1.75m, 0.175m, 14m),
             ["gpt-5.2"] = new(1.75m, 0.175m, 14m),
             ["gpt-5-codex"] = new(1.25m, 0.125m, 10m),
+            // Tarifs DeepSeek réellement facturés à ce compte : export du
+            // 23/08 au 21/09/2026, entrée hors cache / entrée en cache / sortie.
+            ["deepseek-flash"] = new(0.15m, 0.003m, 0.60m),
+            ["deepseek-v4-pro"] = new(0.66m, 0.022m, 1.98m),
             // No proxy price for Spark, auto-review, or unknown models.
         };
 
@@ -77,6 +85,7 @@ public sealed class ApiEquivalentEstimator
 
                 var info = new FileInfo(path);
                 if (_cache.TryGetValue(cacheKey, out var cached) &&
+                    cached.Parser == ParserVersion &&
                     cached.Length == info.Length &&
                     cached.LastWriteUtcTicks == info.LastWriteTimeUtc.Ticks &&
                     cached.Models is { Count: > 0 } && cached.Daily is not null)
@@ -279,6 +288,7 @@ public sealed class ApiEquivalentEstimator
         CancellationToken cancellationToken)
     {
         var canAppend = previous is { Models.Count: > 0, Daily: not null } &&
+                        previous.Parser == ParserVersion &&
                         previous.Length > 0 &&
                         previous.Length < info.Length;
         var startOffset = canAppend ? previous!.Length : 0;
@@ -403,7 +413,8 @@ public sealed class ApiEquivalentEstimator
             hasUsage,
             lastUsage,
             models,
-            dailyTotals);
+            dailyTotals,
+            ParserVersion);
     }
 
     private static string CacheKey(string path)
@@ -549,7 +560,8 @@ public sealed class ApiEquivalentEstimator
         bool HasUsage,
         TokenBreakdown LastUsage,
         IReadOnlyList<FileModelEstimate> Models,
-        IReadOnlyDictionary<string, DailyEstimate>? Daily = null);
+        IReadOnlyDictionary<string, DailyEstimate>? Daily = null,
+        int Parser = 0);
 
     private sealed record DailyEstimate(long InputTokens, long CachedInputTokens, long OutputTokens, long TotalTokens);
 
