@@ -101,6 +101,14 @@ toucher au reste.
   bloc (heure, icône jour/nuit, température) ; en dessous, le rendu reste celui
   d'avant. La pluie imminente est annoncée près du vent (« Pluie maintenant »,
   « Pluie dans 15 min »…) d'après les pas de 15 minutes.
+- **Lecteur** : la pochette du morceau remplace la teinte du verre — floutée,
+  elle reste translucide et teinte le bloc de sa couleur dominante (liseré,
+  progression, égaliseur). L'égaliseur occupe le bas du verre sur toute la
+  largeur, étiré bord à bord, jusqu'à la moitié de la hauteur, avec des crêtes
+  qui montent d'un coup puis retombent ; la barre de progression lui sert de
+  socle et le liseré pulse sur les basses. Source, titre, artiste, temps,
+  précédent/lecture/suivant et la recherche restent commandés par le lecteur
+  Windows.
 - **Aquarium** : bloc visuel et musical, sans réglage ni interaction. Eau teintée
   par le thème, trois bandes de caustiques, deux massifs de plantes, bulles et
   cinq à sept poissons qui dérivent, s'enroulent aux bords et se suivent

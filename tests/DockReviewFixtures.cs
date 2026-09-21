@@ -30,7 +30,9 @@ internal sealed class Station
     public DesktopLayout Layout {get;}=new();
     internal ProjectSignals Projects {get;}=new();
     internal TerminalSession? Terminal {get;set;}
-    internal System.Windows.Media.Imaging.BitmapSource? Cover=>null;
+    // Fixture only: the desk supplies the track artwork, there is no media session here.
+    internal System.Windows.Media.Imaging.BitmapSource? Cover=>CoverArt;
+    internal System.Windows.Media.Imaging.BitmapSource? CoverArt{get;set;}
     internal float[] MusicBands{get;set;}=new float[12];
     internal double AudioIntensity=>.55;
     public void SaveReminders(IEnumerable<ReminderItem> reminders)=>Reminders=reminders.ToList();

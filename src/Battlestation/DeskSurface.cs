@@ -13,6 +13,15 @@ internal sealed class DeskSurface : Surface
     bool popup;
     DrawingGroup? projectBackdrop;
     BitmapSource? projectFrost;
+    // Le morceau habille le verre : pochette floutée en surimpression, égaliseur au
+    // premier plan. Seule l'image de la piste courante est calculée puis gardée.
+    BitmapSource? musicBackdrop,musicBackdropSource;
+    Color musicAccent=Color.FromRgb(190,129,255);
+    Brush[] ribbonBrushes=[],peakBrushes=[],tintBrushes=[],glowBrushes=[];
+    Pen[] rimPens=[];
+    Brush progressBrush=Brushes.Transparent;
+    readonly RadialGradientBrush shade=new();
+    readonly float[] peaks=new float[96];
     readonly DeskWidget widget;
     int projectRow;
     Size cachedSize;
@@ -24,6 +33,13 @@ internal sealed class DeskSurface : Surface
         if(reactive||playing&&visible)Audio.Start();else Audio.Stop();
         var next=Audio.Bands;bool changed=false;
         for(int i=0;i<12;i++){float value=playing?bands[i]+(next[i]-bands[i])*(next[i]>bands[i]?.6f:.12f):0;changed|=Math.Abs(value-bands[i])>.001;bands[i]=value;}
+        // Attaque immédiate, retombée lente : les crêtes survivent aux barres.
+        for(int i=0;i<peaks.Length;i++)
+        {
+            float level=playing?MusicLevel(i/(double)(peaks.Length-1)):0;
+            float kept=level>peaks[i]?level:Math.Max(0,peaks[i]-.010f);
+            changed|=Math.Abs(kept-peaks[i])>.001;peaks[i]=kept;
+        }
         Station.MusicBands=bands;
         if(changed&&visible)Refresh();
         if(reactive)Native.BackgroundAudio(next.Take(4).Max(),next.Skip(4).Take(4).Average(),next.Skip(8).Max(),(float)Station.AudioIntensity);
@@ -104,29 +120,202 @@ internal sealed class DeskSurface : Surface
         _=>"weather-unknown"
     };
     void MediaCommand(string command,string capability){if(Native.Read(capability)=="1")Native.DeskCommand(command);}
+    // Le verre porte le morceau : la pochette le teinte et l'égaliseur l'anime.
+    static readonly Color Night=Color.FromRgb(7,5,18);
+    static readonly Color FallbackAccent=Color.FromRgb(190,129,255);
+    static readonly LinearGradientBrush BottomWash=Wash(new Point(0,1),new Point(0,0),(0,Fade(Night,.34)),(.46,Fade(Night,.10)),(1,Fade(Night,0)));
+    static readonly LinearGradientBrush FallbackGlass=Wash(new Point(0,0),new Point(1,1),(0,Color.FromRgb(0x28,0x1D,0x40)),(1,Color.FromRgb(0x0C,0x09,0x18)));
+    static readonly Brush[] FlareBrushes=LevelBrushes(Colors.White,.08,.30);
+    static readonly SolidColorBrush TrackRail=new(Color.FromArgb(0x5A,0x60,0x3D,0x6F));
+    static Color Fade(Color color,double alpha)=>Color.FromArgb((byte)Math.Clamp(alpha*255,0,255),color.R,color.G,color.B);
+    static LinearGradientBrush Wash(Point start,Point end,params (double Offset,Color Color)[] stops)
+    {
+        var brush=new LinearGradientBrush{StartPoint=start,EndPoint=end};
+        foreach(var (offset,color) in stops)brush.GradientStops.Add(new GradientStop(color,offset));
+        brush.Freeze();return brush;
+    }
+    static Brush[] LevelBrushes(Color color,double floor,double ceiling)
+    {
+        const int levels=14;var brushes=new Brush[levels];
+        for(int i=0;i<levels;i++)
+        {
+            var brush=new SolidColorBrush(Fade(color,floor+(ceiling-floor)*i/(levels-1d)));brush.Freeze();brushes[i]=brush;
+        }
+        return brushes;
+    }
+    // Barres pleines en bas, fondu vers le haut : le ruban garde une base solide.
+    static Brush[] BarBrushes(Color color,double floor,double ceiling,double head)
+    {
+        const int levels=18;var brushes=new Brush[levels];
+        for(int i=0;i<levels;i++)
+        {
+            double alpha=floor+(ceiling-floor)*i/(levels-1d);
+            var brush=new LinearGradientBrush{StartPoint=new Point(.5,1),EndPoint=new Point(.5,0)};
+            brush.GradientStops.Add(new GradientStop(Fade(color,alpha),0));
+            brush.GradientStops.Add(new GradientStop(Fade(color,alpha*head),.72));
+            brush.GradientStops.Add(new GradientStop(Fade(color,0),1));
+            brush.Freeze();brushes[i]=brush;
+        }
+        return brushes;
+    }
+    static Pen[] RimPens(Color color)
+    {
+        const int levels=16;var pens=new Pen[levels];
+        for(int i=0;i<levels;i++)
+        {
+            double level=i/(levels-1d);
+            var pen=new Pen(new SolidColorBrush(Fade(color,.14+.52*level)),1+1.6*level);pen.Freeze();pens[i]=pen;
+        }
+        return pens;
+    }
+    static int LevelIndex(double level,IReadOnlyList<Brush> palette)=>Math.Clamp((int)Math.Round(Math.Clamp(level,0,1)*(palette.Count-1)),0,palette.Count-1);
+    static int LevelIndex(double level,Pen[] palette)=>Math.Clamp((int)Math.Round(Math.Clamp(level,0,1)*(palette.Length-1)),0,palette.Length-1);
+    void SetAccent(Color accent)
+    {
+        musicAccent=accent;
+        ribbonBrushes=BarBrushes(accent,.30,1,.72);
+        glowBrushes=BarBrushes(accent,.05,.34,.22);
+        peakBrushes=LevelBrushes(accent,.45,.96);
+        tintBrushes=LevelBrushes(accent,.06,.20);
+        rimPens=RimPens(accent);
+        var read=Color.FromRgb((byte)(accent.R+(255-accent.R)*.32),(byte)(accent.G+(255-accent.G)*.32),(byte)(accent.B+(255-accent.B)*.32));
+        var progress=new SolidColorBrush(Fade(read,.94));progress.Freeze();progressBrush=progress;
+    }
+    // Un halo doux derrière le texte suffit : pas de bandeau opaque sur la pochette.
+    void Verse(Point center,double radiusX,double radiusY)
+    {
+        if(shade.GradientStops.Count==0)
+        {
+            shade.MappingMode=BrushMappingMode.Absolute;
+            shade.GradientStops.Add(new GradientStop(Fade(Night,.58),0));
+            shade.GradientStops.Add(new GradientStop(Fade(Night,.28),.55));
+            shade.GradientStops.Add(new GradientStop(Fade(Night,0),1));
+        }
+        shade.Center=center;shade.GradientOrigin=center;shade.RadiusX=radiusX;shade.RadiusY=radiusY;
+        D.DrawRectangle(shade,null,new Rect(0,0,Width,Height));
+    }
+    // Courbe commune au ruban et aux crêtes : les basses occupent le premier tiers.
+    float MusicLevel(double normalized)
+    {
+        double scaled=Math.Pow(Math.Clamp(normalized,0,1),1.35)*11;
+        int low=Math.Clamp((int)scaled,0,11),high=Math.Min(11,low+1);double mix=scaled-low;
+        return (float)(bands[low]*(1-mix)+bands[high]*mix);
+    }
+    float Bass=>(bands[0]+bands[1]+bands[2]+bands[3]+bands[4])/5;
+    float PeakAt(double normalized)=>peaks[(int)Math.Round(Math.Clamp(normalized,0,1)*(peaks.Length-1))];
+    void EnsureMusicArt(BitmapSource? cover)
+    {
+        if(cover is null)
+        {
+            var themed=DesktopTheme.Color(Purple);
+            if(musicBackdrop is null&&themed==musicAccent)return;
+            musicBackdrop=null;musicBackdropSource=null;SetAccent(themed);return;
+        }
+        // Le flou est calculé une fois par piste : un redimensionnement l'étire, sans le refaire.
+        if(ReferenceEquals(cover,musicBackdropSource))return;
+        musicBackdropSource=cover;
+        SetAccent(Dominant(cover));
+        musicBackdrop=Blurred(cover,new Size(Width,Height));
+    }
+    // La pochette est cadrée comme le bloc, débordante, puis floutée une seule fois.
+    BitmapSource Blurred(BitmapSource cover,Size size)
+    {
+        var dpi=VisualTreeHelper.GetDpi(this);
+        var visual=new DrawingVisual{Effect=new BlurEffect{Radius=24,RenderingBias=RenderingBias.Quality,KernelType=KernelType.Gaussian}};
+        var target=new Rect(-size.Width*.08,-size.Height*.08,size.Width*1.16,size.Height*1.16);
+        using(var artwork=visual.RenderOpen())artwork.DrawImage(cover,Fill(cover,target));
+        var bitmap=new RenderTargetBitmap(Math.Max(1,(int)Math.Ceiling(size.Width*dpi.DpiScaleX)),Math.Max(1,(int)Math.Ceiling(size.Height*dpi.DpiScaleY)),dpi.PixelsPerInchX,dpi.PixelsPerInchY,PixelFormats.Pbgra32);
+        bitmap.Render(visual);bitmap.Freeze();return bitmap;
+    }
+    static Rect Fill(BitmapSource image,Rect target)
+    {
+        double scale=Math.Max(target.Width/image.PixelWidth,target.Height/image.PixelHeight);
+        double width=image.PixelWidth*scale,height=image.PixelHeight*scale;
+        return new Rect(target.X+(target.Width-width)/2,target.Y+(target.Height-height)/2,width,height);
+    }
+    // Couleur dominante : les tons saturés et moyens portent l'identité de la piste.
+    static Color Dominant(BitmapSource cover)
+    {
+        const int side=24;
+        try
+        {
+            var visual=new DrawingVisual();
+            using(var artwork=visual.RenderOpen())artwork.DrawImage(cover,Fill(cover,new Rect(0,0,side,side)));
+            var bitmap=new RenderTargetBitmap(side,side,96,96,PixelFormats.Pbgra32);
+            bitmap.Render(visual);
+            var pixels=new byte[side*side*4];bitmap.CopyPixels(pixels,side*4,0);
+            double red=0,green=0,blue=0,total=0;
+            for(int i=0;i+3<pixels.Length;i+=4)
+            {
+                double b=pixels[i]/255d,g=pixels[i+1]/255d,r=pixels[i+2]/255d;
+                double high=Math.Max(r,Math.Max(g,b)),low=Math.Min(r,Math.Min(g,b));
+                double luminance=.2126*r+.7152*g+.0722*b;
+                double weight=(.06+high-low)*(.2+Math.Min(luminance,.85));
+                red+=r*weight;green+=g*weight;blue+=b*weight;total+=weight;
+            }
+            if(total<=0)return FallbackAccent;
+            red/=total;green/=total;blue/=total;
+            double mean=.2126*red+.7152*green+.0722*blue;
+            red=mean+(red-mean)*1.5;green=mean+(green-mean)*1.5;blue=mean+(blue-mean)*1.5;
+            double peak=Math.Max(red,Math.Max(green,blue));
+            if(peak<.6){double gain=.6/Math.Max(.02,peak);red*=gain;green*=gain;blue*=gain;}
+            return Color.FromRgb((byte)(Math.Clamp(red,0,1)*255),(byte)(Math.Clamp(green,0,1)*255),(byte)(Math.Clamp(blue,0,1)*255));
+        }
+        catch{return FallbackAccent;}
+    }
     void Music()
     {
-        double y=(Height-168)/2;
-        var center=new Point(79.2,y+81.6);
-        foreach(var r in new[]{50.4,36,22.8,7.2})D.DrawEllipse(B(r==7.2?"#8CAE9CBD":"#64161021"),new Pen(B("#37C3B8D4"),1),center,r,r);
-        if(Station.Cover is {} cover){D.PushClip(new EllipseGeometry(center,38.4,38.4));D.DrawImage(cover,new Rect(40.8,y+43.2,76.8,76.8));D.Pop();}
-        if(Native.Read("playing")=="1")for(int i=0;i<32;i++)
+        EnsureMusicArt(Station.Cover);
+        if(ribbonBrushes.Length==0)SetAccent(musicAccent);
+        bool playing=Native.Read("playing")=="1";double bass=Math.Clamp(Bass,0,1);
+        // L'égaliseur tient le bas du verre sur toute la largeur ; le texte et les
+        // commandes se placent juste au-dessus, l'artwork gardant le reste.
+        // Le bloc texte a la priorité : l'égaliseur prend le bas jusqu'à la moitié du verre.
+        double baseline=Height-8;
+        double span=Math.Clamp(Math.Min(Height*.48,baseline-109),40,300);
+        double y=Math.Clamp(baseline-span-12-168,0,Math.Max(0,Height-168)),text=Math.Max(140,Width-268);
+        D.PushClip(new RectangleGeometry(new Rect(0,0,Width,Height),DockAppearance.PanelRadius,DockAppearance.PanelRadius));
+        if(musicBackdrop is {} artwork)
         {
-            var a=i*2*Math.PI/32;double outer=72,inner=outer-Math.Max(2,30*bands[(int)((i%16)*12/16d)]);
-            Line(center.X+Math.Sin(a)*inner,center.Y-Math.Cos(a)*inner,center.X+Math.Sin(a)*outer,center.Y-Math.Cos(a)*outer,i%4==0?"#F59DDFEC":"#F0CD ADE0".Replace(" ",""),3.6);
+            // La pochette remplace la teinte du verre : elle le traverse plus qu'elle ne le couvre.
+            double breathe=1+.045*bass;
+            D.PushTransform(new ScaleTransform(breathe,breathe,Width/2,Height/2));
+            D.PushOpacity(.5);D.DrawImage(artwork,new Rect(0,0,Width,Height));D.Pop();D.Pop();
         }
-        double content=Width-182;
-        Text(Native.Read("source"),158,y+16,10,"#A99DBC",width:content-58);Hit("Source",158,y+12,content-58,28,()=>Native.DeskCommand("Source"));
+        else D.DrawRectangle(FallbackGlass,null,new Rect(0,0,Width,Height));
+        D.DrawRectangle(tintBrushes[LevelIndex(bass,tintBrushes)],null,new Rect(0,0,Width,Height));
+        D.DrawRectangle(BottomWash,null,new Rect(0,0,Width,Height));
+        Verse(new Point(32+text/2,y+78),Math.Max(200,text*.62),210);
+        // Égaliseur bord à bord : barres pleines en bas, fondu vers le haut, crêtes qui retombent.
+        int count=Math.Clamp((int)(Width/11),16,96);double slot=Width/(double)count;
+        for(int i=0;i<count;i++)
+        {
+            double place=(i+.5)/count;float level=playing?MusicLevel(place):0;
+            // Au repos les barres se rejoignent ; en lecture elles se séparent en peignes.
+            double bar=Math.Max(2,slot*(level<.08?.86:.46)),height=2.5+span*level,x=i*slot+(slot-bar)/2;
+            D.DrawRectangle(ribbonBrushes[LevelIndex(level,ribbonBrushes)],null,new Rect(x,baseline-height,bar,height));
+            // Pointe chaude : la crête du niveau sature vers le blanc.
+            if(level>.32)D.DrawRectangle(FlareBrushes[LevelIndex((level-.32)/.68,FlareBrushes)],null,new Rect(x,baseline-height,bar,Math.Min(7,height)));
+            float crest=PeakAt(place);
+            if(crest>.06)D.DrawRectangle(peakBrushes[LevelIndex(crest,peakBrushes)],null,new Rect(x,baseline-(2.5+span*crest)-3.5,bar,2.5));
+        }
+        D.DrawRectangle(glowBrushes[LevelIndex(bass,glowBrushes)],null,new Rect(0,Height-70,Width,70));
+        // La barre de progression sert de socle à l'égaliseur et garde la recherche au clic.
+        D.DrawRectangle(TrackRail,null,new Rect(16,baseline,Width-32,2.2));
+        D.DrawRectangle(tintBrushes[^1],null,new Rect(0,baseline,Width,1));
+        double.TryParse(Native.Read("mediaProgress"),System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out var ratio);
+        if(double.IsFinite(ratio))D.DrawRectangle(progressBrush,null,new Rect(16,baseline,Math.Clamp(ratio,0,1)*(Width-32),2.2));
+        D.DrawRoundedRectangle(null,rimPens[LevelIndex(bass,rimPens)],new Rect(.75,.75,Width-1.5,Height-1.5),DockAppearance.PanelRadius-1,DockAppearance.PanelRadius-1);
+        D.Pop();
+        Text(Native.Read("source"),32,y+11,10,"#A99DBC",width:text);Hit("Source",32,y+7,text,28,()=>Native.DeskCommand("Source"));
         Button("MediaReserve","+",Width-62,y+9,38,29,Station.ShowReserve,13);
-        Text(Native.Read("title"),158,y+43,16,width:content);
-        Text(Native.Read("artist"),158,y+77,11,"#ABA2BB",width:content);
-        if(Width>=620)Text(Native.Read("mediaTime"),158,y+118,10,"#ABA2BB",width:content-210);
+        Text(Native.Read("title"),32,y+33,16,width:text);
+        Text(Native.Read("artist"),32,y+57,11,"#ABA2BB",width:text);
+        if(Width>=620)Text(Native.Read("mediaTime"),32,y+76,10,"#ABA2BB",width:text);
         MediaButton("Previous","previous",Width-206,y+105,48,36,"canPrevious");
         MediaButton("Play",Native.Read("playing")=="1"?"pause":"play",Width-145,y+101,58,44,"canPlay");
         MediaButton("Next","next",Width-74,y+105,48,36,"canNext");
-        double.TryParse(Native.Read("mediaProgress"),System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out var ratio);
-        Track(158,y+151,content,ratio*100,"#B6A4C0",2.4);
-        Hit("Seek",158,y+145,content,14,()=>{if(Native.Read("canSeek")=="1")Native.DeskCommand("Seek:"+Math.Clamp((Pointer.X-158)/content,0,1).ToString(System.Globalization.CultureInfo.InvariantCulture));});
+        Hit("Seek",16,baseline-6,Width-32,14,()=>{if(Native.Read("canSeek")=="1")Native.DeskCommand("Seek:"+Math.Clamp((Pointer.X-16)/(Width-32),0,1).ToString(System.Globalization.CultureInfo.InvariantCulture));});
     }
     void MediaButton(string action,string icon,double x,double y,double w,double h,string capability)
     {

@@ -54,6 +54,40 @@ static class DockReviewTests
         int stride=image.PixelWidth*4;var data=new byte[stride*image.PixelHeight];image.CopyPixels(data,stride,0);return data;
     }
     static bool Different(byte[] first,byte[] second)=>first.Length!=second.Length||!first.AsSpan().SequenceEqual(second);
+    // Moyenne d'une bande verticale : sert à prouver qu'un dessin atteint bien un bord.
+    static double Strip(byte[] pixels,Size size,int x,int width,double fromHeight)
+    {
+        double sum=0;int count=0;
+        for(int y=(int)(size.Height*fromHeight);y<(int)size.Height;y++)
+        for(int column=x;column<Math.Min((int)size.Width,x+width);column++)
+        {
+            int index=(y*(int)size.Width+column)*4;
+            sum+=(pixels[index]+pixels[index+1]+pixels[index+2])/3d;count++;
+        }
+        return count==0?0:sum/count;
+    }
+    static float[] MusicPeaks(Surface surface)=>(float[])typeof(DeskSurface).GetField("peaks",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(surface)!;
+    // Feeds the same smoothing the audio tick publishes, without any capture device.
+    static void FeedMusic(DeskSurface surface,float[] values)
+    {
+        var bands=(float[])typeof(DeskSurface).GetField("bands",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(surface)!;
+        Array.Copy(values,bands,Math.Min(values.Length,bands.Length));
+        var level=typeof(DeskSurface).GetMethod("MusicLevel",BindingFlags.Instance|BindingFlags.NonPublic)!;
+        var peaks=MusicPeaks(surface);
+        for(int i=0;i<peaks.Length;i++)peaks[i]=(float)level.Invoke(surface,[i/(double)(peaks.Length-1)])!;
+    }
+    static BitmapSource CoverFixture()
+    {
+        var visual=new DrawingVisual();
+        using(var art=visual.RenderOpen())
+        {
+            art.DrawRectangle(new LinearGradientBrush(Color.FromRgb(38,96,58),Color.FromRgb(212,224,160),35),null,new Rect(0,0,300,300));
+            art.DrawEllipse(new SolidColorBrush(Color.FromRgb(232,236,214)),null,new Point(190,120),72,72);
+            art.DrawRectangle(new SolidColorBrush(Color.FromRgb(24,52,34)),null,new Rect(0,214,300,86));
+        }
+        var cover=new RenderTargetBitmap(300,300,96,96,PixelFormats.Pbgra32);
+        cover.Render(visual);cover.Freeze();return cover;
+    }
     static object? Private(object target,string name,params object?[] arguments)
         =>target.GetType().GetMethod(name,BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(target,arguments);
 
@@ -434,6 +468,49 @@ static class DockReviewTests
             Native.Values["weatherRain"]="Pluie dans 15 min";
             Check(Different(compact,Pixels(compactWeather)),"The imminent rain line reaches the compact dock");
             Check(Different(tall,Pixels(tallWeather)),"The imminent rain line reaches the tall dock");
+        }
+        // Musique : la pochette habille le verre, l'égaliseur suit les bandes.
+        {
+            Native.Values["source"]="Spotify";Native.Values["title"]="Footballeur";Native.Values["artist"]="Vald";
+            Native.Values["mediaTime"]="1:12 / 3:40";Native.Values["mediaProgress"]="0.33";Native.Values["playing"]="1";
+            Native.Values["canPlay"]="1";Native.Values["canNext"]="1";Native.Values["canPrevious"]="1";Native.Values["canSeek"]="1";
+            float[] loud=[.92f,.84f,.72f,.58f,.44f,.30f,.24f,.18f,.14f,.10f,.08f,.05f];
+            float[] quiet=[.12f,.10f,.08f,.06f,.05f,.04f,.03f,.02f,.02f,.01f,.01f,.01f];
+            var music=new DeskSurface(station,DeskWidget.Music){Width=720,Height=168};
+            FeedMusic(music,loud);
+            var loudImage=Pixels(music);
+            Render(music,Path.Combine(output,"music-playing.png"));
+            FeedMusic(music,quiet);
+            Check(Different(loudImage,Pixels(music)),"Le ruban spectral suit les bandes");
+            // L'égaliseur est étalé bord à bord, pas groupé sous le texte.
+            var quietImage=Pixels(music);
+            var size=new Size(720,168);
+            Check(Strip(loudImage,size,2,16,.55)>Strip(quietImage,size,2,16,.55)+1,"L'égaliseur atteint le bord gauche");
+            Check(Strip(loudImage,size,702,16,.55)>Strip(quietImage,size,702,16,.55)+1,"L'égaliseur atteint le bord droit");
+            Render(music,Path.Combine(output,"music-quiet.png"));
+            var cover=CoverFixture();
+            station.CoverArt=cover;FeedMusic(music,loud);
+            Check(Different(Pixels(music),loudImage),"La pochette de la piste atteint le verre");
+            Render(music,Path.Combine(output,"music-cover.png"));
+            // Crêtes : elles survivent à l'extinction, puis retombent jusqu'à zéro.
+            Native.Values["playing"]="";
+            music.TickAudio();
+            Check(MusicPeaks(music).Any(peak=>peak>0),"Les crêtes retombent après l'arrêt au lieu de disparaître");
+            for(int i=0;i<160;i++)music.TickAudio();
+            Check(MusicPeaks(music).All(peak=>peak==0),"Les crêtes finissent par se poser");
+            Native.Values["playing"]="1";
+            var tall=new DeskSurface(station,DeskWidget.Music){Width=720,Height=220};
+            FeedMusic(tall,loud);
+            Render(tall,Path.Combine(output,"music-tall.png"));
+            // Taille du bloc Lecteur sur le bureau mono écran.
+            var live=new DeskSurface(station,DeskWidget.Music){Width=966,Height=480};
+            FeedMusic(live,loud);
+            Render(live,Path.Combine(output,"music-live.png"));
+            station.CoverArt=null;
+            var compact=new DeskSurface(station,DeskWidget.Music){Width=520,Height=168};
+            FeedMusic(compact,loud);
+            Render(compact,Path.Combine(output,"music-compact.png"));
+            Check(Different(Pixels(compact),Pixels(music)),"Sans pochette, le bloc garde son verre et son égaliseur");
         }
         // Projets: divergence, commit age and the terminal badge.
         var projectRoot=Path.Combine(root,"fixtures","Battlestation");
