@@ -30,6 +30,8 @@ static class BrowserVideoTests
     // The bridge process is the only hop that still sees the base64 JSON envelope:
     // the extension-to-bridge protocol is unchanged, the bridge-to-desktop one is binary.
     const string ExtensionOrigin="chrome-extension://bbbkiomcecimmpndgliccmeagfhbednp/";
+    // Chrome appends its own window flag between the origin and any extra argument.
+    const string ParentWindowFlag="--parent-window=0";
     static void PackerChecks(byte[] jpeg)
     {
         var capture=Guid.NewGuid();
@@ -52,7 +54,7 @@ static class BrowserVideoTests
     static async Task BridgeEndToEndCheck(string pipeName,byte[] jpeg)
     {
         var executable=BridgeExecutable();
-        using var process=Process.Start(new ProcessStartInfo(executable,new[]{ExtensionOrigin,pipeName}){RedirectStandardInput=true,RedirectStandardOutput=true,UseShellExecute=false})??throw new Exception("Bridge process did not start");
+        using var process=Process.Start(new ProcessStartInfo(executable,new[]{ExtensionOrigin,ParentWindowFlag,pipeName}){RedirectStandardInput=true,RedirectStandardOutput=true,UseShellExecute=false})??throw new Exception("Bridge process did not start");
         using var bridge=new VideoBrowserBridge(pipeName);
         try
         {
@@ -93,7 +95,7 @@ static class BrowserVideoTests
     {
         var executable=BridgeExecutable();
         using var server=new NamedPipeServerStream(pipeName,PipeDirection.InOut,1,PipeTransmissionMode.Byte,PipeOptions.Asynchronous);
-        using var process=Process.Start(new ProcessStartInfo(executable,new[]{ExtensionOrigin,pipeName}){RedirectStandardInput=true,RedirectStandardOutput=true,UseShellExecute=false})??throw new Exception("Bridge process did not start");
+        using var process=Process.Start(new ProcessStartInfo(executable,new[]{ExtensionOrigin,ParentWindowFlag,pipeName}){RedirectStandardInput=true,RedirectStandardOutput=true,UseShellExecute=false})??throw new Exception("Bridge process did not start");
         try
         {
             await server.WaitForConnectionAsync().WaitAsync(TimeSpan.FromSeconds(10));

@@ -129,6 +129,9 @@ toucher au reste.
   reste cliquable et garde son **✓**. La molette change aussi de page.
 - Clic droit sur un onglet terminal : couleur, nom et titre automatique. Les états
   Codex ont un indicateur animé ; voir [les onglets](docs/TERMINAL_TABS.md).
+- Les onglets Codex portent un compte à rebours du cache de prompt (« ⏳ 12 min »
+  puis « cache expiré ») et leur fond se teinte tant qu'aucune couleur n'est
+  choisie ; les onglets Codex (DS) affichent le taux de hit du cache.
 - Le terminal dispose de ses propres onglets PowerShell/Codex ; retirer son bloc
   masque son affichage et conserve ses sessions.
 - **Projets** : le statut Git est vert quand le dépôt est propre, ambre avec des

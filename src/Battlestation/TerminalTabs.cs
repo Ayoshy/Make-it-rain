@@ -3,9 +3,10 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 
 namespace Battlestation;
-internal sealed record TerminalTabInfo(Guid Id,string Title,bool Active,string? Accent=null,TerminalActivity Activity=TerminalActivity.Unknown,bool Effects=true,bool AutomaticTitle=true,string? SourceTitle=null);
+internal sealed record TerminalTabInfo(Guid Id,string Title,bool Active,string? Accent=null,TerminalActivity Activity=TerminalActivity.Unknown,bool Effects=true,bool AutomaticTitle=true,string? SourceTitle=null,string? Badge=null,TerminalCacheHint CacheHint=TerminalCacheHint.None);
 internal enum TerminalTabAction { Rename,Color,CustomColor,AutomaticTitle,Effects,Reset,StatusHelp }
 internal sealed class TerminalTabs : Grid
 {
@@ -13,13 +14,20 @@ internal sealed class TerminalTabs : Grid
     readonly ScrollViewer scroll;
     readonly Button previous,next;
     readonly Style buttonStyle;
+    readonly DispatcherTimer cacheTimer;
     readonly Dictionary<Guid,Card> cards=[];
     TerminalTabInfo[] current=[];
     public event Action<Guid>? Selected,Closed;
     public event Action? Added,PasteRequested;
+    // Un seul minuteur pour la barre : chaque onglet relit son etat de cache sur
+    // une tache de fond, jamais sur le fil d'interface.
+    public event Action? CacheRefreshRequested;
     public event Action<Guid,TerminalTabAction,string?>? Customize;
     internal IReadOnlyList<TerminalTabInfo> Displayed=>current;
     static SolidColorBrush B(string color)=>DesktopTheme.Brush(color);
+    // La teinte automatique suit le restant du cache ; une couleur choisie reste prioritaire.
+    internal static string? CacheTint(TerminalCacheHint hint)=>hint switch{TerminalCacheHint.Fresh=>"#7FD6A6",TerminalCacheHint.Aging=>"#E9BE81",TerminalCacheHint.Expiring=>"#EB9B9B",TerminalCacheHint.Expired=>"#948CA0",_=>null};
+    internal static string? EffectiveAccent(string? accent,TerminalCacheHint hint)=>TerminalTabPreferences.Color(accent)??CacheTint(hint);
     internal static string Status(TerminalActivity state)=>state switch{TerminalActivity.Thinking=>"Réflexion",TerminalActivity.Working=>"En cours",TerminalActivity.Ready=>"Prêt",TerminalActivity.Attention=>"Action requise",TerminalActivity.Error=>"Erreur",_=>"État non exposé"};
     public TerminalTabs()
     {
@@ -31,6 +39,7 @@ internal sealed class TerminalTabs : Grid
         previous.Visibility=next.Visibility=Visibility.Collapsed;actions.Children.Add(previous);actions.Children.Add(next);
         actions.Children.Add(ActionButton("▣","Coller",()=>PasteRequested?.Invoke()));actions.Children.Add(ActionButton("+","Nouvel onglet",()=>Added?.Invoke()));
         scroll.ScrollChanged+=(_,_)=>{previous.Visibility=next.Visibility=scroll.ScrollableWidth>1?Visibility.Visible:Visibility.Collapsed;};
+        cacheTimer=new DispatcherTimer(TimeSpan.FromSeconds(10),DispatcherPriority.Background,(_,_)=>{if(current.Length>0&&IsVisible)CacheRefreshRequested?.Invoke();},Dispatcher);cacheTimer.Start();
     }
     Style CreateButtonStyle()
     {
@@ -65,6 +74,8 @@ internal sealed class TerminalTabs : Grid
         readonly TerminalTabs owner;
         readonly Border plate,glow;
         readonly TextBlock label;
+        readonly TextBlock badge;
+        readonly Button select;
         readonly TerminalActivityIndicator indicator;
         TerminalTabInfo data;
         public Grid Root {get;}=new(){Height=38,Margin=new Thickness(0,0,8,0)};
@@ -77,7 +88,8 @@ internal sealed class TerminalTabs : Grid
             var caption=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(12,0,10,0)};
             indicator=new TerminalActivityIndicator();caption.Children.Add(indicator);
             label=new TextBlock{FontFamily=new FontFamily(DockAppearance.TextFont),FontSize=14,TextTrimming=TextTrimming.CharacterEllipsis,MaxWidth=236,VerticalAlignment=VerticalAlignment.Center};caption.Children.Add(label);
-            var select=new Button{Content=caption,Style=owner.buttonStyle,Background=Brushes.Transparent,BorderThickness=new Thickness(0),MinWidth=126,MaxWidth=280};select.Click+=(_,_)=>owner.Selected?.Invoke(data.Id);row.Children.Add(select);
+            badge=new TextBlock{FontFamily=new FontFamily("Segoe UI Symbol"),FontSize=12,Margin=new Thickness(8,0,0,0),VerticalAlignment=VerticalAlignment.Center,MaxWidth=120,TextTrimming=TextTrimming.CharacterEllipsis,Visibility=Visibility.Collapsed};caption.Children.Add(badge);
+            select=new Button{Content=caption,Style=owner.buttonStyle,Background=Brushes.Transparent,BorderThickness=new Thickness(0),MinWidth=126,MaxWidth=280};select.Click+=(_,_)=>owner.Selected?.Invoke(data.Id);row.Children.Add(select);
             var close=new Button{Content="×",Style=owner.buttonStyle,Background=Brushes.Transparent,BorderThickness=new Thickness(0),Width=24,Height=26,FontSize=15,ToolTip="Fermer cet onglet",Margin=new Thickness(0,0,6,0)};SetColumn(close,1);close.Click+=(_,_)=>owner.Closed?.Invoke(data.Id);row.Children.Add(close);
             Root.ContextMenu=new ContextMenu();Root.ContextMenu.Opened+=(_,_)=>Menu();
             Root.ContextMenuOpening+=(_,e)=>{if(owner.Customize is null)e.Handled=true;};
@@ -86,14 +98,19 @@ internal sealed class TerminalTabs : Grid
         public void Update(TerminalTabInfo value)
         {
             bool changed=data.Activity!=value.Activity||data.Effects!=value.Effects;data=value;
-            var accent=(Color)ColorConverter.ConvertFromString(TerminalTabPreferences.Color(data.Accent)??"#BEA2DB");
-            plate.Background=data.Accent is null?data.Active?DockAppearance.ButtonHover:DockAppearance.ButtonFill:
+            string? chosen=EffectiveAccent(data.Accent,data.CacheHint);
+            var accent=(Color)ColorConverter.ConvertFromString(chosen??"#BEA2DB");
+            plate.Background=chosen is null?data.Active?DockAppearance.ButtonHover:DockAppearance.ButtonFill:
                 new LinearGradientBrush(Color.FromArgb(data.Active?(byte)130:(byte)90,accent.R,accent.G,accent.B),Color.FromArgb(data.Active?(byte)65:(byte)40,accent.R,accent.G,accent.B),90);
             plate.BorderBrush=new SolidColorBrush(Color.FromArgb(data.Active?(byte)200:(byte)88,accent.R,accent.G,accent.B));
             label.Text=data.Title;label.FontWeight=data.Active?FontWeights.SemiBold:FontWeights.Normal;label.Foreground=B(DockAppearance.Ink);
+            badge.Text=data.Badge??"";badge.Visibility=data.Badge is null?Visibility.Collapsed:Visibility.Visible;badge.Foreground=B(CacheTint(data.CacheHint)??DockAppearance.Muted);
+            // Le compte a rebours reste lisible : le titre lui reserve sa place.
+            label.MaxWidth=data.Badge is null?236:150;
+            select.MaxWidth=data.Badge is null?280:320;
             string color=data.Activity switch{TerminalActivity.Working=>"#9FD5F1",TerminalActivity.Ready=>"#A8E5CD",TerminalActivity.Attention=>"#FFCE8C",TerminalActivity.Error=>"#FFA3B4",_=>"#D2BDF1"};
             indicator.SetState(data.Activity,data.Effects);glow.BorderBrush=B(color);
-            Root.ToolTip=data.Title+"\n"+Status(data.Activity);
+            Root.ToolTip=data.Title+"\n"+Status(data.Activity)+(data.Badge is null?"":"\n"+data.Badge);
             if(changed)Animate();
         }
         public void Stop(){glow.BeginAnimation(OpacityProperty,null);glow.Opacity=0;}

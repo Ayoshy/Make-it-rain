@@ -17,5 +17,6 @@
     <Project Path="tests/Battlestation.Scenes.Tests.csproj" />
     <Project Path="tests/Battlestation.Shopping.Tests.csproj" />
     <Project Path="tests/Battlestation.Network.Tests.csproj" />
+    <Project Path="tests/Battlestation.TerminalCache.Tests.csproj" />
   </Folder>
 </Solution>

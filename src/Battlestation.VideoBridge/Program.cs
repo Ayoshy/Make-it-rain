@@ -7,9 +7,11 @@ using Battlestation;
 // or persist received messages. Only this extension's public origin is accepted.
 // Frames are decoded here (base64 is imposed by native messaging) and forwarded
 // to the desktop as bounded binary records; everything else is relayed verbatim.
-// The second argument is only used by the protocol tests to isolate the pipe.
+// A named pipe is accepted after the origin for the protocol tests; Chrome also
+// appends its own --parent-window flag there, which is never a pipe name.
 if(args.Length==0||args[0]!="chrome-extension://bbbkiomcecimmpndgliccmeagfhbednp/")return;
-var pipeName=args.Length>1?args[1]:"Battlestation.Video.v1";
+var pipeName="Battlestation.Video.v1";
+for(int index=1;index<args.Length;index++)if(!args[index].StartsWith("--",StringComparison.Ordinal)){pipeName=args[index];break;}
 using var lifetime=new CancellationTokenSource();
 var queue=Channel.CreateBounded<byte[]>(new BoundedChannelOptions(4){FullMode=BoundedChannelFullMode.DropOldest,SingleReader=true,SingleWriter=true});
 var input=Console.OpenStandardInput();var output=Console.OpenStandardOutput();

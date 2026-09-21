@@ -12,8 +12,12 @@ internal sealed class TerminalSession : IDisposable
     readonly SemaphoreSlim requests=new(1,1);
     readonly TerminalTabPreferences preferences;
     readonly TerminalMetadataClient metadata;
+    readonly CodexRolloutReader rollouts;
     TerminalTabInfo[] rawTabs=[];
     ConsoleTitleInfo[] titles=[];
+    Dictionary<Guid,TerminalCacheState> cacheStates=[];
+    HashSet<Guid> seen=[];
+    bool cacheBusy,cachePending;
     int x=2700,y=760,w=1464,h=660;
     bool visible=true,starting,polling,disposed,placing,placementDirty,detached;
     bool visibilityBusy,visibilityDirty;
@@ -35,6 +39,7 @@ internal sealed class TerminalSession : IDisposable
     {
         station=s;preferences=new TerminalTabPreferences(Path.Combine(s.Data,"terminal-tabs.json"));
         metadata=new TerminalMetadataClient(Environment.ProcessPath!);
+        rollouts=new CodexRolloutReader(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".codex","sessions"));
     }
     public TerminalTabPreference TabPreference(Guid id)=>preferences.Get(id);
     public void SetTabPreference(Guid id,TerminalTabPreference preference)
@@ -43,8 +48,62 @@ internal sealed class TerminalSession : IDisposable
         preferences.Set(id,preference);RefreshTabPresentation();
     }
     Dictionary<Guid,int> shellPids=[];
-    void RefreshTabPresentation(){var next=rawTabs.Select(tab=>preferences.Decorate(tab,titles.FirstOrDefault(t=>t.Pid==shellPids.GetValueOrDefault(tab.Id)))).ToArray();if(!Tabs.SequenceEqual(next)){Tabs=next;Revision++;}}
-    public object InspectTabMetadata()=>new{helperPid=metadata.Pid,tabs=Tabs.Select(tab=>new{tab.Id,tab.Title,tab.Accent,activity=tab.Activity.ToString(),tab.AutomaticTitle,tab.Effects})};
+    void RefreshTabPresentation(){var next=rawTabs.Select(tab=>preferences.Decorate(tab,titles.FirstOrDefault(t=>t.Pid==shellPids.GetValueOrDefault(tab.Id)),cacheStates.GetValueOrDefault(tab.Id))).ToArray();if(!Tabs.SequenceEqual(next)){Tabs=next;Revision++;}}
+    bool TrackTabs()
+    {
+        var ids=rawTabs.Select(tab=>tab.Id).ToArray();
+        bool changed=ids.Length!=seen.Count||ids.Any(id=>!seen.Contains(id));
+        foreach(var id in cacheStates.Keys.Except(ids).ToArray())cacheStates.Remove(id);
+        seen=[..ids];
+        return changed;
+    }
+    // Le CLI lui-meme nomme le projet (-C) et la variante (model_provider). Sans
+    // ligne de commande lisible, le dernier champ du titre Codex sert d'indice,
+    // comme l'indice de projet des docks.
+    string? ProjectHint(TerminalTabInfo tab,ConsoleTitleInfo? metadata)
+    {
+        if(metadata?.Project is { Length: >0 } project)return project;
+        var text=string.IsNullOrWhiteSpace(metadata?.Title)?tab.Title:metadata!.Title!;
+        var parts=text.Split(" | ",StringSplitOptions.TrimEntries|StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length==0?null:parts[^1];
+    }
+    // L'etat de cache est relu a la demande (minuteur de la barre d'onglets) et
+    // jamais pendant la peinture du bureau.
+    public void RefreshCache()=>_=RefreshCacheAsync();
+    async Task RefreshCacheAsync()
+    {
+        if(disposed)return;
+        if(cacheBusy){cachePending=true;return;}
+        cacheBusy=true;
+        try
+        {
+            var queries=new List<RolloutQuery>();
+            foreach(var tab in rawTabs)
+            {
+                var metadata=titles.FirstOrDefault(t=>t.Pid==shellPids.GetValueOrDefault(tab.Id));
+                if(metadata?.Codex!=true)continue;
+                if(ProjectHint(tab,metadata) is not { } hint)continue;
+                queries.Add(new(tab.Id,hint,metadata.DeepSeek));
+            }
+            var next=new Dictionary<Guid,TerminalCacheState>();
+            if(queries.Count>0)
+            {
+                var resolved=await Task.Run(()=>rollouts.Resolve(queries));
+                var now=DateTimeOffset.Now;
+                foreach(var query in queries)
+                {
+                    if(!resolved.TryGetValue(query.Id,out var activity))continue;
+                    bool deepSeek=query.DeepSeek??string.Equals(activity.Provider,"deepseek",StringComparison.OrdinalIgnoreCase);
+                    next[query.Id]=deepSeek?PromptCache.Hit(activity.CachedInputTokens,activity.InputTokens):PromptCache.FromActivity(now,activity.Last);
+                }
+            }
+            if(disposed)return;
+            cacheStates=next;RefreshTabPresentation();
+        }
+        catch(Exception e) when(e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException){}
+        finally{cacheBusy=false;if(cachePending&&!disposed){cachePending=false;RefreshCache();}}
+    }
+    public object InspectTabMetadata()=>new{helperPid=metadata.Pid,tabs=Tabs.Select(tab=>new{tab.Id,tab.Title,tab.Accent,activity=tab.Activity.ToString(),tab.AutomaticTitle,tab.Effects,badge=tab.Badge,hint=tab.CacheHint.ToString()})};
     async Task<string> Send(string command)
     {
         await requests.WaitAsync();
@@ -118,8 +177,10 @@ internal sealed class TerminalSession : IDisposable
             var sessions=root.GetProperty("sessions").EnumerateArray().ToArray();
             rawTabs=sessions.Select(tab=>new TerminalTabInfo(tab.GetProperty("id").GetGuid(),tab.GetProperty("title").GetString()??"Terminal",tab.GetProperty("active").GetBoolean())).ToArray();
             shellPids=sessions.ToDictionary(tab=>tab.GetProperty("id").GetGuid(),tab=>tab.GetProperty("pid").GetInt32());
+            bool tabset=TrackTabs();
             titles=await metadata.Read(shellPids.Values);
             if(disposed)return;RefreshTabPresentation();
+            if(tabset)RefreshCache();
             bool external=root.TryGetProperty("chromeVersion",out var version)&&version.GetInt32()>=1;
             if(UseGlassTabs!=external){UseGlassTabs=external;HeaderChanged?.Invoke();}
             ThemeSupported=root.TryGetProperty("themeVersion",out var themeVersion)&&themeVersion.GetInt32()>=1;

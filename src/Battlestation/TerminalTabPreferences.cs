@@ -26,12 +26,12 @@ internal sealed class TerminalTabPreferences
     public static string? Color(string? value)=>value is not null&&Regex.IsMatch(value,"^#[0-9a-fA-F]{6}$")?value.ToUpperInvariant():null;
     public static string Clean(string? value)=>new((value??"").Where(c=>!char.IsControl(c)&&c is not ('\u202a' or '\u202b' or '\u202c' or '\u202d' or '\u202e' or '\u2066' or '\u2067' or '\u2068' or '\u2069')).Take(160).ToArray());
     static TerminalTabPreference Normalize(TerminalTabPreference value){string name=Clean(value.Name).Trim();return value with{Name=name.Length==0?null:name,Color=Color(value.Color)};}
-    public TerminalTabInfo Decorate(TerminalTabInfo tab,ConsoleTitleInfo? metadata)
+    public TerminalTabInfo Decorate(TerminalTabInfo tab,ConsoleTitleInfo? metadata,TerminalCacheState cache=default)
     {
         var preference=Get(tab.Id);bool cli=metadata?.Codex==true||metadata?.Kilo==true;
         var parsed=TerminalTitle.Parse(metadata?.Title,metadata?.Codex==true,metadata?.Kilo==true);
         string automatic=!cli||string.IsNullOrWhiteSpace(parsed.Title)?tab.Title:parsed.Title;
-        return tab with{Title=preference.AutomaticTitle?automatic:preference.Name??tab.Title,Accent=preference.Color,Activity=parsed.Activity,Effects=preference.Effects,AutomaticTitle=preference.AutomaticTitle,SourceTitle=metadata?.Title};
+        return tab with{Title=preference.AutomaticTitle?automatic:preference.Name??tab.Title,Accent=preference.Color,Activity=parsed.Activity,Effects=preference.Effects,AutomaticTitle=preference.AutomaticTitle,SourceTitle=metadata?.Title,Badge=cache.Badge,CacheHint=cache.Hint};
     }
 }
 internal static class TerminalTitle

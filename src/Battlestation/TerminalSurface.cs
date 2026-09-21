@@ -10,6 +10,7 @@ internal sealed class TerminalSurface : Surface
         tabs.Selected+=id=>Station.Terminal?.SelectTab(id);tabs.Closed+=id=>Station.Terminal?.CloseTab(id);
         tabs.Added+=()=>Station.Terminal?.Command("NewShell");tabs.PasteRequested+=()=>Station.Terminal?.Command("Paste");
         tabs.Customize+=Customize;
+        tabs.CacheRefreshRequested+=()=>Station.Terminal?.RefreshCache();
     }
     void Customize(Guid id,TerminalTabAction action,string? value)
     {

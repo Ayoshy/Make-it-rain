@@ -75,6 +75,11 @@ Le Brave installé consulte la clé compatible Chrome sous
 Brave équivalente est aussi enregistrée. Le manifeste est dans les données
 personnelles Battlestation, jamais dans Git. Aucun démarrage Windows n'est ajouté.
 
+Chrome lance l'hôte avec l'origine de l'extension puis ses propres drapeaux
+(`--parent-window=0`) : seul un argument qui n'est pas un drapeau sert de nom de
+pipe aux tests de protocole. Un hôte qui prendrait le drapeau pour un nom de pipe
+ne rejoindrait plus le bureau et le miroir resterait muet.
+
 ## Twitch / Brave
 
 L'extension locale reconnaît explicitement les onglets `https://www.twitch.tv/*`
