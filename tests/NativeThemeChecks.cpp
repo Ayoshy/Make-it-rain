@@ -26,6 +26,14 @@ extern "C" __declspec(dllexport) long ThemePreview(const wchar_t* resources,cons
     return Preview(resources,output,selected,seconds,colors,panels,1.f);
 }
 #ifndef THEME_BASELINE
+// Same frame on another monitor set: the canvas is the virtual desktop box, so
+// a laptop panel or an ultrawide must render at its own size without falling
+// back to the authored 2 x 2560 x 1440 canvas.
+extern "C" __declspec(dllexport) long ThemePreviewCanvas(const wchar_t* resources,const wchar_t* output,int selected,double seconds,const unsigned int* colors,const float* panels,float sceneFade,int left,int top,int width,int height,int seam){
+    using namespace NativeBackground;
+    canvasLeft=left;canvasTop=top;canvasWidth=width;canvasHeight=height;seamX=seam;
+    return Preview(resources,output,selected,seconds,colors,panels,sceneFade);
+}
 // Scene change: the same frame with the glass panels dissolved.
 extern "C" __declspec(dllexport) long ThemePreviewFade(const wchar_t* resources,const wchar_t* output,int selected,double seconds,const unsigned int* colors,const float* panels,float sceneFade){
     return Preview(resources,output,selected,seconds,colors,panels,sceneFade);

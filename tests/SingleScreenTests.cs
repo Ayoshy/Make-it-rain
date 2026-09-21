@@ -18,16 +18,16 @@ internal static class SingleScreenTests
         var mono=profiles.MatchDisplays(true,layout,settings);
         check(mono is not null&&profiles.Current==DesktopProfiles.Mono&&profiles.ReturnScene=="Bureau perso","Débranchement : scène mono et retour à la scène personnelle mémorisés");
         check(layout.Blocks.Where(b=>b.Visible).Select(b=>b.Id).ToHashSet().SetEquals(["clock","apps","terminal","video","projects","music","audio","bluetooth"]),"Mono : les huit docks demandés");
-        check(layout.Blocks.Where(b=>b.Visible).All(b=>DesktopLayout.Screens[0].Contains(b.Bounds)),"Tous les docks mono tiennent sur le principal");
+        check(layout.Blocks.Where(b=>b.Visible).All(b=>layout.Screens[0].Contains(b.Bounds)),"Tous les docks mono tiennent sur le principal");
         check(mono!.ThemeId==settings.ThemeId&&mono.Glass==settings.GlassOpacity,"Le premier passage mono conserve l’apparence choisie");
         check(profiles.MatchDisplays(true,layout,settings) is null&&profiles.ReturnScene=="Bureau perso","Notifications répétées : aucune seconde bascule ni perte du retour");
         var committed=layout.Blocks.ToArray();
         bool rejected=false;try{profiles.Switch("Personnel",layout,settings);}catch(InvalidOperationException){rejected=true;}
         check(rejected&&layout.Blocks.SequenceEqual(committed)&&profiles.Current==DesktopProfiles.Mono,"Une scène du secondaire ne remplace pas le mono sur un seul écran");
         var drag=new LayoutGesture(layout.Blocks,"clock",LayoutEdge.Move,new Point(60,60),true,8,false,layout.AvailableScreens);
-        check(drag.Preview(new Point(3000,60)).Blocks.Where(b=>b.Visible).All(b=>DesktopLayout.Screens[0].Contains(b.Bounds)),"Le déplacement ne sort pas vers le secondaire absent");
+        check(drag.Preview(new Point(3000,60)).Blocks.Where(b=>b.Visible).All(b=>layout.Screens[0].Contains(b.Bounds)),"Le déplacement ne sort pas vers le secondaire absent");
         layout.SetVisible("video",false);
-        check(layout.SetVisible("weather",true)&&DesktopLayout.Screens[0].Contains(layout["weather"].Bounds),"Ajouter un dock cherche sa place sur le principal");
+        check(layout.SetVisible("weather",true)&&layout.Screens[0].Contains(layout["weather"].Bounds),"Ajouter un dock cherche sa place sur le principal");
         profiles.SaveCurrent(layout,settings);layout.Save();var customMono=layout.Blocks.ToArray();
         profiles=new DesktopProfiles(profilePath);layout=new DesktopLayout(layoutPath,11);
         check(profiles.MatchDisplays(true,layout,settings) is null&&layout.SingleScreen&&layout.Blocks.SequenceEqual(customMono)&&profiles.ReturnScene=="Bureau perso","Relancement en mono : modifications et scène de retour conservées");

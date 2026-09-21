@@ -43,7 +43,7 @@ internal sealed class DesktopProfiles
         var next=new Dictionary<string,DesktopProfile>(profiles){[Current]=snapshot};
         Persist(Current,next);profiles=next;migrationPending=false;
     }
-    internal IReadOnlyList<DesktopBlock> Preview(string name,DesktopLayout layout,DesktopSettings settings)=>name==Current?layout.Blocks:profiles.GetValueOrDefault(name)?.Blocks??Create(name,Snapshot(layout,settings)).Blocks;
+    internal IReadOnlyList<DesktopBlock> Preview(string name,DesktopLayout layout,DesktopSettings settings)=>name==Current?layout.Blocks:layout.Adapt(profiles.GetValueOrDefault(name)?.Blocks??Create(name,Snapshot(layout,settings)).Blocks);
     internal DesktopProfile Switch(string name,DesktopLayout layout,DesktopSettings settings)
         =>Switch(name,layout,settings,ReturnScene);
     internal DesktopProfile? MatchDisplays(bool single,DesktopLayout layout,DesktopSettings settings)
@@ -61,6 +61,7 @@ internal sealed class DesktopProfiles
         if(!AllNames.Contains(name))throw new ArgumentException("Scène inconnue.");
         var current=Snapshot(layout,settings);
         var destination=name==Current?current:profiles.GetValueOrDefault(name)??Create(name,current);
+        if(name!=Current)destination=destination with{Blocks=layout.Adapt(destination.Blocks)};
         _=(settings with{AnimateBackground=destination.Animate,ReactiveAudio=destination.Reactive,AudioIntensity=destination.Intensity,GlassOpacity=destination.Glass,ThemeId=destination.ThemeId}).Validate(false);
         bool previousLimit=layout.SingleScreen;
         layout.SingleScreen=singleMonitor||destination.TemplateId==Mono;
@@ -74,6 +75,7 @@ internal sealed class DesktopProfiles
         var current=Snapshot(layout,settings);
         var baseline=new DesktopProfile(DesktopLayout.Defaults(apps),true,true,.55,.46);
         var destination=Create(current.TemplateId,baseline);
+        destination=destination with{Blocks=layout.Adapt(destination.Blocks)};
         if(!layout.Restore(destination.Blocks))throw new InvalidOperationException("Le modèle ne tient pas dans le bureau.");
         var next=new Dictionary<string,DesktopProfile>(profiles){[Current]=destination};
         try{Persist(Current,next);}catch{layout.Restore(current.Blocks);throw;}
@@ -108,6 +110,7 @@ internal sealed class DesktopProfiles
             next[name]=profile;
         }
         var destination=next[Current];var previous=layout.Blocks.ToArray();
+        destination=destination with{Blocks=layout.Adapt(destination.Blocks)};
         if(!layout.Restore(destination.Blocks))throw new InvalidOperationException("Le nouvel agencement ne tient pas.");
         try{Persist(Current,next);}catch{layout.Restore(previous);throw;}
         profiles=next;NeedsRedesign=false;migrationPending=false;return destination;

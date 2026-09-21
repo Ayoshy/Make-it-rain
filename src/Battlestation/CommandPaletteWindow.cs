@@ -67,9 +67,13 @@ internal sealed class CommandPaletteWindow : Window
     UIElement MiniMap(string name)
     {
         var canvas=new Canvas{Width=160,Height=54};
+        var monitors=DesktopScreens.Current;
+        double left=monitors.Min(screen=>screen.Dip.Left),top=monitors.Min(screen=>screen.Dip.Top);
+        double width=Math.Max(1,monitors.Max(screen=>screen.Dip.Right)-left),height=Math.Max(1,monitors.Max(screen=>screen.Dip.Bottom)-top);
         foreach(var block in catalog.First(e=>e.ProfileName==name).Preview??[])
         {
-            var x=block.X/5120*156+2;var y=block.Y/1440*46+4;var w=Math.Max(3,block.Width/5120*156);var h=Math.Max(3,block.Height/1440*46);
+            var x=(block.X-left)/width*156+2;var y=(block.Y-top)/height*46+4;
+            var w=Math.Max(3,block.Width/width*156);var h=Math.Max(3,block.Height/height*46);
             canvas.Children.Add(new Border{Width=Math.Min(154-x,w),Height=Math.Min(46-y,h),Background=Brush("#A8D5B58C"),BorderBrush=Brush("#F3E7D7E8"),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(2),Margin=new Thickness(x,y,0,0)});
         }
         return canvas;

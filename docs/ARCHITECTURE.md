@@ -17,6 +17,13 @@ la recherche d'un emplacement libre et la persistance atomique de `layout.json`.
 menu de notification. Horloge, météo, lecteur, projets, compteur, matériel et
 compteurs Codex ne partagent plus une fenêtre indissociable.
 
+Les positions sont écrites pour un plan de référence de deux écrans 2560 × 1440,
+en pixels logiques. `DesktopScreens` relève les moniteurs réellement présents :
+un agencement écrit pour un autre ensemble de dalles est ramené dans celles-ci —
+décalé, réduit à sa taille minimale, puis masqué si la place manque —, les
+grilles et la barre suivent les écrans réels, et le canevas natif couvre la boîte
+réelle du bureau virtuel en pixels physiques.
+
 `DashboardTransition` compose deux dessins WPF conservés sous un découpage fixe.
 Des transformations animées remplacent les informations à l’intérieur des docks
 Conrad/Codex, sans modifier leurs fenêtres ni le verre natif. Une seule destination

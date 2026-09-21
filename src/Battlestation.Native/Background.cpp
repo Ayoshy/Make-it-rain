@@ -1,6 +1,7 @@
 #include "NativeBackground.h"
 extern "C" __declspec(dllexport) void BackgroundVisibility(int monitors){NativeBackground::SetVisibility(monitors);}
-extern "C" __declspec(dllexport) void BackgroundStart(HWND parent,const wchar_t* images){NativeBackground::Start(parent,images);}
+extern "C" __declspec(dllexport) void BackgroundCanvas(int left,int top,int width,int height,int seam){NativeBackground::SetCanvas(left,top,width,height,seam);}
+extern "C" __declspec(dllexport) void BackgroundStart(HWND parent,const wchar_t* images,int left,int top,int width,int height,int seam){NativeBackground::Start(parent,images,left,top,width,height,seam);}
 extern "C" __declspec(dllexport) void BackgroundStop(){NativeBackground::Stop();}
 extern "C" __declspec(dllexport) void BackgroundCapture(){NativeBackground::Capture();}
 extern "C" __declspec(dllexport) void BackgroundAppearance(int animate,float opacity){NativeBackground::SetAppearance(animate!=0,opacity);}

@@ -53,6 +53,10 @@ toucher au reste.
   un redémarrage. **Mono écran** est aussi disponible dans **Scènes** pour préparer
   son agencement. Les blocs retirés restent masqués et les sessions terminal restent
   ouvertes.
+- Les dispositions suivent les dalles réellement présentes : remplacer le secondaire
+  par une dalle plus étroite, passer sur un ultra large ou démarrer sur un portable
+  ramène les blocs dans les écrans du moment — la fenêtre bouge, se réduit à sa
+  taille minimale, puis reste masquée si la place manque.
 - **Réglages → Apparence** : transparence du verre, animation du fond et réactivité
   musicale ; l’aperçu agit immédiatement et **Enregistrer** le conserve. L’ambiance
   — palette et fond des deux écrans — vient de la scène et change avec elle.

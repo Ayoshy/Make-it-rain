@@ -2,9 +2,10 @@
 #include <windows.h>
 #include <string>
 namespace NativeBackground {
-void Start(HWND parent, const std::wstring& resources);
+void Start(HWND parent, const std::wstring& resources,int left,int top,int width,int height,int seam);
 void Stop();
 void SetVisibility(int monitors);
+void SetCanvas(int left,int top,int width,int height,int seam);
 void Capture();
 void SetPalette(int index,const unsigned int* colors);
 void SetTheme(int index,bool immediate);

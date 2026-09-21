@@ -62,7 +62,7 @@ internal static class ScenesTests
             Check(profiles.Current==activeBefore&&profiles.AllNames.SequenceEqual(namesBefore),"Refonte complète conserve les noms et ne crée pas de copies des anciens agencements");
             foreach(string name in profiles.AllNames){
                 var redesigned=profiles.Switch(name,layout,settings);settings=Settings(settings,redesigned);
-                Check(layout.Blocks.All(block=>DesktopLayout.Valid(block,layout.Blocks)),name+" : disposition valide sur les deux écrans");
+                Check(layout.Blocks.All(block=>layout.Valid(block)),name+" : disposition valide sur les deux écrans");
                 Check(layout["network"].Visible!=(redesigned.TemplateId is "Jeu" or DesktopProfiles.Mono),name+" : réseau selon le modèle");
                 foreach(string required in new[]{"terminal","projects","video"})Check(layout[required].Visible,name+" : "+required+" visible");
                 Check(!layout["aquarium"].Visible&&!layout["ocean"].Visible,name+" : aquarium et océan masqués");
@@ -91,6 +91,7 @@ internal static class ScenesTests
             Check(layout.Restore(committedLayout.Where(b=>b.Id!="ocean").ToArray())&&!layout["ocean"].Visible,"Une scène existante retrouve le Diorama Océan masqué");
             layout.Restore(committedLayout);
             SingleScreenTests.Run(temp,Check);
+            ScreenFitTests.Run(temp,Check);
             SceneTransitionTests.Run(Check);
             var app=new Application();app.Resources.MergedDictionaries.Add(new GlassMenus());
             var brush=DesktopTheme.Brush("#DAD2E7");var error=DesktopTheme.Brush("#F4B7CA");var originalError=error.Color;

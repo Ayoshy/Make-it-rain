@@ -61,6 +61,23 @@ if hasattr(ctypes.CDLL(str(output/"theme-preview.dll")),"ThemePreviewFade"):
     assert ImageChops.difference(half,dissolved).getbbox(), "Le fondu de scène ignore son alpha"
     assert ImageChops.difference(blank(half),blank(full)).getbbox() is None, "Le fondu de scène touche autre chose que les panneaux"
     print("PASS native scene fade: panneaux seuls, alpha respecté")
+if hasattr(ctypes.CDLL(str(output/"theme-preview.dll")),"ThemePreviewCanvas"):
+    def render_canvas(folder, theme, seconds, width, height, seam, left=0, top=0):
+        native = ctypes.CDLL(str(output/"theme-preview.dll"))
+        native.ThemePreviewCanvas.argtypes=[ctypes.c_wchar_p,ctypes.c_wchar_p,ctypes.c_int,ctypes.c_double,ctypes.POINTER(ctypes.c_uint),ctypes.POINTER(ctypes.c_float),ctypes.c_float,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_int]
+        native.ThemePreviewCanvas.restype=ctypes.c_long
+        result=native.ThemePreviewCanvas(str(root/"assets/Images"),str(folder),theme,seconds,colors,panels,1.0,left,top,width,height,seam)
+        assert result==0, hex(result & 0xffffffff)
+        return Image.open(folder/"Battlestation/native-background-frame.png").convert("RGB")
+    # A swapped secondary, an ultrawide and a laptop panel must each render at
+    # their own size, with the effects still alive.
+    for width, height, seam, label in [(5120,1440,2560,"paire 2 x 2560 x 1440"),(2560+1920,1440,2560,"secondaire 1920 x 1080"),(3440,1440,3440,"ultra large 3440 x 1440"),(1920,1080,1920,"portable 1920 x 1080")]:
+        first=render_canvas(output/("canvas-"+str(width)+"-a"),0,15,width,height,seam)
+        later=render_canvas(output/("canvas-"+str(width)+"-b"),0,22,width,height,seam)
+        assert first.size==(width,height), "Taille de rendu native inattendue pour "+label+": "+str(first.size)
+        assert max(hi for lo,hi in first.getextrema())>20, "Rendu natif noir sur "+label
+        assert ImageChops.difference(first,later).getbbox(), "Animation absente sur "+label
+        print("PASS native canvas: "+label)
 if (output/"baseline-preview.dll").exists():
     old=render(output/"baseline-preview.dll",output/"baseline",0,15)
     current=Image.open(output/"vice-city.png").convert("RGB")

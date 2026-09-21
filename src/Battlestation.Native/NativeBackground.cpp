@@ -20,6 +20,7 @@ namespace NativeBackground {
 static constexpr int PanelSlots=20;
 static HANDLE thread=nullptr, stopEvent=nullptr,wakeEvent=nullptr;
 static std::atomic<bool> capture=false;
+static std::atomic<bool> canvasDirty=false;
 static std::atomic<int> pendingTheme=-1;
 static D2D1_COLOR_F palettes[3][6];
 static float weights[3]={1,0,0},fromWeights[3]={1,0,0};
@@ -28,6 +29,10 @@ static double themeFade=1;
 static D2D1_COLOR_F ThemeColor(int role,float alpha=1){D2D1_COLOR_F c={0,0,0,alpha};for(int i=0;i<3;i++){c.r+=palettes[i][role].r*weights[i];c.g+=palettes[i][role].g*weights[i];c.b+=palettes[i][role].b*weights[i];}return c;}
 static HWND parentWindow=nullptr;
 static std::wstring images;
+// The renderer covers the real virtual desktop, in physical pixels. The
+// authored canvas (two 2560 x 1440 screens) stays the default so a system
+// running that pair keeps the exact same frame.
+static int canvasWidth=5120,canvasHeight=1440,canvasLeft=0,canvasTop=0,seamX=2560;
 static double elapsed=0, easedX=0, easedY=0;
 static std::mutex glassMutex;
 static D2D1_RECT_F glassRects[PanelSlots]={};
@@ -125,7 +130,8 @@ struct Paint {
             sink->EndFigure(D2D1_FIGURE_END_CLOSED);Check(sink->Close());
         }
         if(!auxiliary){
-            D2D1_SIZE_F logical=D2D1::SizeF(5120,1440);D2D1_SIZE_U pixels=D2D1::SizeU(640,180);
+            D2D1_SIZE_F logical=D2D1::SizeF(float(canvasWidth),float(canvasHeight));
+            D2D1_SIZE_U pixels=D2D1::SizeU(UINT(std::max(1,canvasWidth/8)),UINT(std::max(1,canvasHeight/8)));
             Check(rt->CreateCompatibleRenderTarget(&logical,&pixels,nullptr,D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,&frost));
             frostPaint=std::make_unique<Paint>(frost.Get(),wic,true);
             D2D1_GRADIENT_STOP shine[]={{0,D2D1::ColorF(1,.86f,1,.17f)},{.38f,D2D1::ColorF(.9f,.65f,1,.02f)},{1,D2D1::ColorF(.7f,.6f,1,.07f)}};
@@ -143,14 +149,14 @@ struct Paint {
     D2D1_COLOR_F EdgeColor(float alpha){auto c=ThemeColor(5,alpha);c.r+=(1-palettes[0][5].r)*weights[0];c.g+=(.92f-palettes[0][5].g)*weights[0];c.b+=(1-palettes[0][5].b)*weights[0];return c;}
     void Fill(D2D1_RECT_F rect,D2D1_COLOR_F color){brush->SetColor(color);target->FillRectangle(rect,brush.Get());}
     void ViceCity(){auto rt=target;
-        Fill(D2D1::RectF(0,0,5120,1440),D2D1::ColorF(.09f,.055f,.14f));
-        rt->DrawBitmap(art.Get(),D2D1::RectF(0,0,5120,1440),.5f,D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,D2D1::RectF(2880,830,3840,1100));
-        Fill(D2D1::RectF(0,0,5120,1440),D2D1::ColorF(.16f,.08f,.24f,.75f));
+        Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),D2D1::ColorF(.09f,.055f,.14f));
+        rt->DrawBitmap(art.Get(),D2D1::RectF(0,0,canvasWidth,canvasHeight),.5f,D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,D2D1::RectF(2880,830,3840,1100));
+        Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),D2D1::ColorF(.16f,.08f,.24f,.75f));
         float dx=float(std::sin(elapsed*.14)*20.48-easedX*15),dy=float(std::cos(elapsed*.11)*5.76-easedY*10);
         fade->SetStartPoint(D2D1::Point2F(-77+dx,0));fade->SetEndPoint(D2D1::Point2F(2637+dx,0));
-        rt->PushLayer(D2D1::LayerParameters(D2D1::RectF(0,0,2800,1440),nullptr,D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,D2D1::Matrix3x2F::Identity(),1.f,fade.Get()),layer.Get());
+        rt->PushLayer(D2D1::LayerParameters(D2D1::RectF(0,0,2800,canvasHeight),nullptr,D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,D2D1::Matrix3x2F::Identity(),1.f,fade.Get()),layer.Get());
         rt->DrawBitmap(art.Get(),D2D1::RectF(-77+dx,-43+dy,2637+dx,1483+dy));rt->PopLayer();
-        Fill(D2D1::RectF(0,0,5120,1440),D2D1::ColorF(.063f,.027f,.118f,.14f));
+        Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),D2D1::ColorF(.063f,.027f,.118f,.14f));
         rt->DrawBitmap(glows[1].Get(),D2D1::RectF(2450,-150,5350,1600),.18f);
         rt->DrawBitmap(glows[2].Get(),D2D1::RectF(200,-200,2800,1600),.09f);
         // Broad pearl light and thin ripples stay behind the glass.
@@ -161,7 +167,7 @@ struct Paint {
             for(int wave=0;wave<3;wave++){
                 D2D1_POINT_2F previous{};
                 for(int step=0;step<=80;step++){
-                    float x=2560+step*32.f;
+                    float x=seamX+step*32.f;
                     float y=1260+wave*35+std::sin(step*.075f+float(elapsed)*.8f+wave*.7f)*(12+middle*65)+std::sin(step*.17f-float(elapsed)*1.2f)*bass*22;
                     float edge=std::sin(step/80.f*3.1415926f);
                     brush->SetColor(D2D1::ColorF(.76f+wave*.07f,.85f-wave*.06f,1,(bass*.22f+middle*.17f+treble*.10f)*edge));
@@ -172,39 +178,39 @@ struct Paint {
         }
         double t=elapsed*.65;
         for(int i=0;i<3;i++){
-            float x=float(5120*(.26+i*.28+std::sin(t*.075+i)*.05));
+            float x=float(canvasWidth*(.26+i*.28+std::sin(t*.075+i)*.05));
             rt->SetTransform(D2D1::Matrix3x2F::Rotation(float(17+std::sin(t*.06+i*.9)*8),D2D1::Point2F(x,-430)));
             rt->DrawBitmap(glows[(i+1)%3].Get(),D2D1::RectF(x-220,-900,x+220,2150),.075f);rt->SetTransform(D2D1::Matrix3x2F::Identity());
         }
         auto quiet=[](float x,float y){double a=(x-4599.5)/(779*.68),b=(y-720)/(1150*.7);return float(.25+.75*(1-std::exp(-(a*a+b*b)*1.7)));};
         for(int i=0;i<14;i++){
             int n=i*7;double phase=n*2.39996,depth=fract(n*.414213562+.12);
-            float x=float((fract(n*.61803398875+.09)+std::sin(t*.07+phase)*.045)*5120);
-            float y=(fract(fract(n*.754877666+.31)-t*.0025)*1.25f-.125f)*1440;
+            float x=float((fract(n*.61803398875+.09)+std::sin(t*.07+phase)*.045)*canvasWidth);
+            float y=(fract(fract(n*.754877666+.31)-t*.0025)*1.25f-.125f)*canvasHeight;
             float r=float((25+depth*65)*1.333);
             rt->DrawBitmap(bokeh[i%3].Get(),D2D1::RectF(x-r,y-r,x+r,y+r),float((.33+.25*std::sin(t*.14+phase))*.7)*quiet(x,y));
         }
         for(int i=0;i<117;i++){
             double phase=i*2.39996,depth=fract(i*.414213562+.12);
-            float x=(fract(fract(i*.61803398875+.09)+t*.0012*(depth+.2)+std::sin(t*.11+phase)*.013)*1.08f-.04f)*5120;
-            float y=(fract(fract(i*.754877666+.31)-t*(.007+(i%7)*.0014))*1.12f-.06f)*1440;
+            float x=(fract(fract(i*.61803398875+.09)+t*.0012*(depth+.2)+std::sin(t*.11+phase)*.013)*1.08f-.04f)*canvasWidth;
+            float y=(fract(fract(i*.754877666+.31)-t*(.007+(i%7)*.0014))*1.12f-.06f)*canvasHeight;
             float r=float((2.8+depth*8)*1.333),alpha=float((.35+depth*.6)*(.5+.5*std::pow((std::sin(t*.7+phase)+1)/2,2))*.7)*quiet(x,y);
             rt->DrawBitmap(glows[i%3].Get(),D2D1::RectF(x-r,y-r,x+r,y+r),alpha);
         }
         for(int i=0;i<3;i++){
             float phase=fract((t+i*9+3)/(22+i*5));if(phase>.34f)continue;
-            float progress=phase/.34f,x=(-.15f+progress*1.4f)*5120,y=(.86f-i*.25f-progress*.18f)*1440,len=(145+i*40)*1.333f;
+            float progress=phase/.34f,x=(-.15f+progress*1.4f)*canvasWidth,y=(.86f-i*.25f-progress*.18f)*canvasHeight,len=(145+i*40)*1.333f;
             brush->SetColor(D2D1::ColorF(.95f,.6f,.85f,float(std::sin(progress*3.1415926))*.22f*quiet(x,y)));
             rt->DrawLine(D2D1::Point2F(x-len,y+len*.16f),D2D1::Point2F(x,y),brush.Get(),2);
             rt->DrawBitmap(glows[i].Get(),D2D1::RectF(x-12,y-12,x+12,y+12),.5f*quiet(x,y));
         }
-        rt->DrawBitmap(vignette.Get(),D2D1::RectF(0,0,5120,1440));
+        rt->DrawBitmap(vignette.Get(),D2D1::RectF(0,0,canvasWidth,canvasHeight));
     }
     D2D1_COLOR_F Tint(int theme,int role,float alpha){auto c=palettes[theme][role];c.a=alpha;return c;}
     void Blit(ComPtr<ID2D1Bitmap>& bitmap,float weight){
         auto rt=target;float dx=float(std::sin(elapsed*.14)*20.48-easedX*15),dy=float(std::cos(elapsed*.11)*5.76-easedY*10);
         posterFade->SetStartPoint(D2D1::Point2F(-77+dx,0));posterFade->SetEndPoint(D2D1::Point2F(2637+dx,0));
-        rt->PushLayer(D2D1::LayerParameters(D2D1::RectF(0,0,2800,1440),nullptr,D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,D2D1::Matrix3x2F::Identity(),weight,posterFade.Get()),layer.Get());
+        rt->PushLayer(D2D1::LayerParameters(D2D1::RectF(0,0,2800,canvasHeight),nullptr,D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,D2D1::Matrix3x2F::Identity(),weight,posterFade.Get()),layer.Get());
         rt->DrawBitmap(bitmap.Get(),D2D1::RectF(-77+dx,-43+dy,2637+dx,1483+dy));
         rt->PopLayer();
     }
@@ -212,10 +218,10 @@ struct Paint {
     // and without the violet GTA grading. Halos and bokeh use palette-tinted radial
     // brushes: the Vice City glow/bokeh bitmaps keep their colors baked in.
     void Poster(int theme,float weight){
-        auto rt=target;Fill(D2D1::RectF(0,0,5120,1440),palettes[theme][0]);
+        auto rt=target;Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),palettes[theme][0]);
         Blit(posters[theme-1],weight);
-        Fill(D2D1::RectF(0,0,5120,1440),Tint(theme,2,.08f*weight));
-        Fill(D2D1::RectF(0,0,5120,1440),Tint(theme,3,.18f*weight));
+        Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),Tint(theme,2,.08f*weight));
+        Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),Tint(theme,3,.18f*weight));
         float t=float(elapsed),energy=bass*.3f+middle*.2f;
         for(int i=0;i<3;i++){
             auto light=clouds[theme-1][i%2].Get();
@@ -223,13 +229,13 @@ struct Paint {
             float y=560+std::sin(t*.036f+i*1.2f)*480;
             light->SetCenter(D2D1::Point2F(x,y));light->SetRadiusX(1450+std::sin(t*.027f+i)*240);light->SetRadiusY(720+(i%2)*140.f);
             light->SetOpacity((.07f+energy*.04f)*weight);
-            rt->FillRectangle(D2D1::RectF(0,0,5120,1440),light);
+            rt->FillRectangle(D2D1::RectF(0,0,canvasWidth,canvasHeight),light);
         }
         if(bass+middle+treble>.002f){
             auto bloom=clouds[theme-1][1].Get();float spread=150+bass*260;
             bloom->SetCenter(D2D1::Point2F(1280,1080));bloom->SetRadiusX(1500+spread);bloom->SetRadiusY(700+spread);
             bloom->SetOpacity(bass*.20f*weight);
-            rt->FillRectangle(D2D1::RectF(0,0,5120,1440),bloom);
+            rt->FillRectangle(D2D1::RectF(0,0,canvasWidth,canvasHeight),bloom);
             // The audio ripples stay on the main screen column.
             for(int wave=0;wave<3;wave++){
                 D2D1_POINT_2F previous{};
@@ -245,8 +251,8 @@ struct Paint {
         }
         for(int i=0;i<14;i++){
             int n=i*7;double phase=n*2.39996,depth=fract(n*.414213562+.12);
-            float x=float((fract(n*.61803398875+.09)+std::sin(t*.07+phase)*.045)*5120);
-            float y=(fract(fract(n*.754877666+.31)-t*.0025)*1.25f-.125f)*1440;
+            float x=float((fract(n*.61803398875+.09)+std::sin(t*.07+phase)*.045)*canvasWidth);
+            float y=(fract(fract(n*.754877666+.31)-t*.0025)*1.25f-.125f)*canvasHeight;
             float r=float((25+depth*65)*1.333);
             auto light=clouds[theme-1][i%2].Get();
             light->SetCenter(D2D1::Point2F(x,y));light->SetRadiusX(r);light->SetRadiusY(r);
@@ -255,18 +261,18 @@ struct Paint {
         }
         for(int i=0;i<117;i++){
             double phase=i*2.39996,depth=fract(i*.414213562+.12);
-            float x=(fract(fract(i*.61803398875+.09)+t*.0012*(depth+.2)+std::sin(t*.11+phase)*.013)*1.08f-.04f)*5120;
-            float y=(fract(fract(i*.754877666+.31)-t*(.007+(i%7)*.0014))*1.12f-.06f)*1440;
+            float x=(fract(fract(i*.61803398875+.09)+t*.0012*(depth+.2)+std::sin(t*.11+phase)*.013)*1.08f-.04f)*canvasWidth;
+            float y=(fract(fract(i*.754877666+.31)-t*(.007+(i%7)*.0014))*1.12f-.06f)*canvasHeight;
             float r=float((2.8+depth*8)*1.333),alpha=float((.35+depth*.6)*(.5+.5*std::pow((std::sin(t*.7+phase)+1)/2,2))*.55)*weight;
             auto light=clouds[theme-1][i%2].Get();
             light->SetCenter(D2D1::Point2F(x,y));light->SetRadiusX(r);light->SetRadiusY(r);
             light->SetOpacity(alpha);
             rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x,y),r,r),light);
         }
-        rt->DrawBitmap(vignette.Get(),D2D1::RectF(0,0,5120,1440),float(.8*weight));
+        rt->DrawBitmap(vignette.Get(),D2D1::RectF(0,0,canvasWidth,canvasHeight),float(.8*weight));
     }
     void Abstract(int theme){
-        auto rt=target;Fill(D2D1::RectF(0,0,5120,1440),palettes[theme][0]);
+        auto rt=target;Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),palettes[theme][0]);
         float t=float(elapsed),energy=bass*.3f+middle*.2f;
         for(int i=0;i<7;i++){
             auto light=clouds[theme-1][i%2].Get();
@@ -274,7 +280,7 @@ struct Paint {
             float y=500+std::sin(t*.036f+i*1.2f)*580;
             light->SetCenter(D2D1::Point2F(x,y));light->SetRadiusX(1150+std::sin(t*.027f+i)*260);light->SetRadiusY(500+i%3*130.f);
             light->SetOpacity((theme==1?.055f:.13f)+energy*.045f);
-            rt->FillRectangle(D2D1::RectF(0,0,5120,1440),light);
+            rt->FillRectangle(D2D1::RectF(0,0,canvasWidth,canvasHeight),light);
         }
         for(int i=0;i<4;i++){
             auto light=clouds[theme-1][i%2].Get();light->SetCenter(D2D1::Point2F(1700+i*700.f,600));light->SetRadiusX(2400);light->SetRadiusY(850);
@@ -283,13 +289,15 @@ struct Paint {
             rt->FillGeometry(ribbons[i].Get(),light);
         }
         rt->SetTransform(D2D1::Matrix3x2F::Identity());
-        rt->DrawBitmap(vignette.Get(),D2D1::RectF(0,0,5120,1440),.65f);
+        rt->DrawBitmap(vignette.Get(),D2D1::RectF(0,0,canvasWidth,canvasHeight),.65f);
     }
     void Draw(int monitors=3){
         ComPtr<ID2D1Bitmap> frosted;
         if(frostPaint){frostPaint->Draw(monitors);Check(frost->GetBitmap(&frosted));}
         auto rt=target;rt->BeginDraw();rt->SetTransform(D2D1::Matrix3x2F::Identity());
-        rt->PushAxisAlignedClip(D2D1::RectF(monitors==2?2560.f:0.f,0,monitors==1?2560.f:5120.f,1440),D2D1_ANTIALIAS_MODE_ALIASED);
+        // One bit per monitor: bit 1 is the leftmost screen, every further
+        // screen shares bit 2. The seam is the width of that first screen.
+        rt->PushAxisAlignedClip(D2D1::RectF(monitors==2?float(seamX):0.f,0,monitors==1?float(seamX):float(canvasWidth),float(canvasHeight)),D2D1_ANTIALIAS_MODE_ALIASED);
         float accumulated=0;
         for(int theme=0;theme<3;theme++){
             if(weights[theme]<.0001f)continue;
@@ -340,12 +348,12 @@ struct Paint {
     }
 };
 static void SaveFrame(ID2D1Factory* factory,IWICImagingFactory* wic){
-    ComPtr<IWICBitmap> bitmap;Check(wic->CreateBitmap(5120,1440,GUID_WICPixelFormat32bppPBGRA,WICBitmapCacheOnLoad,&bitmap));
+    ComPtr<IWICBitmap> bitmap;Check(wic->CreateBitmap(UINT(canvasWidth),UINT(canvasHeight),GUID_WICPixelFormat32bppPBGRA,WICBitmapCacheOnLoad,&bitmap));
     ComPtr<ID2D1RenderTarget> target;Check(factory->CreateWicBitmapRenderTarget(bitmap.Get(),D2D1::RenderTargetProperties(),&target));
     Paint paint(target.Get(),wic);paint.Draw();
     ComPtr<IWICStream> stream;Check(wic->CreateStream(&stream));Check(stream->InitializeFromFilename((Output()/L"native-background-frame.png").c_str(),GENERIC_WRITE));
     ComPtr<IWICBitmapEncoder> encoder;Check(wic->CreateEncoder(GUID_ContainerFormatPng,nullptr,&encoder));Check(encoder->Initialize(stream.Get(),WICBitmapEncoderNoCache));
-    ComPtr<IWICBitmapFrameEncode> frame;ComPtr<IPropertyBag2> bag;Check(encoder->CreateNewFrame(&frame,&bag));Check(frame->Initialize(bag.Get()));Check(frame->SetSize(5120,1440));
+    ComPtr<IWICBitmapFrameEncode> frame;ComPtr<IPropertyBag2> bag;Check(encoder->CreateNewFrame(&frame,&bag));Check(frame->Initialize(bag.Get()));Check(frame->SetSize(UINT(canvasWidth),UINT(canvasHeight)));
     WICPixelFormatGUID format=GUID_WICPixelFormat32bppPBGRA;Check(frame->SetPixelFormat(&format));Check(frame->WriteSource(bitmap.Get(),nullptr));Check(frame->Commit());Check(encoder->Commit());
 }
 static DWORD WINAPI Run(void*){
@@ -355,7 +363,7 @@ static DWORD WINAPI Run(void*){
     try{
         WNDCLASSW cls{};cls.lpfnWndProc=Proc;cls.hInstance=GetModuleHandleW(nullptr);cls.lpszClassName=L"BattlestationBackground";RegisterClassW(&cls);
         stage="create layered child window";SetLastError(ERROR_SUCCESS);
-        window=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE|WS_EX_LAYERED,cls.lpszClassName,L"Battlestation background",WS_CHILD|WS_VISIBLE,0,0,5120,1440,parentWindow,nullptr,cls.hInstance,nullptr);
+        window=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE|WS_EX_LAYERED,cls.lpszClassName,L"Battlestation background",WS_CHILD|WS_VISIBLE,0,0,canvasWidth,canvasHeight,parentWindow,nullptr,cls.hInstance,nullptr);
         if(!window){auto error=GetLastError();throw error?HRESULT_FROM_WIN32(error):E_FAIL;}
         stage="configure layered window";
         if(!SetLayeredWindowAttributes(window,0,255,LWA_ALPHA)){auto error=GetLastError();throw error?HRESULT_FROM_WIN32(error):E_FAIL;}
@@ -367,6 +375,7 @@ static DWORD WINAPI Run(void*){
         while(WaitForSingleObject(stopEvent,0)!=WAIT_OBJECT_0){
             MSG msg;while(PeekMessageW(&msg,nullptr,0,0,PM_REMOVE)){TranslateMessage(&msg);DispatchMessageW(&msg);}
             int monitors=visibleMonitors.load();bool paused=monitors==0||!animateBackground.load();auto now=std::chrono::steady_clock::now();double dt=std::min(.1,std::chrono::duration<double>(now-last).count());last=now;
+            if(canvasDirty.exchange(false)){SetWindowPos(window,nullptr,0,0,canvasWidth,canvasHeight,SWP_NOZORDER|SWP_NOACTIVATE);paint.reset();target.Reset();first=true;retryAt=0;}
             float intensity=audioIntensity.load();
             auto smooth=[&](float value,float desired){return value+(desired-value)*float(1-std::exp(-dt*(desired>value?12:3)));};
             bass=smooth(bass,audioBass.load()*intensity);middle=smooth(middle,audioMiddle.load()*intensity);treble=smooth(treble,audioTreble.load()*intensity);
@@ -377,11 +386,12 @@ static DWORD WINAPI Run(void*){
             bool dirty=glassDirty.exchange(false)||transitioning;
             if(monitors!=0&&(!paused||first||dirty)&&GetTickCount64()>=retryAt){
                 try{
-                    if(!paint){Check(factory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(),D2D1::HwndRenderTargetProperties(window,D2D1::SizeU(5120,1440),D2D1_PRESENT_OPTIONS_IMMEDIATELY),&target));paint=std::make_unique<Paint>(target.Get(),wic.Get());}
+                    if(!paint){Check(factory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(),D2D1::HwndRenderTargetProperties(window,D2D1::SizeU(canvasWidth,canvasHeight),D2D1_PRESENT_OPTIONS_IMMEDIATELY),&target));paint=std::make_unique<Paint>(target.Get(),wic.Get());}
 #ifdef BATTLESTATION_TESTING
                     if(testLoseTarget.exchange(false)){++testLosses;throw HRESULT(D2DERR_RECREATE_TARGET);}
 #endif
-                    if(!paused)elapsed+=dt;POINT p;GetCursorPos(&p);double blend=1-std::exp(-dt*3);easedX+=((p.x/5120.0*2-1)-easedX)*blend;easedY+=((p.y/1440.0*2-1)-easedY)*blend;
+                    if(!paused)elapsed+=dt;POINT p;GetCursorPos(&p);double blend=1-std::exp(-dt*3);
+                    easedX+=(((p.x-canvasLeft)/double(canvasWidth)*2-1)-easedX)*blend;easedY+=(((p.y-canvasTop)/double(canvasHeight)*2-1)-easedY)*blend;
                     auto began=std::chrono::steady_clock::now();paint->Draw(monitors);renderMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-began).count();++rendered;first=false;
 #ifdef BATTLESTATION_TESTING
                     ++testFrames;
@@ -390,7 +400,7 @@ static DWORD WINAPI Run(void*){
             }
             if(capture.exchange(false)){try{SaveFrame(factory.Get(),wic.Get());}catch(...){std::ofstream log(Output()/L"native-capture-error.txt");log<<"Capture failed; renderer remains running";}}
             if(GetTickCount64()>=nextState){nextState=GetTickCount64()+(paused?5000:1000);
-                std::ofstream state(Output()/L"native-renderer-state.json");state<<"{\"pid\":"<<GetCurrentProcessId()<<",\"paused\":"<<(paused?"true":"false")<<",\"elapsed\":"<<elapsed<<",\"hwnd\":"<<(uintptr_t)window<<",\"parent\":"<<(uintptr_t)parentWindow<<",\"width\":5120,\"height\":1440,\"renderedFrames\":"<<rendered<<",\"renderMilliseconds\":"<<renderMs<<",\"sceneAlpha\":"<<sceneAlpha.load()<<",\"panels\":[";
+                std::ofstream state(Output()/L"native-renderer-state.json");state<<"{\"pid\":"<<GetCurrentProcessId()<<",\"paused\":"<<(paused?"true":"false")<<",\"elapsed\":"<<elapsed<<",\"hwnd\":"<<(uintptr_t)window<<",\"parent\":"<<(uintptr_t)parentWindow<<",\"width\":"<<canvasWidth<<",\"height\":"<<canvasHeight<<",\"renderedFrames\":"<<rendered<<",\"renderMilliseconds\":"<<renderMs<<",\"sceneAlpha\":"<<sceneAlpha.load()<<",\"panels\":[";
                 std::lock_guard<std::mutex> lock(glassMutex);bool comma=false;
                 for(int i=0;i<PanelSlots;i++){auto r=glassRects[i];if(r.right<=r.left||r.bottom<=r.top)continue;if(comma)state<<",";comma=true;state<<"{\"slot\":"<<i<<",\"x\":"<<r.left<<",\"y\":"<<r.top<<",\"width\":"<<r.right-r.left<<",\"height\":"<<r.bottom-r.top<<"}";}state<<"]}";
             }
@@ -401,10 +411,21 @@ static DWORD WINAPI Run(void*){
 }
 void SetPalette(int index,const unsigned int* colors){if(index<0||index>2||!colors)return;for(int i=0;i<6;i++)palettes[index][i]=D2D1::ColorF(colors[i]);}
 void SetTheme(int index,bool immediate){if(index<0||index>2)return;pendingTheme=index+(immediate?4:0);glassDirty=true;if(wakeEvent)SetEvent(wakeEvent);}
-void Start(HWND parent,const std::wstring& resources){if(thread)return;images=resources;parentWindow=parent;stopEvent=CreateEventW(nullptr,TRUE,FALSE,nullptr);wakeEvent=CreateEventW(nullptr,FALSE,FALSE,nullptr);thread=CreateThread(nullptr,0,Run,nullptr,0,nullptr);}
+void Start(HWND parent,const std::wstring& resources,int left,int top,int width,int height,int seam){
+    if(thread)return;
+    // Virtual desktop box in physical pixels, and the width of its first
+    // (leftmost) monitor, which the visibility mask clips against.
+    canvasLeft=left;canvasTop=top;canvasWidth=std::max(1,width);canvasHeight=std::max(1,height);seamX=std::clamp(seam,0,canvasWidth);
+    images=resources;parentWindow=parent;stopEvent=CreateEventW(nullptr,TRUE,FALSE,nullptr);wakeEvent=CreateEventW(nullptr,FALSE,FALSE,nullptr);thread=CreateThread(nullptr,0,Run,nullptr,0,nullptr);
+}
 void Stop(){if(!thread)return;SetEvent(stopEvent);WaitForSingleObject(thread,INFINITE);CloseHandle(thread);CloseHandle(stopEvent);CloseHandle(wakeEvent);thread=nullptr;stopEvent=nullptr;wakeEvent=nullptr;}
 void Capture(){capture=true;if(wakeEvent)SetEvent(wakeEvent);}
 void SetVisibility(int monitors){monitors&=3;if(visibleMonitors.exchange(monitors)!=monitors){glassDirty=true;if(wakeEvent)SetEvent(wakeEvent);}}
+// A monitor swap moves or resizes the covered desktop: the canvas follows it.
+void SetCanvas(int left,int top,int width,int height,int seam){
+    canvasLeft=left;canvasTop=top;canvasWidth=std::max(1,width);canvasHeight=std::max(1,height);seamX=std::clamp(seam,0,canvasWidth);
+    canvasDirty=true;if(wakeEvent)SetEvent(wakeEvent);
+}
 void SetAudio(float low,float mid,float high,float intensity){
     if(!std::isfinite(low+mid+high+intensity))return;
     audioBass=std::clamp(low,0.f,1.f);audioMiddle=std::clamp(mid,0.f,1.f);audioTreble=std::clamp(high,0.f,1.f);audioIntensity=std::clamp(intensity,0.f,1.f);
@@ -421,19 +442,22 @@ void SetSceneFade(float alpha){
     sceneAlpha=alpha;glassDirty=true;if(wakeEvent)SetEvent(wakeEvent);
 }
 void SetGlass(float x,float cy,float my,float w,float ch,float mh){
-    if(w<0||w>1200||ch<0||ch>1440||mh<0||mh>1440||x<0||x+w>5120)return;
+    x-=canvasLeft;cy-=canvasTop;my-=canvasTop;
+    if(w<0||w>1200||ch<0||ch>canvasHeight||mh<0||mh>canvasHeight||x<0||x+w>canvasWidth)return;
     {std::lock_guard<std::mutex> lock(glassMutex);glassRects[0]=D2D1::RectF(x,cy,x+w,cy+ch);glassRects[1]=D2D1::RectF(x,my,x+w,my+mh);}
     glassDirty=true;if(wakeEvent)SetEvent(wakeEvent);
 }
 void SetDockGlass(float x,float y,float w,float h){
-    if(!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(w)||!std::isfinite(h)||w<0||h<0||h>1440||x<0||x+w>5120||y<0||y+h>1440)return;
+    x-=canvasLeft;y-=canvasTop;
+    if(!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(w)||!std::isfinite(h)||w<0||h<0||h>canvasHeight||x<0||x+w>canvasWidth||y<0||y+h>canvasHeight)return;
     {std::lock_guard<std::mutex> lock(glassMutex);auto& r=glassRects[2];
         if(r.left==x&&r.top==y&&r.right==x+w&&r.bottom==y+h)return;
         r=D2D1::RectF(x,y,x+w,y+h);}
     glassDirty=true;if(wakeEvent)SetEvent(wakeEvent);
 }
 void SetPanelGlass(int slot,float x,float y,float w,float h){
-    if(slot<0||slot>=PanelSlots||!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(w)||!std::isfinite(h)||w<0||h<0||h>1440||x<0||x+w>5120||y<0||y+h>1440)return;
+    x-=canvasLeft;y-=canvasTop;
+    if(slot<0||slot>=PanelSlots||!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(w)||!std::isfinite(h)||w<0||h<0||h>canvasHeight||x<0||x+w>canvasWidth||y<0||y+h>canvasHeight)return;
     {std::lock_guard<std::mutex> lock(glassMutex);auto& r=glassRects[slot];if(r.left==x&&r.top==y&&r.right==x+w&&r.bottom==y+h)return;r=D2D1::RectF(x,y,x+w,y+h);}
     glassDirty=true;if(wakeEvent)SetEvent(wakeEvent);
 }

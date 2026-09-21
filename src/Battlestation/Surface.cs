@@ -44,13 +44,18 @@ internal abstract class Surface : FrameworkElement
     protected void Glass(int slot,double x,double y,double w,double h)
     {
         glassSlots.Add(slot);
-        if(displayed)Native.BackgroundPanel(slot,(float)(DesktopX+x),(float)(DesktopY+y),(float)w,(float)h);
+        if(displayed){var rect=DesktopScreens.ToPixels(new Rect(DesktopX+x,DesktopY+y,w,h));Native.BackgroundPanel(slot,(float)rect.Left,(float)rect.Top,(float)rect.Width,(float)rect.Height);}
     }
     protected static readonly CultureInfo French=CultureInfo.GetCultureInfo("fr-FR");
     protected const string Ink=DockAppearance.Ink,Muted=DockAppearance.Muted,Pink="#FF6FD3",Purple="#BE81FF";
     public Surface(Station station,int dockSlot=-1){Station=station;DesktopTheme.Changed+=ThemeChanged;this.dockSlot=dockSlot;artDeco=new FontFamily(new Uri("pack://application:,,,/"),"./Assets/Fonts/#GTAArtDeco Condensed");SnapsToDevicePixels=true;FocusVisualStyle=null;TextOptions.SetTextFormattingMode(this,TextFormattingMode.Display);}
     public void Refresh()=>InvalidateVisual();
-    internal void UpdateGlassBounds(){if(dockSlot>=0&&displayed)Native.BackgroundPanel(dockSlot,(float)DesktopX,(float)DesktopY,(float)Width,(float)Height);}
+    internal void UpdateGlassBounds()
+    {
+        if(dockSlot<0||!displayed)return;
+        var rect=DesktopScreens.ToPixels(new Rect(DesktopX,DesktopY,Width,Height));
+        Native.BackgroundPanel(dockSlot,(float)rect.Left,(float)rect.Top,(float)rect.Width,(float)rect.Height);
+    }
     protected override void OnRender(DrawingContext dc)
     {
         D=dc;hits.Clear();if(!displayed)return;RenderCount++;

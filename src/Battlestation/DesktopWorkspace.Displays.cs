@@ -9,9 +9,16 @@ internal sealed partial class DesktopWorkspace
     string? displayError;
     void ReadDisplays()
     {
-        var screens=Forms.Screen.AllScreens;
-        connectedScreens=screens.Length;
+        string previous=DesktopScreens.Signature;
+        var screens=DesktopScreens.Read();
+        connectedScreens=screens.Count;
         connectedMask=connectedScreens==1?1:3;
+        // The arrangement was written for another monitor set: fit it into this
+        // one before the docks are placed.
+        station.Layout.SetScreens(screens.Select(screen=>screen.Dip).ToArray(),true);
+        if(DesktopScreens.Signature==previous)return;
+        var canvas=DesktopScreens.Canvas();
+        Native.BackgroundCanvas(canvas.Left,canvas.Top,canvas.Width,canvas.Height,canvas.Seam);
     }
     void DisplaySettingsChanged(object? sender,EventArgs args)
     {

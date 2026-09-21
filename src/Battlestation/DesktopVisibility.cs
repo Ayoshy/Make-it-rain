@@ -28,7 +28,14 @@ internal sealed class DesktopVisibility
         },0);
     }
     internal bool Exposed(Rect rect)=>!Locked&&HasUncoveredArea(rect,covers);
-    internal int MonitorMask=>(Exposed(new(0,0,2560,1440))?1:0)|(Exposed(new(2560,0,2560,1440))?2:0);
+    // The native layer exposes one glass mask bit per monitor, in the order the
+    // workspace reports them; extra monitors share the second bit.
+    internal int MonitorMask(IReadOnlyList<Rect> screens)
+    {
+        int mask=0;
+        for(int i=0;i<screens.Count;i++)if(Exposed(screens[i]))mask|=1<<Math.Min(i,1);
+        return mask;
+    }
     internal static bool HasUncoveredArea(Rect rect,IEnumerable<Rect> occluders)
     {
         var remaining=new List<Rect>{rect};

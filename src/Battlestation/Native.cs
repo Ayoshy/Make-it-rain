@@ -5,7 +5,8 @@ namespace Battlestation;
 internal static class Native
 {
     const string G="Battlestation.Graphics.dll", D="Battlestation.Desk.dll";
-    [DllImport(G, CharSet=CharSet.Unicode, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundStart(nint parent,string images);
+    [DllImport(G, CharSet=CharSet.Unicode, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundStart(nint parent,string images,int left,int top,int width,int height,int seam);
+    [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundCanvas(int left,int top,int width,int height,int seam);
     [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundStop();
     [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundVisibility(int monitors);
     [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundCapture();

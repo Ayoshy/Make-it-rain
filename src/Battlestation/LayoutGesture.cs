@@ -26,20 +26,20 @@ internal sealed class LayoutGesture
     {
         start=blocks.ToArray();id=selected;edge=handle;pointerStart=pointer;grid=snap;step=Math.Clamp(gridStep,4,64);
         this.linkNeighbors=linkNeighbors;
-        this.screens=(screens??DesktopLayout.Screens).ToArray();
+        this.screens=(screens??DesktopScreens.Reference).ToArray();
         last=new(start,new HashSet<string>{id},false);
     }
     static bool Overlap(double a,double b,double c,double d)=>a<d-.001&&b>c+.001;
     static double Low(DesktopBlock b,bool horizontal)=>horizontal?b.X:b.Y;
     static double High(DesktopBlock b,bool horizontal)=>Low(b,horizontal)+(horizontal?b.Width:b.Height);
     static bool Across(DesktopBlock a,DesktopBlock b,bool horizontal)=>Overlap(Low(a,!horizontal),High(a,!horizontal),Low(b,!horizontal),High(b,!horizontal));
-    static Rect Screen(DesktopBlock b)=>DesktopLayout.Screens.First(s=>s.Contains(b.Bounds));
+    Rect Screen(DesktopBlock b)=>screens.First(s=>s.Contains(b.Bounds));
     static DesktopBlock Translate(DesktopBlock b,bool horizontal,double amount)=>horizontal?b with{X=b.X+amount}:b with{Y=b.Y+amount};
     static DesktopBlock SetEdge(DesktopBlock b,bool horizontal,bool low,double amount)=>horizontal
         ?low?b with{X=b.X+amount,Width=b.Width-amount}:b with{Width=b.Width+amount}
         :low?b with{Y=b.Y+amount,Height=b.Height-amount}:b with{Height=b.Height+amount};
     double Snap(double value,double origin)=>grid?origin+Math.Round((value-origin)/step)*step:value;
-    static bool Valid(DesktopBlock[] blocks)=>blocks.All(b=>DesktopLayout.Valid(b,blocks));
+    bool Valid(DesktopBlock[] blocks)=>blocks.All(b=>DesktopLayout.Valid(b,blocks,screens));
     public LayoutPreview Preview(Point pointer)
     {
         if(!double.IsFinite(pointer.X+pointer.Y))return last with{Blocked=true};

@@ -44,7 +44,10 @@ internal sealed partial class DesktopWorkspace : IDisposable
             Native.BackgroundPalette(i,new[]{theme.Base,theme.Light,theme.Secondary,theme.Glass,theme.Rim,theme.Edge}.Select(c=>Convert.ToUInt32(c[1..],16)).ToArray());
         }
         Native.BackgroundTheme(Array.FindIndex(DesktopTheme.Definitions,t=>t.Id==station.Settings.ThemeId),1);
-        Native.BackgroundStart(Native.DesktopParent(),Path.Combine(station.Assets,"Images"));
+        DesktopScreens.Read();
+        var canvas=DesktopScreens.Canvas();
+        station.Layout.SetScreens(DesktopScreens.Rects,true);
+        Native.BackgroundStart(Native.DesktopParent(),Path.Combine(station.Assets,"Images"),canvas.Left,canvas.Top,canvas.Width,canvas.Height,canvas.Seam);
         Native.BackgroundAppearance(station.Settings.AnimateBackground?1:0,(float)station.Settings.GlassOpacity);
         CreateEditGrids();
         foreach(var block in station.Layout.Blocks)CreateWindow(block);
@@ -86,6 +89,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
         var frame=OverlayStyle.Frame(row);frame.Padding=new Thickness(10,7,10,7);
         var bar=new Window{Title="Battlestation · Réorganiser",Width=860,Height=64,Left=3460,Top=744,ShowInTaskbar=false,Topmost=true,Content=frame};
         OverlayStyle.Apply(bar);
+        var monitor=station.Layout.AvailableScreens.Last();bar.Left=monitor.Left+(monitor.Width-bar.Width)/2;bar.Top=monitor.Top+(monitor.Height-bar.Height)*.54;
         var add=new Button{Content="+ Ajouter",Padding=new Thickness(14,8,14,8),Margin=new Thickness(3)};
         add.Click+=(_,_)=>{var menu=new ContextMenu();foreach(var b in station.Layout.Blocks.Where(b=>!b.Visible)){var item=new MenuItem{Header=b.Title};item.Click+=(_,_)=>ShowBlock(b.Id);menu.Items.Add(item);}if(menu.Items.Count==0)menu.Items.Add(new MenuItem{Header="Tous les blocs sont présents",IsEnabled=false});menu.PlacementTarget=add;menu.IsOpen=true;};
         var done=new Button{Content="Terminer",Padding=new Thickness(18,8,18,8),Margin=new Thickness(3)};done.Click+=(_,_)=>SetEditing(false);
@@ -194,7 +198,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
         ((OceanSurface)surfaces["ocean"]).SetActive(exposed.Contains("ocean")&&!value);
         ((LolSurface)surfaces["lol"]).SetActive(exposed.Contains("lol")&&!value);
         station.Terminal?.SetVisible(station.Layout["terminal"].Visible&&!editing);
-        if(value){var screen=station.Layout.AvailableScreens.Last();toolbar.Left=screen.Left+(screen.Width-toolbar.Width)/2;toolbar.Top=744;toolbar.Show();toolbar.Activate();}else{toolbar.Hide();station.Layout.Save();}
+        if(value){var screen=station.Layout.AvailableScreens.Last();toolbar.Left=screen.Left+(screen.Width-toolbar.Width)/2;toolbar.Top=screen.Top+(screen.Height-toolbar.Height)*.54;toolbar.Show();toolbar.Activate();}else{toolbar.Hide();station.Layout.Save();}
     }
     object Inspect()=>new{pid=Environment.ProcessId,mode="desktop",editing,profile=profiles.Current,scene=new{phase=scene.State,busy=scene.Busy,alpha=scene.GlassAlpha,applyMs=Math.Round(scene.LastApplyMilliseconds,1)},displays=new{connectedScreens,singleScreen=station.Layout.SingleScreen,profiles.ReturnScene,error=displayError},theme=DesktopTheme.Current.Id,terminalThemeSupported=station.Terminal?.ThemeSupported,rendering=new{monitorMask,exposed=exposed.ToArray(),counts=surfaces.ToDictionary(p=>p.Key,p=>p.Value.RenderCount)},layoutOptions=new{station.Settings.GridEnabled,station.Settings.GridStep,station.Settings.LinkDocks},terminalPid=station.Terminal?.Pid,palette=new{open=palette?.IsVisible==true,hotkeyRegistered=paletteHotkey.Registered,hotkeyError=paletteHotkey.Error},settingsOpen=settingsWindow?.IsVisible==true,weather=new{temperature=Native.Read("weatherTemp"),condition=Native.Read("weatherCondition"),at=Native.Read("weatherTime"),hours=Native.Read("weatherHours"),rain=Native.Read("weatherRain")},lol=((LolSurface)surfaces["lol"]).Inspect(),aquarium=((AquariumSurface)surfaces["aquarium"]).Inspect(),ocean=((OceanSurface)surfaces["ocean"]).Inspect(),blocks=station.Layout.Blocks,windows=placement.Inspect(),hits=surfaces.ToDictionary(p=>p.Key,p=>p.Value.InspectHits())};
     string Command(string command)
@@ -307,8 +311,8 @@ internal sealed partial class DesktopWorkspace : IDisposable
     }
     void UpdateVisibility()
     {
-        visibility.Update(station.Terminal?.RemoteHandle??0,windows.Values.Select(w=>new WindowInteropHelper(w).Handle));monitorMask=visibility.MonitorMask&connectedMask;Native.BackgroundVisibility(monitorMask);
-        foreach(var pair in surfaces){var block=station.Layout[pair.Key];bool active=block.Visible&&(connectedScreens>1||DesktopLayout.Screens[0].IntersectsWith(block.Bounds))&&visibility.Exposed(new Rect(windows[pair.Key].Left,windows[pair.Key].Top,windows[pair.Key].Width,windows[pair.Key].Height));
+        visibility.Update(station.Terminal?.RemoteHandle??0,windows.Values.Select(w=>new WindowInteropHelper(w).Handle));monitorMask=visibility.MonitorMask(station.Layout.Screens)&connectedMask;Native.BackgroundVisibility(monitorMask);
+        foreach(var pair in surfaces){var block=station.Layout[pair.Key];bool active=block.Visible&&station.Layout.Screens.Any(screen=>screen.IntersectsWith(block.Bounds))&&visibility.Exposed(new Rect(windows[pair.Key].Left,windows[pair.Key].Top,windows[pair.Key].Width,windows[pair.Key].Height));
             if(active){if(exposed.Add(pair.Key))renderRevisions.Remove(pair.Key);}else exposed.Remove(pair.Key);
             pair.Value.Visibility=active?Visibility.Visible:Visibility.Hidden;
         }

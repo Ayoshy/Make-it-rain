@@ -17,7 +17,7 @@ internal sealed partial class DesktopWorkspace
     bool? lastGestureBlocked;
     void CreateEditGrids()
     {
-        foreach(var screen in DesktopLayout.Screens)
+        foreach(var screen in station.Layout.Screens)
         {
             var grid=new Window{Title="Battlestation · Grille",Left=screen.X,Top=screen.Y,Width=screen.Width,Height=screen.Height,
                 WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,AllowsTransparency=true,Background=Brushes.Transparent,
@@ -28,8 +28,31 @@ internal sealed partial class DesktopWorkspace
         }
         station.SettingsChanged+=()=>UpdateEditGrids();
     }
+    Window NewEditGrid()
+    {
+        var grid=new Window{Title="Battlestation "+(char)0x00b7+" Grille",WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,
+            AllowsTransparency=true,Background=Brushes.Transparent,ShowInTaskbar=false,ShowActivated=false,
+            IsHitTestVisible=false,Content=new EditGrid(station.Settings.GridStep)};
+        new WindowInteropHelper(grid).EnsureHandle();var handle=new WindowInteropHelper(grid).Handle;
+        Native.SetWindowLongPtr(handle,-20,Native.GetWindowLongPtr(handle,-20)|0x20|0x08000000);
+        placement.Add(grid);return grid;
+    }
+    // A monitor swap changes the grid geometry; extra grids stay hidden.
+    void SyncEditGrids()
+    {
+        var screens=station.Layout.Screens.ToArray();
+        while(editGrids.Count<screens.Length)editGrids.Add(NewEditGrid());
+        for(int i=0;i<editGrids.Count;i++)
+        {
+            var grid=editGrids[i];
+            if(i>=screens.Length){if(grid.IsVisible)grid.Hide();continue;}
+            var screen=screens[i];
+            grid.Left=screen.Left;grid.Top=screen.Top;grid.Width=screen.Width;grid.Height=screen.Height;
+        }
+    }
     void UpdateEditGrids(bool arrange=true)
     {
+        SyncEditGrids();
         if(linkDocksToggle is not null)linkDocksToggle.IsChecked=station.Settings.LinkDocks;
         foreach(var window in editGrids)
         {

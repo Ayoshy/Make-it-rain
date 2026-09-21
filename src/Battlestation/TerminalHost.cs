@@ -103,7 +103,7 @@ internal sealed class NativeTerminalWindow : IDisposable
     }
     void Place(int x,int y,int width,int height)
     {
-        if(width<200||height<100||width>5120||height>1440)throw new ArgumentException("Dimensions invalides");
+        if(width<200||height<100||width>SystemParameters.VirtualScreenWidth||height>SystemParameters.VirtualScreenHeight)throw new ArgumentException("Dimensions invalides");
         window.WindowStyle=WindowStyle.None;window.ResizeMode=ResizeMode.NoResize;window.ShowInTaskbar=false;
         window.Left=x;window.Top=y;window.Width=width;window.Height=height;
         placement??=new DesktopPlacement(window.Dispatcher);
