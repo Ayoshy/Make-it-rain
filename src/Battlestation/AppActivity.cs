@@ -16,6 +16,19 @@ internal enum AppActivityState
     Running,
 }
 
+/// <summary>How the running application currently presents itself on the desktop.</summary>
+internal enum AppWindowState
+{
+    None,
+    Foreground,
+    Background,
+    Minimized,
+    Tray,
+}
+
+/// <summary>One top-level window seen by the single EnumWindows pass of a scan.</summary>
+internal sealed record AppWindowSnapshot(int Pid, bool Visible, bool Minimized, bool Foreground);
+
 /// <summary>A process view used by the detector. It deliberately contains no command line.</summary>
 internal sealed record AppProcessSnapshot(string Name, string? Path, bool PathAccessible = true, int Pid = 0)
 {
@@ -32,7 +45,9 @@ internal sealed record AppProcessSnapshot(string Name, string? Path, bool PathAc
 internal sealed record AppActivityResult(
     DockApp App,
     AppActivityState State,
-    string? MatchedPath = null);
+    string? MatchedPath = null,
+    int Pid = 0,
+    AppWindowState Window = AppWindowState.None);
 
 internal sealed record AppActivityRuleInfo(
     string Name,
@@ -58,6 +73,9 @@ internal sealed record AppActivitySnapshot(
 
     internal AppActivityResult? ResultFor(DockApp app)
         => Results.FirstOrDefault(result => result.App == app);
+
+    internal AppWindowState WindowFor(DockApp app)
+        => ResultFor(app)?.Window ?? AppWindowState.None;
 }
 
 /// <summary>
@@ -73,6 +91,7 @@ internal static class AppActivity
     internal static AppActivitySnapshot Snapshot(
         IReadOnlyList<DockApp> apps,
         IReadOnlyList<AppProcessSnapshot>? processes = null,
+        IReadOnlyList<AppWindowSnapshot>? windows = null,
         DateTimeOffset? capturedAt = null)
     {
         // Copy the caller's list before resolving. A settings dialog may reorder its own list
@@ -96,8 +115,20 @@ internal static class AppActivity
             error = exception.GetType().Name;
         }
 
+        // The window list is a single pass per scan and never blocks the state it
+        // describes: an unreadable desktop only clears the window detail.
+        IReadOnlyList<AppWindowSnapshot> windowSnapshot;
+        try
+        {
+            windowSnapshot = windows ?? CaptureWindows();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception or UnauthorizedAccessException or DllNotFoundException)
+        {
+            windowSnapshot = EmptyWindows;
+        }
+
         var results = processScanSucceeded
-            ? resolved.Select(item => item.Evaluate(processSnapshot)).ToArray()
+            ? resolved.Select(item => item.Evaluate(processSnapshot)).Select(result => result with { Window = WindowState(result.Pid, windowSnapshot) }).ToArray()
             : appSnapshot.Select(app => new AppActivityResult(app, AppActivityState.Unknown)).ToArray();
         return new AppActivitySnapshot(
             results,
@@ -107,6 +138,63 @@ internal static class AppActivity
             error,
             rules);
     }
+
+    static readonly AppWindowSnapshot[] EmptyWindows = [];
+
+    /// <summary>One top-level window list per scan; applications are then classified by PID.</summary>
+    internal static IReadOnlyList<AppWindowSnapshot> CaptureWindows()
+    {
+        var found = new List<AppWindowSnapshot>();
+        var foreground = GetForegroundWindow();
+        EnumWindows((window, _) =>
+        {
+            if (!IsWindowVisible(window)) return true;
+            if (((long)GetWindowLongPtr(window, -20) & 0x80) != 0) return true; // tool window
+            var name = WindowClass(window);
+            if (name is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" or "Progman" or "WorkerW") return true;
+            if (DwmGetWindowAttribute(window, 14, out int cloaked, sizeof(int)) == 0 && cloaked != 0) return true;
+            GetWindowThreadProcessId(window, out uint pid);
+            if (pid == 0) return true;
+            found.Add(new AppWindowSnapshot((int)pid, true, IsIconic(window), window == foreground));
+            return true;
+        }, 0);
+        return found;
+    }
+
+    static AppWindowState WindowState(int pid, IReadOnlyList<AppWindowSnapshot> windows)
+    {
+        if (pid == 0) return AppWindowState.None;
+        bool seen = false, visible = false, minimized = false;
+        foreach (var window in windows)
+        {
+            if (window.Pid != pid) continue;
+            seen = true;
+            if (window.Foreground) return AppWindowState.Foreground;
+            if (window.Minimized) minimized = true;
+            else if (window.Visible) visible = true;
+        }
+        if (!seen) return AppWindowState.Tray;
+        if (visible) return AppWindowState.Background;
+        return minimized ? AppWindowState.Minimized : AppWindowState.Tray;
+    }
+
+    static string WindowClass(nint window)
+    {
+        var buffer = new char[128];
+        GetClassName(window, buffer, buffer.Length);
+        var length = Array.IndexOf(buffer, '\0');
+        return new string(buffer, 0, length < 0 ? buffer.Length : length);
+    }
+
+    delegate bool WindowEnum(nint window, nint data);
+    [DllImport("user32.dll")] static extern bool EnumWindows(WindowEnum callback, nint data);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(nint window);
+    [DllImport("user32.dll")] static extern bool IsIconic(nint window);
+    [DllImport("user32.dll")] static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(nint window, out uint pid);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(nint window, char[] name, int capacity);
+    [DllImport("user32.dll")] static extern nint GetWindowLongPtr(nint window, int index);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(nint window, int attribute, out int value, int size);
 
     internal static AppActivitySnapshot Unknown(IReadOnlyList<DockApp> apps, string error)
     {
@@ -423,7 +511,7 @@ internal static class AppActivity
                 }
                 var path = NormalizePath(process.Path);
                 var matches = path is null ? null : Matcher.Matches(path);
-                if (matches == true) return new(Rule.App, AppActivityState.Running, path);
+                if (matches == true) return new(Rule.App, AppActivityState.Running, path, process.Pid);
                 if (matches is null) inaccessible = true;
             }
             return new(Rule.App, inaccessible ? AppActivityState.Unknown : AppActivityState.Stopped);

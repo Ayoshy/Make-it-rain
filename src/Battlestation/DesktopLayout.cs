@@ -15,7 +15,8 @@ internal sealed class DesktopLayout
         "clock"=>new(360,144),"weather"=>new(360,112),"music"=>new(400,168),
         "projects"=>new(360,240),"apps"=>new(240,112),"terminal"=>new(480,300),
         "countdown"=>new(400,360),"hardware"=>new(440,218),"usage"=>new(440,209),
-        "network"=>new(440,280),"dualsense"=>new(480,380),"video"=>new(480,270),"audio"=>new(440,220),"bluetooth"=>new(128,128),"reminders"=>new(440,112),_=>new(120,100)
+        "network"=>new(440,280),"dualsense"=>new(480,380),"video"=>new(480,270),"audio"=>new(440,220),"bluetooth"=>new(128,128),"reminders"=>new(440,112),
+        "aquarium"=>new(360,240),"ocean"=>new(420,300),"lol"=>new(440,180),"shopping"=>new(560,420),_=>new(120,100)
     };
     static DesktopBlock Dimensions(DesktopBlock original,DesktopBlock saved)=>original with
     {
@@ -45,7 +46,14 @@ internal sealed class DesktopLayout
         new("audio","Audio",720,264,2616,360,false),
         new("bluetooth","Bluetooth",560,280,2616,720,false),
         new("dualsense","DualSense",720,440,24,384,false),
-        new("network","Réseau",720,336,24,912,false)
+        new("network","Réseau",720,336,24,912,false),
+        // Aquarium, Diorama Océan and LoL arrive hidden: saved scenes keep them
+        // absent until asked for.
+        new("aquarium","Aquarium",700,420,24,384,false),
+        new("ocean","Diorama Océan",720,480,24,384,false),
+        new("lol","LoL",700,220,24,960,false),
+        // Le radar d'achat arrive masqué lui aussi : il s'ajoute depuis « Ajouter un bloc ».
+        new("shopping","Achats",700,520,1080,384,false)
     ];
     static double TerminalY(int apps)=>Math.Max(720,Math.Ceiling((336+DockHeight(apps)-116+293+Gap)/Grid)*Grid);
     public static double DockHeight(int apps)=>Math.Max(1,Math.Ceiling(apps/6d))*88+28;

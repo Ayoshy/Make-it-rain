@@ -183,6 +183,8 @@ std::wstring Read(std::wstring key){
         if(key==L"weatherCondition")return weather.loaded?WeatherLabel(weather.code)+(weather.stale?L" · ancienne mesure":L""):L"Météo indisponible";
         if(key==L"weatherRange")return L"↑ "+number(weather.maximum)+L"°   ↓ "+number(weather.minimum)+L"°";
         if(key==L"weatherWind")return L"Vent · "+number(weather.wind)+L" km/h";
+        if(key==L"weatherHours"){std::wstring text;for(size_t i=0;i<weather.hours.size();i++){auto& hour=weather.hours[i];if(i)text+=L";";text+=std::to_wstring(hour.hour)+L":"+number(hour.temperature)+L":"+std::to_wstring(hour.code)+L":"+number(hour.precipitation);}return text;}
+        if(key==L"weatherRain")return RainLabel(weather);
         if(key==L"weatherTime")return weather.loaded?L"Open-Meteo · "+weather.time:L"Open-Meteo";
         if(key==L"weatherIcon")return WeatherIcon(weather.code,weather.day);
     }
@@ -234,6 +236,17 @@ if(std::wstring(argv[1])==L"--contracts"){
     bool rejected=false;try{ParseWeather(LR"({"current":{}})");}catch(...){rejected=true;}
     if(!rejected)return 7;
     {
+        // Hourly strip and the imminent-rain text are derived from the same response.
+        auto forecast=ParseWeather(LR"({"current":{"temperature_2m":12,"weather_code":3},"hourly":{"time":["2026-09-16T14:00","2026-09-16T15:00","2026-09-16T22:00"],"temperature_2m":[14.4,15.6,17],"weather_code":[3,61,0],"precipitation_probability":[10,70,5]},"minutely_15":{"time":["2026-09-16T14:00","2026-09-16T14:15","2026-09-16T14:30","2026-09-16T14:45"],"precipitation":[0,0.4,0.6,0]}})");
+        if(forecast.hours.size()!=3||forecast.hours[0].hour!=14||!forecast.hours[0].day||forecast.hours[2].day||std::abs(forecast.hours[1].temperature-15.6)>.001||forecast.hours[1].precipitation!=70)return 10;
+        if(forecast.rainSteps!=4||forecast.rain[0]!=0||std::abs(forecast.rain[1]-0.4)>.001||forecast.rain[3]!=0)return 11;
+        if(RainLabel(forecast)!=L"Pluie dans 15 min")return 12;
+        auto dry=ParseWeather(LR"({"current":{"temperature_2m":9},"minutely_15":{"time":["2026-09-16T14:00"],"precipitation":[0.05]}})");
+        if(RainLabel(dry)!=L""||dry.hours.size()!=0)return 13;
+        auto late=ParseWeather(LR"({"current":{"temperature_2m":9},"minutely_15":{"time":["2026-09-16T14:00","2026-09-16T14:15","2026-09-16T14:30","2026-09-16T14:45"],"precipitation":[0,0,1.2,0]}})");
+        if(RainLabel(late)!=L"Pluie dans 30 min")return 14;
+    }
+    {
         Gdiplus::GdiplusStartupInput input;ULONG_PTR token;Gdiplus::GdiplusStartup(&token,&input,nullptr);
         CoverBytes bytes;
         {Gdiplus::Bitmap sample(32,32);Gdiplus::Graphics graphics(&sample);graphics.Clear(Gdiplus::Color(255,90,160,220));
@@ -247,7 +260,7 @@ if(std::wstring(argv[1])==L"--contracts"){
         DestroyWindow(owner);Gdiplus::GdiplusShutdown(token);if(!passed)return 9;
     }
     uninit_apartment();
-    std::cout<<"Weather/cover contracts passed: unknown fields, real zero, missing temperature, in-memory artwork.\n";return 0;
+    std::cout<<"Weather/cover contracts passed: unknown fields, real zero, missing temperature, hourly strip, imminent rain, in-memory artwork.\n";return 0;
 }
 Start(argv[1]);for(int i=0;i<60&&Read(L"projectStatus")==L"Analyse…";i++)std::this_thread::sleep_for(500ms);std::this_thread::sleep_for(2s);for(auto key:{L"sourceCount",L"mediaExists",L"source",L"canPlay",L"projectStatus",L"project:0:name",L"project:1:name",L"project:2:name",L"project:3:name",L"project:4:name",L"project:5:name"})std::cout<<to_string(key)<<"="<<to_string(Read(key))<<"\n";Stop();return 0;}
 #endif

@@ -11,14 +11,16 @@ static class DockReviewTests
     static void Check(bool value,string message){if(!value)throw new Exception(message);}
     static JsonElement Hits(Surface surface)=>JsonSerializer.SerializeToElement(surface.InspectHits());
     static bool Has(Surface surface,string name)=>Hits(surface).EnumerateArray().Any(h=>h.GetProperty("name").GetString()==name);
-    static void Render(Surface surface,string file)
+    static void Render(Surface surface,string file,FrameworkElement? under=null)
     {
-        surface.Measure(new Size(surface.Width,surface.Height));
-        surface.Arrange(new Rect(0,0,surface.Width,surface.Height));surface.UpdateLayout();
+        // A dock may own a layer under its drawings: the aquarium water is one.
+        var root=Layered(surface,under);
+        root.Measure(new Size(surface.Width,surface.Height));
+        root.Arrange(new Rect(0,0,surface.Width,surface.Height));root.UpdateLayout();
         var image=new RenderTargetBitmap((int)Math.Ceiling(surface.Width),(int)Math.Ceiling(surface.Height),96,96,PixelFormats.Pbgra32);
         var background=new DrawingVisual();
         using(var dc=background.RenderOpen())dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(29,22,40)),null,new Rect(0,0,surface.Width,surface.Height));
-        image.Render(background);image.Render(surface);
+        image.Render(background);image.Render(root);
         var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(image));
         using var stream=File.Create(file);png.Save(stream);
         foreach(var hit in Hits(surface).EnumerateArray())
@@ -27,29 +29,120 @@ static class DockReviewTests
             Check(x>=0&&y>=0&&x+hit.GetProperty("width").GetDouble()<=surface.Width&&y+hit.GetProperty("height").GetDouble()<=surface.Height,"Hit must fit inside dock");
         }
     }
+    static FrameworkElement Layered(Surface surface,FrameworkElement? under)
+    {
+        if(under is null)return surface;
+        // A WPF element keeps its parent: detach before reusing the same dock again.
+        if(surface.Parent is System.Windows.Controls.Panel previous)previous.Children.Remove(surface);
+        if(under.Parent is System.Windows.Controls.Panel previousUnder)previousUnder.Children.Remove(under);
+        var stack=new System.Windows.Controls.Grid{Width=surface.Width,Height=surface.Height};
+        stack.Children.Add(under);stack.Children.Add(surface);
+        return stack;
+    }
+    static byte[] Pixels(Surface surface,FrameworkElement? under=null)
+    {
+        // A dock only repaints when it is invalidated; the fixture changes the data
+        // behind the same dock, so every capture starts from a fresh render.
+        surface.Refresh();
+        var root=Layered(surface,under);
+        root.Measure(new Size(surface.Width,surface.Height));
+        root.Arrange(new Rect(0,0,surface.Width,surface.Height));root.UpdateLayout();
+        var image=new RenderTargetBitmap((int)Math.Ceiling(surface.Width),(int)Math.Ceiling(surface.Height),96,96,PixelFormats.Pbgra32);
+        var background=new DrawingVisual();
+        using(var dc=background.RenderOpen())dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(29,22,40)),null,new Rect(0,0,surface.Width,surface.Height));
+        image.Render(background);image.Render(root);
+        int stride=image.PixelWidth*4;var data=new byte[stride*image.PixelHeight];image.CopyPixels(data,stride,0);return data;
+    }
+    static bool Different(byte[] first,byte[] second)=>first.Length!=second.Length||!first.AsSpan().SequenceEqual(second);
+    static object? Private(object target,string name,params object?[] arguments)
+        =>target.GetType().GetMethod(name,BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(target,arguments);
+
+    /// <summary>
+    /// Le dock d'achat : demande vide, offres avec verdict, veille, ouverture de l'annonce.
+    /// Les pixels prouvent le changement d'état, pas la lisibilité sur le bureau.
+    /// </summary>
+    static void ShoppingChecks(Station station,string output)
+    {
+        var dock=new ShoppingSurface(station){Width=700,Height=520};
+        Render(dock,Path.Combine(output,"shopping-empty.png"));
+        Check(Has(dock,"ShoppingEdit"),"Le champ de demande est cliquable");
+        Check(Has(dock,"ShoppingSearch")==false,"Sans demande, rien à chercher");
+        var empty=Pixels(dock);
+        station.Shopping.SearchAsync("frigo max 800 €, no frost, 300 L, blanc").GetAwaiter().GetResult();
+        dock.Refresh();
+        Render(dock,Path.Combine(output,"shopping-results.png"));
+        Check(Different(empty,Pixels(dock)),"Les offres remplacent l'état vide");
+        Check(Has(dock,"ShoppingSearch"),"Une demande envoyée peut être relancée");
+        Check(Has(dock,"ShoppingOpen:0")&&Has(dock,"ShoppingOpen:1"),"Chaque offre s'ouvre au clic");
+        Check(Has(dock,"ShoppingWatch:0")&&Has(dock,"ShoppingWatch:1"),"Chaque offre peut être surveillée");
+        var order=Hits(dock).EnumerateArray().Select(hit=>hit.GetProperty("name").GetString()!).ToArray();
+        Check(Array.IndexOf(order,"ShoppingWatch:0")>Array.IndexOf(order,"ShoppingOpen:0"),"L'étoile garde la priorité sur l'ouverture de l'offre");
+        var before=Pixels(dock);
+        station.Shopping.Watch(station.Shopping.Results[0]);
+        dock.Refresh();
+        Render(dock,Path.Combine(output,"shopping-watched.png"));
+        Check(station.Shopping.Watchlist.Count==1,"Surveiller ajoute l'offre à la veille");
+        Check(Has(dock,"ShoppingUnwatch:0"),"La veille affiche son retrait");
+        var watchOrder=Hits(dock).EnumerateArray().Select(hit=>hit.GetProperty("name").GetString()!).ToArray();
+        Check(Array.IndexOf(watchOrder,"ShoppingUnwatch:0")>Array.IndexOf(watchOrder,"ShoppingOpenWatch:0"),"Le retrait de veille garde la priorité sur l'ouverture");
+        Check(Different(before,Pixels(dock)),"La veille change visiblement le dock");
+        station.Shopping.Open(station.Shopping.Results[0]);
+        Check(Station.Opened.Count==1&&Station.Opened[0]=="https://exemple.fr/frigo-1","Le clic ouvre l'annonce dans le navigateur");
+        station.Shopping.Unwatch("fixture:1");
+        dock.Refresh();
+        Check(station.Shopping.Watchlist.Count==0,"Retirer la veille la supprime");
+    }
     [STAThread] static void Main(string[] args)
     {
         var app=new Application();
         string root=Path.GetFullPath(args[0]),output=Path.Combine(root,"artifacts/validation/dock-review");
         Directory.CreateDirectory(output);
         var station=new Station{Root=root};
+        // Water preview: a real window, so the pixel shader actually runs (a
+        // RenderTargetBitmap ignores pixel shaders). Captured from outside.
+        if(args.Contains("--water-preview"))
+        {
+            station.MusicBands=[.85f,.75f,.65f,.55f,.40f,.30f,.45f,.20f,.15f,.30f,.20f,.10f];
+            var tank=new AquariumSurface(station){Width=700,Height=420};
+            tank.SetActive(true);
+            var stack=new System.Windows.Controls.Grid{Width=700,Height=420};
+            stack.Children.Add(tank.WaterLayer);stack.Children.Add(tank);
+            var window=new Window{Width=700,Height=420,Left=180,Top=180,WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,
+                Background=new SolidColorBrush(Color.FromRgb(18,14,28)),Content=stack,ShowInTaskbar=false,Topmost=true};
+            var close=new System.Windows.Threading.DispatcherTimer(TimeSpan.FromSeconds(9),System.Windows.Threading.DispatcherPriority.Background,(_,_)=>{window.Close();},app.Dispatcher);
+            window.Loaded+=(_,_)=>close.Start();
+            app.Run(window);
+            return;
+        }
         var face=new Typeface(new FontFamily(new Uri("pack://application:,,,/"),"./Assets/Fonts/#GTAArtDeco Condensed"),FontStyles.Normal,FontWeights.Normal,FontStretches.Normal);
         Check(face.TryGetGlyphTypeface(out var font)&&font.FontUri.ToString().Contains("art-deco"),"Embedded Art Deco resolves without font fallback");
+        ShoppingChecks(station,output);
         foreach(int count in new[]{0,1,3})
         {
             station.Reminders=Enumerable.Range(0,count).Select(i=>new ReminderItem("Penser à faire une pause")).ToList();
-            var nudge=new ReminderSurface(station){Width=440};
+            var nudge=new ReminderSurface(station){Width=440,Height=232};
             Render(nudge,Path.Combine(output,$"nudge-{count}.png"));
-            Check(Has(nudge,"ReminderDone")==(count>0),"Done only exists for a reminder");
-            Check(Has(nudge,"ReminderNext")==(count>1),"No useless Next for one reminder");
+            Check(Has(nudge,"ReminderDone:0")==(count>0),"Done only exists for a reminder");
+            Check(Has(nudge,"ReminderPrevious")==false&&Has(nudge,"ReminderNext")==false,"No pagination while every reminder fits");
             if(count>0)
             {
-                typeof(ReminderSurface).GetMethod("Complete",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(nudge,null);
+                Private(nudge,"Complete",0);
                 Check(station.Reminders.Count==count-1,"Done removes exactly one reminder");
             }
         }
+        station.Reminders=Enumerable.Range(0,7).Select(i=>new ReminderItem("Rappel "+(i+1))).ToList();
+        var paged=new ReminderSurface(station){Width=779,Height=232};
+        Render(paged,Path.Combine(output,"nudge-paged-1.png"));
+        Check(Has(paged,"ReminderEdit:0")&&Has(paged,"ReminderEdit:2")&&!Has(paged,"ReminderEdit:3"),"Three reminders fill a 232 px dock");
+        Check(Has(paged,"ReminderNext")&&!Has(paged,"ReminderPrevious"),"The pagination starts on the first page");
+        Private(paged,"Page",1);
+        Render(paged,Path.Combine(output,"nudge-paged-2.png"));
+        Check(Has(paged,"ReminderEdit:3")&&Has(paged,"ReminderEdit:5")&&!Has(paged,"ReminderEdit:0")&&Has(paged,"ReminderPrevious"),"The second page shows the following reminders");
+        var compactNudge=new ReminderSurface(station){Width=779,Height=112};
+        Render(compactNudge,Path.Combine(output,"nudge-compact.png"));
+        Check(Has(compactNudge,"ReminderEdit:0")&&!Has(compactNudge,"ReminderEdit:1"),"The minimum height shows a single reminder and its pagination");
         station.Reminders=[new("Penser à faire une pause")];
-        Render(new ReminderSurface(station){Width=920},Path.Combine(output,"nudge-wide.png"));
+        Render(new ReminderSurface(station){Width=920,Height=232},Path.Combine(output,"nudge-wide.png"));
         station.Apps=new[]{"Steam","Brave","Discord","Stremio","League of Legends","Codex","Claude Code","Edge","Chrome","qBittorrent","battle.net"}.Select(name=>new DockApp(name,Path.Combine(root,"fixtures",name+".exe"))).ToList();
         var appsSurface=new DockSurface(station){Width=1120,Height=116};
         appsSurface.ApplyActivitySnapshot(AppActivity.Snapshot(station.Apps,[]));
@@ -211,6 +304,181 @@ static class DockReviewTests
             typeof(NetworkSurface).GetField("detailView",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(network,true);network.Refresh();
             Render(network,Path.Combine(output,$"network-{size.Width}-apps.png"));
         }
-        Console.WriteLine("PASS: font, reminders, app packs and compact add button, audio bounds and meter smoothing, Bluetooth targets, native icon fallback. Render fixtures are not live click validation.");
+        // Applications: one window state per icon, established by a single window list.
+        var ranked=station.Apps.Take(4).ToArray();
+        var rankedProcesses=ranked.Select((app,index)=>new AppProcessSnapshot(Path.GetFileNameWithoutExtension(app.Path),app.Path,true,700+index)).ToArray();
+        var rankedWindows=new[]{new AppWindowSnapshot(700,true,false,true),new AppWindowSnapshot(701,true,false,false),new AppWindowSnapshot(702,false,true,false)};
+        var states=new DockSurface(station){Width=1120,Height=116};
+        {
+            states.ApplyActivitySnapshot(AppActivity.Snapshot(station.Apps,rankedProcesses,rankedWindows));
+            Thread.Sleep(300);states.Refresh();
+            var windowRows=JsonSerializer.SerializeToElement(states.InspectActivity()).GetProperty("apps").EnumerateArray().ToDictionary(row=>row.GetProperty("name").GetString()!);
+            Check(windowRows[ranked[0].Name].GetProperty("window").GetString()=="Foreground","The active window is at the front");
+            Check(windowRows[ranked[1].Name].GetProperty("window").GetString()=="Background","A visible window stays in the background");
+            Check(windowRows[ranked[2].Name].GetProperty("window").GetString()=="Minimized","A reduced window is reported as reduced");
+            Check(windowRows[ranked[3].Name].GetProperty("window").GetString()=="Tray","A running application without a window is in the tray");
+            Check(windowRows[station.Apps[4].Name].GetProperty("state").GetString()=="Stopped","An application outside the process list keeps its stopped state");
+            var front=Pixels(states);
+            Render(states,Path.Combine(output,"apps-window-states.png"));
+            states.ApplyActivitySnapshot(AppActivity.Snapshot(station.Apps,rankedProcesses,rankedWindows.Select(window=>window with{Foreground=false}).ToArray()));
+            Thread.Sleep(300);states.Refresh();
+            Check(Different(front,Pixels(states)),"Leaving the foreground visibly changes the icon material");
+        }
+        states.Dispose();
+        // Aquarium: two instants differ, a hidden dock stops moving.
+        using(var tank=new AquariumSurface(station){Width=700,Height=420})
+        {
+            var first=Pixels(tank);
+            Check(Native.Panels[15]==new Rect(0,0,700,420),"The aquarium owns the glass slot 15");
+            tank.SetActive(true);
+            Check(tank.Animating,"The aquarium animates while it is exposed");
+            for(int frame=0;frame<15;frame++)tank.Advance(1d/30d);
+            var second=Pixels(tank,tank.WaterLayer);
+            Check(Different(first,second),"Two instants of the aquarium differ");
+            Render(tank,Path.Combine(output,"aquarium.png"),tank.WaterLayer);
+            Check(JsonSerializer.SerializeToElement(tank.Inspect()).GetProperty("water").GetString() is "shader" or "dessinée" or "island","The aquarium states which water it runs");
+            tank.SetActive(false);
+            var frozen=tank.Elapsed;tank.Advance(.5);
+            Check(!tank.Animating&&tank.Elapsed==frozen,"A hidden aquarium stops advancing");
+            Check(!Different(second,Pixels(tank,tank.WaterLayer)),"A hidden aquarium keeps the same image");
+        }
+        // LoL: rest state, synthetic reading, timers and the certificate predicate.
+        // Diorama Océan: the block owns its slot, stays perfectly still without sound
+        // or pointer, then answers the music and returns to the same still water.
+        using(var diorama=new OceanSurface(station){Width=720,Height=480})
+        {
+            var still=JsonSerializer.SerializeToElement(diorama.Inspect());
+            Check(still.GetProperty("water").GetString() is "shader" or "dessinée","Le Diorama Océan déclare son eau");
+            station.MusicBands=new float[12];
+            diorama.SetActive(true);
+            for(int frame=0;frame<60;frame++)diorama.Advance(1d/60d);
+            // The first render registers the dock's glass slot, exactly like the desktop does.
+            var before=Pixels(diorama,diorama.WaterLayer);
+            Check(Native.Panels[17]==new Rect(0,0,720,480),"Le Diorama Océan possède le verre 17");
+            Check(!diorama.Animating,"Sans son et sans souris, le Diorama Océan ne bouge pas");
+            Check(!Different(before,Pixels(diorama,diorama.WaterLayer)),"Deux images de repos sont identiques");
+            station.MusicBands=[.92f,.80f,.70f,.60f,.30f,.20f,.15f,.10f,.08f,.06f,.05f,.04f];
+            for(int frame=0;frame<40;frame++)diorama.Advance(1d/60d);
+            Check(diorama.Animating,"Les basses excitent une onde");
+            var excited=JsonSerializer.SerializeToElement(diorama.Inspect());
+            Check(excited.GetProperty("packets").GetInt32()>0&&excited.GetProperty("energy").GetDouble()>0,"L'énergie musicale est mesurée");
+            Render(diorama,Path.Combine(output,"ocean.png"),diorama.WaterLayer);
+            station.MusicBands=new float[12];
+            for(int frame=0;frame<600;frame++)diorama.Advance(1d/60d);
+            Check(!diorama.Animating,"Le silence ramène l'eau au repos");
+            Check(Math.Abs(JsonSerializer.SerializeToElement(diorama.Inspect()).GetProperty("elapsed").GetDouble()-still.GetProperty("elapsed").GetDouble())>0,"Le temps du dock a bien avancé");
+            diorama.SetActive(false);
+            var frozen=diorama.Elapsed;diorama.Advance(.5);
+            Check(diorama.Elapsed==frozen,"Un Diorama Océan masqué n'avance plus");
+        }
+        Check(LolTelemetry.IsLiveClientEndpoint("127.0.0.1",2999)&&!LolTelemetry.IsLiveClientEndpoint("localhost",2999)
+            &&!LolTelemetry.IsLiveClientEndpoint("127.0.0.1",3000)&&!LolTelemetry.IsLiveClientEndpoint("127.0.0.1.evil.test",2999),
+            "Only 127.0.0.1:2999 justifies accepting the live client certificate");
+        Check(LolTelemetry.Probe(true,true)&&!LolTelemetry.Probe(true,false)&&!LolTelemetry.Probe(false,true),
+            "The live client API is only read while a game process runs");
+        var reading=LolTelemetry.Parse(LiveGame,DateTimeOffset.UtcNow);
+        Check(reading.State==LolState.Live&&reading.Champion=="Ahri"&&reading.Level==7&&reading.Kills==4&&reading.Deaths==2&&reading.Assists==9&&reading.CreepScore==182&&reading.Gold==12480,
+            "The synthetic reading gives champion, level, KDA, CS and gold");
+        Check(reading.Blue.Dragons==1&&reading.Blue.Barons==1&&reading.Blue.Turrets==2&&reading.Blue.Inhibitors==1&&reading.Red.Dragons==1&&reading.Red.Turrets==3&&reading.Red.Inhibitors==0,
+            "Objectives are counted per team");
+        Check(reading.DragonIn is{} dragon&&Math.Abs(dragon-236)<.001&&reading.BaronIn is{} baron&&Math.Abs(baron-396)<.001,
+            "Dragon counts 5:00 and Baron 6:00 after the corresponding kill");
+        Check(reading.Respawn is{} respawn&&Math.Abs(respawn-7.5)<.001,"The respawn timer is read while the player is dead");
+        bool refused=false;try{LolTelemetry.Parse("{}",DateTimeOffset.UtcNow);}catch(FormatException){refused=true;}
+        Check(refused,"A response without game data is refused");
+        var aram=LolTelemetry.Parse(AramGame,DateTimeOffset.UtcNow);
+        Check(aram.Aram&&aram.MapNumber==12&&aram.Mode=="ARAM","Howling Abyss is recognised from the map and the mode");
+        Check(aram.DragonIn is null&&aram.BaronIn is null,"ARAM exposes no dragon or baron timer to invent");
+        Check(aram.Events!.Contains("TurretKilled")&&aram.Events.Contains("GameStart"),"The received event names are published for verification");
+        using(var league=new LolSurface(station){Width=700,Height=220})
+        {
+            var telemetry=typeof(LolSurface).GetField("telemetry",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(league)!;
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,LolSnapshot.Idle(LolState.NoGame));
+            league.Poll();Render(league,Path.Combine(output,"lol-none.png"));
+            Check(Native.Panels[16]==new Rect(0,0,700,220),"LoL owns the glass slot 16");
+            Check(JsonSerializer.SerializeToElement(league.Inspect()).GetProperty("state").GetString()=="NoGame","The resting dock states that no game runs");
+            var none=Pixels(league);
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,reading);
+            league.Poll();Render(league,Path.Combine(output,"lol-live.png"));
+            Check(Different(none,Pixels(league)),"A live reading changes the dock");
+            var live=JsonSerializer.SerializeToElement(league.Inspect());
+            Check(live.GetProperty("state").GetString()=="Live"&&live.GetProperty("creepScore").GetInt32()==182&&live.GetProperty("blue").GetProperty("Dragons").GetInt32()==1,"inspect publishes the live reading and its objectives");
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,LolSnapshot.Idle(LolState.Unavailable,"HttpRequestException"));
+            league.Poll();Render(league,Path.Combine(output,"lol-unavailable.png"));
+            Check(JsonSerializer.SerializeToElement(league.Inspect()).GetProperty("state").GetString()=="Unavailable","A failed reading is reported as unavailable");
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,aram);
+            league.Poll();
+            var aramImage=Pixels(league);Render(league,Path.Combine(output,"lol-aram.png"));
+            var aramInspect=JsonSerializer.SerializeToElement(league.Inspect());
+            Check(aramInspect.GetProperty("aram").GetBoolean()&&aramInspect.GetProperty("mode").GetString()=="ARAM","inspect publishes the ARAM mode");
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,reading);
+            league.Poll();
+            Check(Different(aramImage,Pixels(league)),"An ARAM reading does not draw the dragon and baron counters");
+        }
+        // Météo: the hourly strip only exists from 190 px, the rain line everywhere.
+        Native.Values["weatherTemp"]="21°";Native.Values["weatherCity"]="Aix-en-Provence";Native.Values["weatherCondition"]="Éclaircies";
+        Native.Values["weatherIcon"]="weather-sun";Native.Values["weatherRange"]="↑ 24°   ↓ 13°";Native.Values["weatherWind"]="Vent · 12 km/h";
+        Native.Values["weatherRain"]="";
+        const string hours="14:14:3:10;15:15:61:70;16:16:3:40;17:17:2:20;18:18:1:10;19:19:0:5";
+        Native.Values["weatherHours"]=hours;
+        {
+            var tallWeather=new DeskSurface(station,DeskWidget.Weather){Width=480,Height=192};
+            var compactWeather=new DeskSurface(station,DeskWidget.Weather){Width=720,Height=112};
+            var tall=Pixels(tallWeather);var compact=Pixels(compactWeather);
+            Render(tallWeather,Path.Combine(output,"weather-tall.png"));
+            Render(compactWeather,Path.Combine(output,"weather-compact.png"));
+            Native.Values["weatherHours"]="";
+            Check(!Different(compact,Pixels(compactWeather)),"The compact weather dock ignores the hourly strip");
+            Check(Different(tall,Pixels(tallWeather)),"The tall weather dock draws the hourly strip");
+            Native.Values["weatherHours"]=hours;
+            Native.Values["weatherRain"]="Pluie dans 15 min";
+            Check(Different(compact,Pixels(compactWeather)),"The imminent rain line reaches the compact dock");
+            Check(Different(tall,Pixels(tallWeather)),"The imminent rain line reaches the tall dock");
+        }
+        // Projets: divergence, commit age and the terminal badge.
+        var projectRoot=Path.Combine(root,"fixtures","Battlestation");
+        Native.Values["projectCount"]="1";Native.Values["project:0:name"]="Battlestation";Native.Values["project:0:path"]=projectRoot;Native.Values["project:0:age"]="3 h";
+        station.Projects.Remember(projectRoot,new ProjectSignal("main",3,2,1,DateTimeOffset.Now.AddHours(-4)));
+        static string Status(ProjectSignal signal)=>(string)typeof(DeskSurface).GetMethod("ProjectStatus",BindingFlags.Static|BindingFlags.NonPublic)!.Invoke(null,new object[]{signal})!;
+        Check(Status(new ProjectSignal("main",3,2,1,DateTimeOffset.Now.AddHours(-4)))=="main · 3 modif. · ↑2 ↓1 · 4 h","The project card shows branch, changes, divergence and commit age");
+        Check(Status(new ProjectSignal("main",0,null,null,null))=="main · propre","A project without divergence keeps its former text");
+        station.Terminal=new TerminalSession{Titles=["Battlestation · Codex CLI"]};
+        var badge=Pixels(new DeskSurface(station,DeskWidget.Projects){Width=720,Height=293});
+        station.Terminal=null;
+        var plain=Pixels(new DeskSurface(station,DeskWidget.Projects){Width=720,Height=293});
+        Check(Different(badge,plain),"An open terminal tab adds the neon badge to the project card");
+        Console.WriteLine("PASS: font, reminders, app packs and compact add button, audio bounds and meter smoothing, Bluetooth targets, native icon fallback, aquarium, LoL telemetry, weather strip, project card. Render fixtures are not live click validation.");
     }
+
+    // One synthetic live client response: no game, no account and no engine is involved.
+    const string LiveGame="""
+        {"activePlayer":{"riotId":"Ayo#EUW","summonerName":"Ayo","level":7,"currentGold":12480,"isDead":true,"respawnTimer":7.5},
+         "gameData":{"gameMode":"CLASSIC","gameTime":164.0},
+         "allPlayers":[
+           {"riotId":"Ayo#EUW","summonerName":"Ayo","championName":"Ahri","level":7,"team":"ORDER","isDead":true,"respawnTimer":7.5,"scores":{"kills":4,"deaths":2,"assists":9,"creepScore":182}},
+           {"riotId":"EnemyMid#EUW","summonerName":"EnemyMid","championName":"Zed","level":9,"team":"CHAOS","isDead":false,"respawnTimer":0,"scores":{"kills":3,"deaths":4,"assists":5,"creepScore":150}}],
+         "events":{"Events":[
+           {"EventName":"DragonKill","EventTime":60.0,"KillerName":"EnemyMid"},
+           {"EventName":"DragonKill","EventTime":100.0,"KillerName":"Ayo","DragonType":"Fire"},
+           {"EventName":"BaronKill","EventTime":200.0,"KillerName":"Ayo"},
+           {"EventName":"TurretKilled","EventTime":120.0,"KillerName":"Ayo"},
+           {"EventName":"TurretKilled","EventTime":130.0,"KillerName":"Ayo"},
+           {"EventName":"TurretKilled","EventTime":140.0,"KillerName":"EnemyMid"},
+           {"EventName":"TurretKilled","EventTime":150.0,"KillerName":"EnemyMid"},
+           {"EventName":"TurretKilled","EventTime":160.0,"KillerName":"EnemyMid"},
+           {"EventName":"InhibKilled","EventTime":161.0,"KillerName":"Ayo"}]}}
+        """;
+
+    // Howling Abyss, same player: no dragon, no baron, only structures and the
+    // event names the local API really sends on this map.
+    const string AramGame="""
+        {"activePlayer":{"riotId":"Ayo#EUW","summonerName":"Ayo","level":3,"currentGold":1420,"isDead":false,"respawnTimer":0},
+         "gameData":{"gameMode":"ARAM","mapName":"Howling Abyss","mapNumber":12,"gameTime":72.0},
+         "allPlayers":[
+           {"riotId":"Ayo#EUW","summonerName":"Ayo","championName":"Miss Fortune","level":3,"team":"CHAOS","isDead":false,"respawnTimer":0,"scores":{"kills":0,"deaths":0,"assists":0,"creepScore":0}}],
+         "events":{"Events":[
+           {"EventName":"GameStart","EventTime":0.0},
+           {"EventName":"MinionsSpawning","EventTime":20.0},
+           {"EventName":"TurretKilled","EventTime":64.0,"KillerName":"Ayo"}]}}
+        """;
 }

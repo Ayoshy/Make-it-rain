@@ -24,6 +24,7 @@ internal sealed class DeskSurface : Surface
         if(reactive||playing&&visible)Audio.Start();else Audio.Stop();
         var next=Audio.Bands;bool changed=false;
         for(int i=0;i<12;i++){float value=playing?bands[i]+(next[i]-bands[i])*(next[i]>bands[i]?.6f:.12f):0;changed|=Math.Abs(value-bands[i])>.001;bands[i]=value;}
+        Station.MusicBands=bands;
         if(changed&&visible)Refresh();
         if(reactive)Native.BackgroundAudio(next.Take(4).Max(),next.Skip(4).Take(4).Average(),next.Skip(8).Max(),(float)Station.AudioIntensity);
         else Native.BackgroundAudio(0,0,0,0);
@@ -52,16 +53,56 @@ internal sealed class DeskSurface : Surface
     }
     void Weather()
     {
-        double y=(Height-112)/2;bool compact=Width<600;
+        // The strip only appears when the dock is tall enough for it; below that the
+        // dock keeps exactly its former rendering.
+        bool tall=Height>=190;
+        double y=tall?18:(Height-112)/2;bool compact=Width<600;string rain=Native.Read("weatherRain");
         Image(System.IO.Path.Combine(Station.Assets,"Desk/Icons",Native.Read("weatherIcon")+".png"),20,y+20,48,48);
         Hit("WeatherRefresh",16,y+14,56,62,()=>Native.DeskCommand("WeatherRefresh"));
         Text(Native.Read("weatherTemp"),80,y+18,32,font:DockAppearance.NumberFont);
         double x=compact?166:240;
         Text(Native.Read("weatherCity"),x,y+17,12,width:Width-x-(compact?20:160));
         Text(Native.Read("weatherCondition"),x,y+44,10,Muted,width:Width-x-(compact?20:160));
-        if(compact)Text(Native.Read("weatherRange")+" · "+Native.Read("weatherWind"),24,y+82,9,"#B8A8C5",width:Width-48);
-        else{Text(Native.Read("weatherRange"),Width-24,y+25,10,"#B8A8C5",align:"right");Text(Native.Read("weatherWind"),Width-24,y+54,10,Muted,align:"right");}
+        if(compact)Text(Native.Read("weatherRange")+" · "+Native.Read("weatherWind")+(rain.Length==0?"":" · "+rain),24,y+82,9,"#B8A8C5",width:Width-48);
+        else
+        {
+            Text(Native.Read("weatherRange"),Width-24,y+25,10,"#B8A8C5",align:"right");
+            Text(Native.Read("weatherWind"),Width-24,y+54,10,Muted,align:"right");
+            if(rain.Length>0)Text(rain,Width-24,y+80,10,"#A9F8FF",align:"right");
+        }
+        if(tall)Hourly(y+112);
     }
+    // Six hours, same source as the current conditions, drawn under the block.
+    void Hourly(double top)
+    {
+        var hours=Native.Read("weatherHours").Split(';',StringSplitOptions.RemoveEmptyEntries);
+        if(hours.Length==0)return;
+        if(hours.Length>6)hours=hours[..6];
+        double cell=(Width-48)/hours.Length;
+        for(int i=0;i<hours.Length;i++)
+        {
+            var parts=hours[i].Split(':');
+            if(parts.Length<4||!int.TryParse(parts[2],out int code))continue;
+            bool day=int.TryParse(parts[0],out int hour)&&hour>=7&&hour<=20;
+            double center=24+i*cell+cell/2;
+            Text(parts[0].PadLeft(2,'0')+" h",center,top+10,9,Muted,align:"center");
+            Image(System.IO.Path.Combine(Station.Assets,"Desk/Icons",WeatherIconName(code,day)+".png"),center-10,top+20,20,20);
+            double.TryParse(parts[3],System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out var chance);
+            // A high probability is readable in the temperature itself, no extra legend.
+            Text(parts[1]+"°",center,top+42,11,chance>=60?"#72E7D5FA":Ink,DockAppearance.NumberFont,align:"center");
+        }
+    }
+    // Same mapping as the native weather icons, expressed in file names.
+    static string WeatherIconName(int code,bool day)=>code switch
+    {
+        0=>day?"weather-sun":"weather-moon",
+        >=1 and <=3=>"weather-cloud",
+        45 or 48=>"weather-fog",
+        >=51 and <=67 or >=80 and <=82=>"weather-rain",
+        >=71 and <=77 or 85 or 86=>"weather-snow",
+        >=95 and <=99=>"weather-storm",
+        _=>"weather-unknown"
+    };
     void MediaCommand(string command,string capability){if(Native.Read(capability)=="1")Native.DeskCommand(command);}
     void Music()
     {
@@ -121,6 +162,7 @@ internal sealed class DeskSurface : Surface
             Text(ProjectName(Native.Read($"project:{i}:path"),Native.Read($"project:{i}:name")),x+14,yy+9,13.2,width:cell-28);
             var state=Station.Projects.Read(Native.Read($"project:{i}:path"));
             Text(state.Branch is null?Native.Read($"project:{i}:age"):ProjectStatus(state),x+14,yy+36,9.6,ProjectStatusColor(state),width:cell-28);
+            if(HasAgentTab(Native.Read($"project:{i}:path")))D.DrawEllipse(B("#8CFFFAFF"),null,new Point(x+cell-14,yy+15),3.4,3.4);
         }
         int total=(int)Math.Ceiling(ProjectCount/(double)cols);if(total>rows){double track=Height-76;Box(Width-12,54,3,track,"#305C4868",radius:2);Box(Width-12,54+track*projectRow/total,3,track*rows/total,"#A0DAC3E5",radius:2);}
     }
@@ -169,7 +211,20 @@ internal sealed class DeskSurface : Surface
             D.DrawRoundedRectangle(null,new Pen(light,1.5),rect,22,22);
         }
     }
+    // Heuristic badge: an open terminal tab carrying the project folder name.
+    bool HasAgentTab(string path)
+    {
+        var name=System.IO.Path.GetFileName(path.TrimEnd('\\','/'));
+        return name.Length>1&&Station.Terminal?.HasTabNamed(name)==true;
+    }
     string ProjectName(string path,string name)=>string.Equals(path.TrimEnd('\\','/'),Station.Root.TrimEnd('\\','/'),StringComparison.OrdinalIgnoreCase)?"Battlestation":name;
-    static string ProjectStatus(ProjectSignal signal)=>string.Join(" · ",new[]{signal.Branch,signal.Changes.HasValue?(signal.Changes==0?"propre":$"{signal.Changes} modif."):null}.Where(x=>x is not null));
+    static string ProjectStatus(ProjectSignal signal)=>string.Join(" · ",new[]{signal.Branch,signal.Changes.HasValue?(signal.Changes==0?"propre":$"{signal.Changes} modif."):null,Divergence(signal),CommitAge(signal.LastCommit)}.Where(x=>x is not null));
+    static string? Divergence(ProjectSignal signal)=>signal.Ahead is null&&signal.Behind is null?null:$"↑{signal.Ahead??0} ↓{signal.Behind??0}";
+    static string? CommitAge(DateTimeOffset? commit)
+    {
+        if(commit is not{} moment)return null;
+        var minutes=(DateTimeOffset.Now-moment).TotalMinutes;
+        return minutes<1?"à l'instant":minutes<60?$"{(int)minutes} min":minutes<1440?$"{(int)(minutes/60)} h":$"{(int)(minutes/1440)} j";
+    }
     static string ProjectStatusColor(ProjectSignal signal)=>signal.Changes switch{0=>"#A6DFC0",>0=>"#F0C38B",_=>"#A89AB9"};
 }

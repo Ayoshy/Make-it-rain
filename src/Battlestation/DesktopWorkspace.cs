@@ -22,6 +22,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
     readonly Forms.NotifyIcon tray;
     readonly Window toolbar;
     bool editing,disposed;
+    SceneTransition scene=null!;
     int ticks;
     readonly Dictionary<string,long> renderRevisions=[];
     ulong coverRevision=ulong.MaxValue;
@@ -35,7 +36,8 @@ internal sealed partial class DesktopWorkspace : IDisposable
         surfaces=new(){["clock"]=new DeskSurface(station,DeskWidget.Clock),["weather"]=new DeskSurface(station,DeskWidget.Weather),
             ["apps"]=new DockSurface(station),["music"]=new DeskSurface(station,DeskWidget.Music),["projects"]=new DeskSurface(station,DeskWidget.Projects),
             ["terminal"]=new TerminalSurface(station),["countdown"]=new CountdownSurface(station),
-            ["hardware"]=new DashboardSurface(station,true),["usage"]=new DashboardSurface(station,false),["reminders"]=new ReminderSurface(station),["video"]=new VideoSurface(station),["audio"]=new AudioSurface(station),["bluetooth"]=new BluetoothSurface(station),["dualsense"]=new DualSenseSurface(station),["network"]=new NetworkSurface(station)};
+            ["hardware"]=new DashboardSurface(station,true),["usage"]=new DashboardSurface(station,false),["reminders"]=new ReminderSurface(station),["video"]=new VideoSurface(station),["audio"]=new AudioSurface(station),["bluetooth"]=new BluetoothSurface(station),["dualsense"]=new DualSenseSurface(station),["network"]=new NetworkSurface(station),
+            ["aquarium"]=new AquariumSurface(station),["ocean"]=new OceanSurface(station),["lol"]=new LolSurface(station),["shopping"]=new ShoppingSurface(station)};
         for(int i=0;i<DesktopTheme.Definitions.Length;i++)
         {
             var theme=DesktopTheme.Definitions[i];
@@ -46,9 +48,14 @@ internal sealed partial class DesktopWorkspace : IDisposable
         Native.BackgroundAppearance(station.Settings.AnimateBackground?1:0,(float)station.Settings.GlassOpacity);
         CreateEditGrids();
         foreach(var block in station.Layout.Blocks)CreateWindow(block);
+        scene=new SceneTransition(app.Dispatcher,Docks,alpha=>Native.BackgroundSceneFade((float)alpha),()=>station.Terminal?.SetVisible(false));
         station.DockChanged+=()=>Apply("apps");
         toolbar=CreateToolbar();
         tray=new Forms.NotifyIcon{Text="Battlestation",Icon=System.Drawing.SystemIcons.Application,Visible=true};
+        // Le radar d'achat survit au dock masqué : la veille continue et prévient
+        // par la zone de notification, jamais par un achat ou un message envoyé.
+        station.Shopping.Alert+=alert=>app.Dispatcher.BeginInvoke(()=>tray.ShowBalloonTip(8000,alert.Title,alert.Message,Forms.ToolTipIcon.Info));
+        station.Shopping.Start();
         var menu=new Forms.ContextMenuStrip();
         InitializeCommands();
         menu.Items.Add("Palette · Ctrl+Espace",null,(_,_)=>TogglePalette());
@@ -106,7 +113,14 @@ internal sealed partial class DesktopWorkspace : IDisposable
     }
     void CreateWindow(DesktopBlock block)
     {
-        var surface=surfaces[block.Id];var grid=new System.Windows.Controls.Grid();grid.Children.Add(surface);
+        var surface=surfaces[block.Id];var grid=new System.Windows.Controls.Grid();
+        // The aquarium water is its own layer under the drawings, so the shader runs
+        // on the water alone and never touches the fish or the plants.
+        if(surface is AquariumSurface tank)grid.Children.Add(tank.WaterLayer);
+        // The diorama water is its own layer under the dock: the shader runs on the
+        // water alone, and the block itself adds no panel over it.
+        if(surface is OceanSurface ocean)grid.Children.Add(ocean.WaterLayer);
+        grid.Children.Add(surface);
         var overlay=new Border{Background=Brush("#38251936"),BorderBrush=Brush("#DAC19BEA"),BorderThickness=new Thickness(2),CornerRadius=new CornerRadius(24),Cursor=Cursors.SizeAll,Visibility=Visibility.Collapsed};
         var header=new DockPanel{VerticalAlignment=VerticalAlignment.Top,Margin=new Thickness(14)};
         var remove=new Button{Content="×",Width=30,Height=30,ToolTip="Retirer ce bloc"};DockPanel.SetDock(remove,Dock.Right);remove.Click+=(_,_)=>HideBlock(block.Id);header.Children.Add(remove);
@@ -134,7 +148,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
     }
     void ClearGlass(string id)
     {
-        int[] slots=id switch{"clock"=>[0],"weather"=>[1],"apps"=>[2],"music"=>[3],"projects"=>[4,8],"terminal"=>[5],"hardware"=>[6],"usage"=>[7],"video"=>[9],"audio"=>[10],"reminders"=>[11],"bluetooth"=>[12],"dualsense"=>[13],"network"=>[14],_=>[]};
+        int[] slots=id switch{"clock"=>[0],"weather"=>[1],"apps"=>[2],"music"=>[3],"projects"=>[4,8],"terminal"=>[5],"hardware"=>[6],"usage"=>[7],"video"=>[9],"audio"=>[10],"reminders"=>[11],"bluetooth"=>[12],"dualsense"=>[13],"network"=>[14],"aquarium"=>[15],"lol"=>[16],"ocean"=>[17],"shopping"=>[18],_=>[]};
         foreach(int slot in slots)Native.BackgroundPanel(slot,0,0,0,0);
     }
     void Apply(string id,bool arrange=true,bool refresh=true)
@@ -149,6 +163,9 @@ internal sealed partial class DesktopWorkspace : IDisposable
         if(surface is AudioSurface mixer)mixer.SetActive(block.Visible&&!editing);
         if(surface is DualSenseSurface controller)controller.SetActive(block.Visible&&!editing&&exposed.Contains(id));
         if(surface is NetworkSurface network)network.SetActive(block.Visible&&!editing&&exposed.Contains(id));
+        if(surface is AquariumSurface tank)tank.SetActive(block.Visible&&!editing&&exposed.Contains(id));
+        if(surface is OceanSurface diorama)diorama.SetActive(block.Visible&&!editing&&exposed.Contains(id));
+        if(surface is LolSurface league)league.SetActive(block.Visible&&!editing&&exposed.Contains(id));
         if(id=="projects"){Native.DeskProjectsActive(block.Visible?1:0);station.Projects.Watch(station.ProjectRoot,block.Visible,name=>Native.DeskCommand("ProjectChanged:"+name));}
         if(id=="terminal")
         {
@@ -173,10 +190,13 @@ internal sealed partial class DesktopWorkspace : IDisposable
         ((AudioSurface)surfaces["audio"]).SetActive(station.Layout["audio"].Visible&&!value);
         ((DualSenseSurface)surfaces["dualsense"]).SetActive(exposed.Contains("dualsense")&&!value);
         ((NetworkSurface)surfaces["network"]).SetActive(exposed.Contains("network")&&!value);
+        ((AquariumSurface)surfaces["aquarium"]).SetActive(exposed.Contains("aquarium")&&!value);
+        ((OceanSurface)surfaces["ocean"]).SetActive(exposed.Contains("ocean")&&!value);
+        ((LolSurface)surfaces["lol"]).SetActive(exposed.Contains("lol")&&!value);
         station.Terminal?.SetVisible(station.Layout["terminal"].Visible&&!editing);
         if(value){var screen=station.Layout.AvailableScreens.Last();toolbar.Left=screen.Left+(screen.Width-toolbar.Width)/2;toolbar.Top=744;toolbar.Show();toolbar.Activate();}else{toolbar.Hide();station.Layout.Save();}
     }
-    object Inspect()=>new{pid=Environment.ProcessId,mode="desktop",editing,profile=profiles.Current,displays=new{connectedScreens,singleScreen=station.Layout.SingleScreen,profiles.ReturnScene,error=displayError},theme=DesktopTheme.Current.Id,terminalThemeSupported=station.Terminal?.ThemeSupported,rendering=new{monitorMask,exposed=exposed.ToArray(),counts=surfaces.ToDictionary(p=>p.Key,p=>p.Value.RenderCount)},layoutOptions=new{station.Settings.GridEnabled,station.Settings.GridStep,station.Settings.LinkDocks},terminalPid=station.Terminal?.Pid,palette=new{open=palette?.IsVisible==true,hotkeyRegistered=paletteHotkey.Registered,hotkeyError=paletteHotkey.Error},settingsOpen=settingsWindow?.IsVisible==true,weather=new{temperature=Native.Read("weatherTemp"),condition=Native.Read("weatherCondition"),at=Native.Read("weatherTime")},blocks=station.Layout.Blocks,windows=placement.Inspect(),hits=surfaces.ToDictionary(p=>p.Key,p=>p.Value.InspectHits())};
+    object Inspect()=>new{pid=Environment.ProcessId,mode="desktop",editing,profile=profiles.Current,scene=new{phase=scene.State,busy=scene.Busy,alpha=scene.GlassAlpha,applyMs=Math.Round(scene.LastApplyMilliseconds,1)},displays=new{connectedScreens,singleScreen=station.Layout.SingleScreen,profiles.ReturnScene,error=displayError},theme=DesktopTheme.Current.Id,terminalThemeSupported=station.Terminal?.ThemeSupported,rendering=new{monitorMask,exposed=exposed.ToArray(),counts=surfaces.ToDictionary(p=>p.Key,p=>p.Value.RenderCount)},layoutOptions=new{station.Settings.GridEnabled,station.Settings.GridStep,station.Settings.LinkDocks},terminalPid=station.Terminal?.Pid,palette=new{open=palette?.IsVisible==true,hotkeyRegistered=paletteHotkey.Registered,hotkeyError=paletteHotkey.Error},settingsOpen=settingsWindow?.IsVisible==true,weather=new{temperature=Native.Read("weatherTemp"),condition=Native.Read("weatherCondition"),at=Native.Read("weatherTime"),hours=Native.Read("weatherHours"),rain=Native.Read("weatherRain")},lol=((LolSurface)surfaces["lol"]).Inspect(),aquarium=((AquariumSurface)surfaces["aquarium"]).Inspect(),ocean=((OceanSurface)surfaces["ocean"]).Inspect(),blocks=station.Layout.Blocks,windows=placement.Inspect(),hits=surfaces.ToDictionary(p=>p.Key,p=>p.Value.InspectHits())};
     string Command(string command)
     {
         if(command=="inspect")return JsonSerializer.Serialize(Inspect());
@@ -187,6 +207,23 @@ internal sealed partial class DesktopWorkspace : IDisposable
         if(command=="dualsense-inspect")return JsonSerializer.Serialize(((DualSenseSurface)surfaces["dualsense"]).Inspect());
         if(command=="bluetooth-inspect")return JsonSerializer.Serialize(((BluetoothSurface)surfaces["bluetooth"]).Inspect());
         if(command=="apps-inspect")return JsonSerializer.Serialize(((DockSurface)surfaces["apps"]).InspectActivity());
+        if(command=="shopping-inspect")return JsonSerializer.Serialize(new
+        {
+            query=station.Shopping.Query,busy=station.Shopping.Busy,status=station.Shopping.Status,error=station.Shopping.Error,revision=station.Shopping.Revision,
+            results=station.Shopping.Results.Select(row=>new{title=row.Title,shop=row.Shop,price=row.Price,url=row.Url,watched=row.Watched,
+                verdict=row.Hit.Verdict.Label,decision=row.Hit.Verdict.Decision.ToString(),confidence=Math.Round(row.Hit.Verdict.Confidence,2),
+                target=row.Hit.Verdict.TargetPrice,criteria=row.Hit.CriteriaText,reasons=row.Hit.Verdict.Reasons,image=row.ImagePath}),
+            watchlist=station.Shopping.Watchlist.Select(row=>new{title=row.Title,shop=row.Shop,price=row.Price,target=row.Item.Watch.TargetPrice,
+                nextCheck=row.Item.Watch.NextCheck,failures=row.Item.Watch.Failures,url=row.Product.Url})
+        });
+        if(command.StartsWith("shopping-search:"))
+        {
+            var request=command[16..].Trim();
+            if(request.Length==0)throw new ArgumentException("Demande vide");
+            _=station.Shopping.SearchAsync(request);
+            return "OK";
+        }
+        if(command=="shopping-recheck"){_=station.Shopping.RecheckAsync();return "OK";}
         if(command.StartsWith("gpu-settings:"))
         {
             var parts=command.Split(':');
@@ -220,6 +257,15 @@ internal sealed partial class DesktopWorkspace : IDisposable
         }
         if(command.StartsWith("drawer:")&&int.TryParse(command[7..],out int drawer)&&drawer is >=1 and <=5){((DashboardSurface)surfaces[drawer<=2?"hardware":"usage"]).Toggle(drawer);return "OK";}
         if(command=="capture"){Native.BackgroundCapture();return "OK";}
+        if(command.StartsWith("ocean-stir:"))
+        {
+            var parts=command.Split(':');
+            if(parts.Length!=4||!double.TryParse(parts[1],System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out double x)
+                ||!double.TryParse(parts[2],System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out double z)
+                ||!double.TryParse(parts[3],System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out double amplitude))
+                throw new ArgumentException("Perturbation invalide");
+            ((OceanSurface)surfaces["ocean"]).Stir(x,z,amplitude);return "OK";
+        }
         throw new InvalidOperationException("Commande inconnue");
     }
     void Tick()
@@ -235,6 +281,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
         if(!editing&&(exposed.Contains("bluetooth")||batteryNeeded))bluetooth.Poll(controllerOnly:!exposed.Contains("bluetooth"));
         if(batteryNeeded)controller.SetBluetoothBattery(bluetooth.ControllerBattery);else controller.SetBluetoothBattery(null);
         if(ticks%4==0&&exposed.Contains("network"))((NetworkSurface)surfaces["network"]).Poll();
+        if(!editing&&exposed.Contains("lol"))((LolSurface)surfaces["lol"]).Poll();
         if(++ticks%4==0){if(station.Layout["music"].Visible){var revision=Native.DeskRevision(3);if(revision!=coverRevision){coverRevision=revision;station.RefreshCover();}}station.Terminal?.Update();}
         placement.SetExternalWindow(station.Terminal?.RemoteHandle??0,new WindowInteropHelper(windows["terminal"]).Handle);
         foreach(var pair in surfaces)
@@ -248,7 +295,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
                 "hardware"=>station.Backend.Revision(true),"usage"=>station.Backend.Revision(false),"reminders"=>station.Reminders.GetHashCode(),
                 "terminal"=>HashCode.Combine(station.Terminal?.Revision,station.Terminal?.RemoteHandle,station.Terminal?.UseGlassTabs),
                 "apps"=>station.Apps.GetHashCode(),_=>0};
-            if(pair.Key is "audio" or "video" or "dualsense" or "network")continue;
+            if(pair.Key is "audio" or "video" or "dualsense" or "network" or "aquarium" or "ocean" or "lol")continue;
             if(!renderRevisions.TryGetValue(pair.Key,out var previous)||revision!=previous){renderRevisions[pair.Key]=revision;pair.Value.Refresh();}
         }
         if(ticks%20==0)Battlestation.Core.DiagnosticFile.Write(Path.Combine(station.Data,"host-state.json"),JsonSerializer.Serialize(Inspect()));
@@ -269,6 +316,9 @@ internal sealed partial class DesktopWorkspace : IDisposable
         ((AudioSurface)surfaces["audio"]).SetActive(exposed.Contains("audio")&&!editing);
         ((DualSenseSurface)surfaces["dualsense"]).SetActive(exposed.Contains("dualsense")&&!editing);
         ((NetworkSurface)surfaces["network"]).SetActive(exposed.Contains("network")&&!editing);
+        ((AquariumSurface)surfaces["aquarium"]).SetActive(exposed.Contains("aquarium")&&!editing);
+        ((OceanSurface)surfaces["ocean"]).SetActive(exposed.Contains("ocean")&&!editing);
+        ((LolSurface)surfaces["lol"]).SetActive(exposed.Contains("lol")&&!editing);
         ((VideoSurface)surfaces["video"]).SetOccluded(!exposed.Contains("video"));
         bool listen=station.ReactiveAudio&&monitorMask!=0||exposed.Contains("music")&&Native.Read("playing")=="1";
         if(listen){if(!audio.IsEnabled)audio.Start();}else{audio.Stop();((DeskSurface)surfaces["music"]).Audio.Stop();Native.BackgroundAudio(0,0,0,0);}
@@ -276,11 +326,13 @@ internal sealed partial class DesktopWorkspace : IDisposable
     public void Dispose()
     {
         EndGesture(false);CompositionTarget.Rendering-=RenderGesture;foreach(var grid in editGrids)grid.Close();
+        scene.Dispose();
         disposed=true;displayChange?.Stop();Microsoft.Win32.SystemEvents.DisplaySettingsChanged-=DisplaySettingsChanged;placement.VisibilityChanged-=UpdateVisibility;Microsoft.Win32.SystemEvents.SessionSwitch-=SessionSwitch;control.Dispose();timer.Stop();audio.Stop();palette?.Dismiss(false);settingsWindow?.Close();paletteHotkey.Dispose();tray.Dispose();toolbar.Close();
         placement.Dispose();((DockSurface)surfaces["apps"]).Dispose();foreach(var desk in surfaces.Values.OfType<DeskSurface>())desk.Audio.Dispose();
         ((VideoSurface)surfaces["video"]).Dispose();
         ((AudioSurface)surfaces["audio"]).Dispose();((BluetoothSurface)surfaces["bluetooth"]).Dispose();
         ((DualSenseSurface)surfaces["dualsense"]).Dispose();((NetworkSurface)surfaces["network"]).Dispose();
+        ((AquariumSurface)surfaces["aquarium"]).Dispose();((OceanSurface)surfaces["ocean"]).Dispose();((LolSurface)surfaces["lol"]).Dispose();
         mediaClipboard.Dispose();reserveWindow?.Close();
         Native.BackgroundStop();station.Terminal?.Detach();
     }

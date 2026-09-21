@@ -5,6 +5,26 @@ Une application dont le processus est identifié prend le matériau néon Vice C
 Une fenêtre réduite ou en arrière-plan reste une application en cours. Fermer
 une fenêtre peut laisser l'application fonctionner dans la zone de notification.
 
+## États de fenêtre
+
+Une seule passe `EnumWindows` par analyse, hors du fil d'interface, classe
+chaque application en cours en quatre états, exposés par `apps-inspect`
+(`window`) et rappelés au survol :
+
+| État | Rendu | Signification |
+| --- | --- | --- |
+| Premier plan | néon vif et liseré clair | une de ses fenêtres a le focus |
+| Arrière-plan | néon actuel | fenêtre visible, non focalisée |
+| Réduit | néon atténué (0,55) | uniquement des fenêtres réduites |
+| Tray | nacré et point discret (0,35) | processus vivant sans fenêtre de premier niveau |
+
+Les intensités 1 / 0,82 / 0,55 / 0,35 n'agissent que sur le matériau ; aucune
+icône n'est redessinée, aucun texte n'est ajouté et les cibles de clic ne
+changent pas. Une analyse qui échoue laisse l'état de fenêtre vide (`None`) et
+conserve le matériau courant. Le classement se fait par PID, à partir du
+processus qui a identifié l'application : une application non résolue garde son
+état inconnu.
+
 ## Référence visuelle
 
 Recherche effectuée dans toutes les branches, le reflog, les assets et les

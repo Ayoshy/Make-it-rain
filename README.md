@@ -9,12 +9,16 @@ liquid glass et terminal natif ConPTY. Les widgets restent au niveau du bureau,
 derrière les applications ordinaires.
 
 Blocs indépendants : horloge, météo, applications, lecteur, projets, terminal,
-compteur Vice City, matériel, compteurs Codex, solde DeepSeek, Nudge, vidéo, audio, Bluetooth et
-DualSense et Réseau. Le compteur Vice City peut être retiré sans toucher au reste.
+compteur Vice City, matériel, compteurs Codex, solde DeepSeek, Nudge, vidéo, audio, Bluetooth,
+DualSense, Réseau, Achats, Aquarium, Diorama Océan et LoL. Le compteur Vice City peut être retiré sans
+toucher au reste.
 
 - **Applications** : cliquer une app déjà lancée réaffiche sa fenêtre existante,
   en la restaurant si elle est réduite. Les clics rapprochés pendant le démarrage
-  ne lancent pas plusieurs instances.
+  ne lancent pas plusieurs instances. Une icône en cours précise aussi la fenêtre :
+  néon vif et liseré clair au premier plan, néon actuel en arrière-plan, néon
+  atténué quand la fenêtre est réduite, nacré avec un point discret pour une
+  application en zone de notification.
 - Clic droit sur un bloc → **Réorganiser**. Glisser le bloc pour le déplacer,
   ou ses bords/coins pour le redimensionner. **Lier les docks**, dans la barre,
   active le redimensionnement partagé et la poussée des voisins. Cette liaison
@@ -31,23 +35,29 @@ DualSense et Réseau. Le compteur Vice City peut être retiré sans toucher au r
 - **Terminer** quitte l’édition. La disposition est sauvegardée automatiquement.
 - **Scènes**, dans la palette, les réglages, le menu de notification et Réorganiser,
   conserve **Personnel**, **Jeu**, **Création**, **Cinéma**, **Focus**, **Multimédia**,
-  **Double écran** et les scènes personnelles déjà enregistrées. Chaque scène
-  retrouve ses déplacements, tailles, docks visibles, thème, transparence,
-  animation et réactivité musicale. Les gestes validés sont sauvegardés automatiquement.
+  **Double écran** et les scènes personnelles déjà enregistrées. Chaque scène porte
+  son ambiance — palette et fond natif — et retrouve ses déplacements, tailles,
+  docks visibles, transparence, animation et réactivité musicale. Terminal, projets
+  et vidéo restent visibles dans chaque scène ; Aquarium et Diorama Océan sont
+  masqués. Les gestes validés sont sauvegardés automatiquement.
+  Changer de scène dissout les docks et leur verre, applique l'agencement quand
+  plus rien n'est dessiné, puis les fait revenir en cascade depuis le haut ;
+  aucun dock ne glisse vers sa nouvelle place.
 - **Rétablir le modèle** réinitialise la scène courante ; **Sauver sous…** crée
   une copie personnelle en conservant la scène d’origine. Les scènes ne changent
   pas la sortie audio, le volume ou le mute et ne lancent aucune application.
 - Débrancher le secondaire active automatiquement **Mono écran** après une seconde
-  de stabilisation : horloge, applications, lecteur, audio, Bluetooth et terminal
-  sur le principal. Cette disposition conserve ses propres modifications. Rebrancher
-  le secondaire restaure exactement la scène précédente, y compris après un redémarrage.
-  **Mono écran** est aussi disponible dans **Scènes** pour préparer son agencement.
-  Les blocs retirés restent masqués et les sessions terminal restent ouvertes.
-- **Réglages → Apparence → Thème** : **Vice City**, **Obsidienne**, **Aurore**.
-  L’aperçu agit sur les docks, les menus WPF et le fond natif des deux écrans.
-  **Enregistrer** conserve le choix ; fermer restaure le dernier choix enregistré.
+  de stabilisation : horloge, applications, terminal, vidéo, projets, lecteur, audio
+  et Bluetooth sur le principal. Cette disposition conserve ses propres modifications.
+  Rebrancher le secondaire restaure exactement la scène précédente, y compris après
+  un redémarrage. **Mono écran** est aussi disponible dans **Scènes** pour préparer
+  son agencement. Les blocs retirés restent masqués et les sessions terminal restent
+  ouvertes.
+- **Réglages → Apparence** : transparence du verre, animation du fond et réactivité
+  musicale ; l’aperçu agit immédiatement et **Enregistrer** le conserve. L’ambiance
+  — palette et fond des deux écrans — vient de la scène et change avec elle.
   Les anciens hôtes terminal conservent leur habillage jusqu’à leur fermeture.
-  Voir [les thèmes, scènes et vérifications](docs/THEMES_SCENES.md).
+  Voir [les scènes et ambiances](docs/THEMES_SCENES.md).
 - **Vidéo** : choisir YouTube, Twitch ou Stremio, puis cliquer **Activer le miroir**.
   Un clic sur l'image commande lecture/pause ; **■** arrête le miroir et **↗**
   revient au lecteur. Voir [l'intégration Brave et Stremio](docs/VIDEO.md).
@@ -77,15 +87,51 @@ DualSense et Réseau. Le compteur Vice City peut être retiré sans toucher au r
 - **Réseau** : débits, courbes sur 60 secondes et latence vers une cible configurable.
   **Détail par application** demande une autorisation Windows et affiche les cinq
   exécutables les plus actifs. Voir [le fonctionnement du réseau](docs/NETWORK.md).
+- **Achats** : décrire une demande et un budget (« frigo max 800 €, no frost,
+  300 L, blanc »), voir les offres neuves de plusieurs boutiques avec un verdict
+  **achète / attends / surveille** argumenté, surveiller un article et être
+  prévenu quand son prix descend. Aucun achat ni message automatique ; le clic
+  ouvre l'annonce. Voir [le radar d'achat](docs/SHOPPING.md).
+- **Météo** : conditions du moment, plage du jour et vent depuis Open-Meteo.
+  À partir de 190 px de haut, une bande horaire de six cellules apparaît sous le
+  bloc (heure, icône jour/nuit, température) ; en dessous, le rendu reste celui
+  d'avant. La pluie imminente est annoncée près du vent (« Pluie maintenant »,
+  « Pluie dans 15 min »…) d'après les pas de 15 minutes.
+- **Aquarium** : bloc visuel et musical, sans réglage ni interaction. Eau teintée
+  par le thème, trois bandes de caustiques, deux massifs de plantes, bulles et
+  cinq à sept poissons qui dérivent, s'enroulent aux bords et se suivent
+  légèrement. L'image avance à ~30 images/s, uniquement quand le bloc est exposé
+  et non recouvert ; l'amplitude des caustiques et la vivacité des poissons
+  suivent le spectre du bloc Lecteur, sans stroboscope.
+- **Diorama Océan** : morceau d'océan coupé net, dont l'eau est un objet 3D
+  calculé par pixel sur le GPU (surface, faces latérales, réfraction du fond,
+  absorption selon l'épaisseur, écume). Caméra fixe, cadrage re-calculé au
+  redimensionnement. Au repos, rien ne bouge : le passage du curseur sur l'eau
+  laisse un sillage amorti, et le spectre du bloc Lecteur nourrit une houle de
+  basses et des rides d'aigus, sans seconde capture audio. Masqué ou occulté, il
+  ne calcule rien. Voir [le diorama](docs/OCEAN.md).
+- **LoL** : télémétrie de partie en cours, lue **uniquement** pendant une partie.
+  Champion et niveau, temps de partie, K/D/A, CS, or, **Respawn** en cas de mort,
+  et bandeau d'objectifs par équipe (dragons, barons, tourelles, inhibiteurs).
+  Seuls les minuteurs dérivables des événements sont affichés : **Dragon +5:00**
+  et **Baron +6:00** après le kill correspondant. Source unique, l'API locale du
+  client de jeu (`127.0.0.1:2999`), sans jeton ni fichier du jeu. États :
+  « Aucune partie », « En attente de la partie », « Télémétrie indisponible ».
+  Voir [les deux nouveaux docks](docs/AQUARIUM_LOL.md).
 - **Nudge** : texte Art déco, clic sur le rappel pour le modifier, **✓** pour
-  le terminer et **+** pour ajouter. Le passage au suivant apparaît seulement
-  lorsqu'il existe plusieurs rappels.
+  le terminer et **+** pour ajouter. La liste suit la hauteur du bloc
+  (`(hauteur - 96) / 44` rappels, borné à la liste) et pagine par **‹ / ›** avec
+  le compteur de page dès que les rappels dépassent la hauteur ; chaque ligne
+  reste cliquable et garde son **✓**. La molette change aussi de page.
 - Clic droit sur un onglet terminal : couleur, nom et titre automatique. Les états
   Codex ont un indicateur animé ; voir [les onglets](docs/TERMINAL_TABS.md).
 - Le terminal dispose de ses propres onglets PowerShell/Codex ; retirer son bloc
   masque son affichage et conserve ses sessions.
 - **Projets** : le statut Git est vert quand le dépôt est propre, ambre avec des
-  modifications, gris quand il est inconnu. Ouvrir un projet propose Explorateur,
+  modifications, gris quand il est inconnu. Chaque carte affiche la branche, les
+  fichiers modifiés, l'écart **↑avance / ↓retard** sur le suivi et l'âge du dernier
+  commit ; un point néon signale qu'un onglet terminal porte le nom du dossier du
+  projet (indice, pas une preuve d'activité). Ouvrir un projet propose Explorateur,
   Codex CLI (ChatGPT), Codex CLI (DS) et Kilo CLI (DS) ; les variantes (DS) utilisent
   DeepSeek, et Kilo ouvre un nouvel onglet du terminal sur le projet sélectionné
   et y démarre `kilo`.

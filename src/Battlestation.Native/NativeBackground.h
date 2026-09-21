@@ -10,6 +10,7 @@ void SetPalette(int index,const unsigned int* colors);
 void SetTheme(int index,bool immediate);
 void SetAppearance(bool animate,float opacity);
 void SetAudio(float bass,float middle,float treble,float intensity);
+void SetSceneFade(float alpha);
 void SetPanelFront(int slot);
 void SetGlass(float x,float conradY,float codexY,float width,float conradHeight,float codexHeight);
 void SetDockGlass(float x,float y,float width,float height);

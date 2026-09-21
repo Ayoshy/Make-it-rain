@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 
 namespace Battlestation;
@@ -17,6 +18,7 @@ internal sealed class DockSurface : Surface
     int rowOffset;
     readonly AppIcons appIcons=new();
     readonly Dictionary<DockApp,AppActivityState> activityStates=[];
+    readonly Dictionary<DockApp,AppWindowState> windowStates=[];
     readonly Dictionary<DockApp,double> materialFrom=[];
     readonly Dictionary<DockApp,double> materialTarget=[];
     readonly Dictionary<DockApp,DateTime> materialSince=[];
@@ -68,6 +70,7 @@ internal sealed class DockSurface : Surface
         {
             activityStates.Remove(app);materialFrom.Remove(app);materialTarget.Remove(app);materialSince.Remove(app);
         }
+        foreach(var app in windowStates.Keys.Where(app=>!Station.Apps.Contains(app)).ToArray())windowStates.Remove(app);
         Retarget(hover,0);hover=-1;ToolTip=null;Refresh();
     }
     // Called only by the workspace's UI timer. The continuation returns to that dispatcher.
@@ -95,6 +98,8 @@ internal sealed class DockSurface : Surface
         {
             changed|=!activityStates.TryGetValue(result.App,out var previous)||previous!=result.State;
             activityStates[result.App]=result.State;
+            changed|=!windowStates.TryGetValue(result.App,out var previousWindow)||previousWindow!=result.Window;
+            windowStates[result.App]=result.Window;
             if(result.State is not (AppActivityState.Running or AppActivityState.Stopped))continue;
             var next=result.State==AppActivityState.Running?1d:0d;
             var current=ActivityAmount(result.App);
@@ -125,16 +130,22 @@ internal sealed class DockSurface : Surface
             apps=Station.Apps.Select((app,index)=>
             {
                 var result=scan?.ResultFor(app);var rule=scan?.Rules.FirstOrDefault(rule=>rule.ConfigurationPath.Equals(Environment.ExpandEnvironmentVariables(app.Path),StringComparison.OrdinalIgnoreCase));
-                return new{name=app.Name,path=app.Path,state=activityStates.TryGetValue(app,out var state)?state.ToString():AppActivityState.Unknown.ToString(),material=ActivityAmount(app),matchedPath=result?.MatchedPath,resolution=rule is null?null:new{rule.Kind,rule.Resolved,rule.TargetPath,rule.CandidateNames,rule.ExactPaths,rule.Roots}};
+                return new{name=app.Name,path=app.Path,state=activityStates.TryGetValue(app,out var state)?state.ToString():AppActivityState.Unknown.ToString(),window=windowStates.TryGetValue(app,out var window)?window.ToString():AppWindowState.None.ToString(),material=ActivityAmount(app),matchedPath=result?.MatchedPath,resolution=rule is null?null:new{rule.Kind,rule.Resolved,rule.TargetPath,rule.CandidateNames,rule.ExactPaths,rule.Roots}};
             }).ToArray()
         };
     }
+    // The window state only modulates the existing material: vivid at the front,
+    // current in the background, dimmed when reduced and pearl with a dot in the tray.
+    static string WindowLabel(AppWindowState state)=>state switch{AppWindowState.Foreground=>"Premier plan",AppWindowState.Background=>"Arrière-plan",AppWindowState.Minimized=>"Réduit",AppWindowState.Tray=>"Tray",_=>"État inconnu"};
+    static double WindowIntensity(AppWindowState state)=>state switch{AppWindowState.Foreground=>1,AppWindowState.Minimized=>.55,AppWindowState.Tray=>.35,_=>.82};
     internal void Dispose(){disposed=true;Station.DockChanged-=AppsChanged;animation.Stop();}
     void UpdateToolTip()
     {
         if(hover<0||hover>=Station.Apps.Count){ToolTip=null;return;}
         var app=Station.Apps[hover];
-        ToolTip=activityStates.GetValueOrDefault(app)==AppActivityState.Unknown?$"{app.Name} · État inconnu":app.Name;
+        var state=activityStates.GetValueOrDefault(app);
+        ToolTip=state==AppActivityState.Running?$"{app.Name} · {WindowLabel(windowStates.GetValueOrDefault(app))}"
+            :state==AppActivityState.Unknown?$"{app.Name} · État inconnu":app.Name;
     }
     protected override void OnPointer(MouseEventArgs e)
     {
@@ -153,10 +164,13 @@ internal sealed class DockSurface : Surface
             double p=Math.Clamp((DateTime.UtcNow-since[i]).TotalMilliseconds/160,0,1);
             double size=72*(1+amount[i]/6-(press[i]?Math.Sin(p*Math.PI)*.065:0));y-=amount[i]*3;
             var runningPath=Path.Combine(Station.Root,"dock/icons/running",key+".png");var running=ActivityAmount(app);
-            if(File.Exists(path)){Image(path,x-size/2,y-size/2,size,size);if(running>0&&File.Exists(runningPath))Image(runningPath,x-size/2,y-size/2,size,size,running);}
-            else if(running>0&&File.Exists(runningPath))Image(runningPath,x-size/2,y-size/2,size,size,running);
+            var window=windowStates.GetValueOrDefault(app);var glow=running*WindowIntensity(window);
+            if(File.Exists(path)){Image(path,x-size/2,y-size/2,size,size);if(glow>0&&File.Exists(runningPath))Image(runningPath,x-size/2,y-size/2,size,size,glow);}
+            else if(glow>0&&File.Exists(runningPath))Image(runningPath,x-size/2,y-size/2,size,size,glow);
             else if(appIcons.Get(app.Path) is {} icon)D.DrawImage(icon,new Rect(x-size/2,y-size/2,size,size));
             else Text(string.IsNullOrEmpty(app.Name)?"?":app.Name[..1],x,y-22,26,align:"center");
+            if(running>0&&window==AppWindowState.Foreground)D.DrawRoundedRectangle(null,new Pen(B("#8CFFFAFF"),1.4),new Rect(x-size/2,y-size/2,size,size),18,18);
+            if(running>0&&window==AppWindowState.Tray)D.DrawEllipse(B("#DAD2E7"),null,new Point(x+size*.34,y-size*.34),2.6,2.6);
             int index=i;Hit("Launch:"+app.Name,x-40,iconPosition.Center.Y-40,80,80,()=>{Retarget(index,hover==index?1:0,true);Station.Launch(app);});
         }
         Button("ManageApps","+",Width-44,8,28,28,()=>OpenEditor(),14);

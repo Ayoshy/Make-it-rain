@@ -32,8 +32,8 @@ dans un espace libre ; la disposition est sauvegardée. Réutiliser les composan
 et matériaux communs (`Surface`, `DockAppearance`, styles partagés) et conserver
 les interactions existantes. Tout réglage visuel doit agir de façon perceptible
 sur le composant affiché, pas seulement sur une valeur sauvegardée.
-Le rendu glass reste commun ; couleurs et ambiance peuvent évoluer avec les
-thèmes, sans réimplémenter les docks ni créer un moteur générique par anticipation.
+Le rendu glass reste commun ; couleurs et ambiance évoluent avec les scènes,
+sans réimplémenter les docks ni créer un moteur générique par anticipation.
 
 L'interface ne se décrit pas elle-même : libellés fonctionnels, données et aide
 nécessaire, sans slogans ni sous-titres décoratifs. Effets visibles et soignés,

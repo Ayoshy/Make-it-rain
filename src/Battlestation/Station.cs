@@ -1,10 +1,13 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Battlestation.Core;
+using Battlestation.Shopping;
 
 namespace Battlestation;
 internal sealed record DockApp(string Name,string Path);
@@ -18,6 +21,9 @@ internal sealed class Station : IDisposable
     public List<DockApp> Apps {get;private set;}=[];
     public List<ReminderItem> Reminders {get;private set;}=[];
     public DesktopLayout Layout {get;}
+    /// <summary>Radar d'achat : recherche multi-boutiques, verdict et veille des prix.</summary>
+    internal ShoppingRadar Shopping {get;}
+    readonly ShoppingStore shoppingStore;
     internal ProjectSignals Projects {get;}
     internal MediaReserve Reserve {get;}
     internal event Action? ReserveRequested;
@@ -29,6 +35,9 @@ internal sealed class Station : IDisposable
     public DesktopSettings Settings {get;private set;}
     internal bool? PreviewReactiveAudio {get;set;}
     internal double? PreviewAudioIntensity {get;set;}
+    // Published by the music dock: the aquarium follows the same spectrum instead
+    // of opening a second audio capture.
+    internal float[] MusicBands{get;set;}=new float[12];
     internal bool ReactiveAudio=>PreviewReactiveAudio??Settings.ReactiveAudio;
     internal double AudioIntensity=>PreviewAudioIntensity??Settings.AudioIntensity;
     public string TargetDate {get;private set;}="";
@@ -69,6 +78,19 @@ internal sealed class Station : IDisposable
             try{Reminders=JsonSerializer.Deserialize<List<ReminderItem>>(File.ReadAllText(remindersPath),new JsonSerializerOptions{PropertyNameCaseInsensitive=true})??[];}
             catch(JsonException){Reminders=[];}
         Layout=new DesktopLayout(Path.Combine(Data,"layout.json"),Apps.Count);
+        shoppingStore=new ShoppingStore(Path.Combine(Data,"shopping.db"));
+        var shoppingFile=Path.Combine(Data,ShoppingSettingsStore.FileName);
+        // Le fichier existe dès le premier lancement : les seuils et le fournisseur
+        // se règlent sans chercher où ils sont écrits.
+        try{if(!File.Exists(shoppingFile))ShoppingSettingsStore.Save(shoppingFile,ShoppingSettings.Default);}
+        catch(Exception e) when(e is IOException or UnauthorizedAccessException){}
+        var shoppingSettings=ShoppingSettingsStore.Load(shoppingFile);
+        var http=new HttpClient{Timeout=Timeout.InfiniteTimeSpan};
+        var options=new PriceSourceOptions(Path.Combine(Data,"shopping-cache"));
+        List<IPriceSource> sources=shoppingSettings.Enabled
+            ?[new RueDuCommerceSource(http,options),new BoulangerSource(http,options)]
+            :[];
+        Shopping=new ShoppingRadar(new ShoppingService(shoppingStore,sources,shoppingSettings,Data,http),Data,Dispatcher.CurrentDispatcher);
     }
     public string M(string metric)=>Backend.Read(metric);
     internal void ApplyAppearance(DesktopProfile profile)
@@ -135,5 +157,5 @@ internal sealed class Station : IDisposable
         if(coverBytes is not null&&bytes.AsSpan().SequenceEqual(coverBytes))return;
         try{using var stream=new MemoryStream(bytes);var image=new BitmapImage();image.BeginInit();image.CacheOption=BitmapCacheOption.OnLoad;image.StreamSource=stream;image.EndInit();image.Freeze();Cover=image;coverBytes=bytes;}catch{Cover=null;coverBytes=null;}
     }
-    public void Dispose(){Reserve.Dispose();Projects.Dispose();Terminal?.Dispose();Native.DeskStop();Backend.Dispose();}
+    public void Dispose(){Shopping.Dispose();shoppingStore.Dispose();Reserve.Dispose();Projects.Dispose();Terminal?.Dispose();Native.DeskStop();Backend.Dispose();}
 }

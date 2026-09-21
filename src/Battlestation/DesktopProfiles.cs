@@ -25,7 +25,7 @@ internal sealed class DesktopProfiles
         {
             if(File.Exists(file)&&JsonSerializer.Deserialize<ProfileFile>(File.ReadAllText(file)) is {} saved)
             {
-                migrationPending=saved.Version<3;NeedsRedesign=saved.Version<4;
+                migrationPending=saved.Version<3;NeedsRedesign=saved.Version<5;
                 profiles=(saved.Profiles??[]).Where(p=>!string.IsNullOrWhiteSpace(p.Key)&&p.Value?.Blocks is not null).ToDictionary(p=>p.Key,p=>saved.Version<2?p.Value with{ThemeId="vice-city",TemplateId=Presets.Contains(p.Key)?p.Key:"Personnel"}:p.Value);
                 if(Names.Contains(saved.Current)||profiles.ContainsKey(saved.Current))Current=saved.Current;
                 ReturnScene=saved.ReturnScene;
@@ -95,7 +95,7 @@ internal sealed class DesktopProfiles
         var next=new Dictionary<string,DesktopProfile>(profiles);next.Remove(name);Persist(Current,next);profiles=next;
     }
     void Persist(string current,Dictionary<string,DesktopProfile> next)=>Persist(current,next,ReturnScene);
-    void Persist(string current,Dictionary<string,DesktopProfile> next,string? returnScene)=>DesktopSettings.Write(path,JsonSerializer.Serialize(new ProfileFile(current,next,4,returnScene),new JsonSerializerOptions{WriteIndented=true}));
+    void Persist(string current,Dictionary<string,DesktopProfile> next,string? returnScene)=>DesktopSettings.Write(path,JsonSerializer.Serialize(new ProfileFile(current,next,5,returnScene),new JsonSerializerOptions{WriteIndented=true}));
     internal DesktopProfile RedesignAll(DesktopLayout layout,DesktopSettings settings,int apps)
     {
         var baseline=new DesktopProfile(DesktopLayout.Defaults(apps),true,true,.55,.46);
@@ -123,42 +123,39 @@ internal sealed class DesktopProfiles
     {
         (string Id,double X,double Y,double W,double H)[] cells=name switch
         {
-            Mono=>[
-                ("clock",24,24,512,160),("apps",560,24,1976,160),
-                ("terminal",24,208,1704,1176),
-                ("music",1752,208,784,192),("audio",1752,424,784,352),
-                ("bluetooth",1752,800,784,280)],
             "Personnel"=>[
                 ("clock",2584,24,512,160),("apps",3120,24,1080,160),
-                ("projects",2584,208,584,408),("music",3192,208,1008,192),
-                ("weather",3192,424,480,192),("bluetooth",3696,424,504,192),
-                ("terminal",2584,640,1616,776),
-                ("network",4224,24,872,328),("hardware",4224,376,872,218),
-                ("usage",4224,618,872,218),("audio",4224,860,872,300),
-                ("reminders",4224,1184,872,232)],
+                ("terminal",2584,208,936,1208),
+                ("video",3544,208,656,369),("projects",3544,601,656,392),("music",3544,1017,656,192),
+                ("weather",3544,1233,376,183),("bluetooth",3944,1233,256,183),
+                ("network",4224,208,872,280),("hardware",4224,512,872,218),("usage",4224,754,872,218),
+                ("audio",4224,996,872,284),("reminders",4224,1304,872,112)],
             "Jeu"=>[
-                ("clock",2584,24,536,144),("apps",3144,24,1136,144),
-                ("dualsense",2584,192,1696,760),
-                ("network",4304,24,792,328),("hardware",4304,376,792,218),
-                ("usage",4304,618,792,218),("countdown",4304,860,792,556),
-                ("audio",2584,976,648,440),("music",3256,976,1024,184),
-                ("weather",3256,1184,488,232),("bluetooth",3768,1184,512,232)],
+                ("clock",2584,24,808,160),("dualsense",2584,208,808,560),("lol",2584,792,808,220),("audio",2584,1036,808,380),
+                ("apps",3416,24,808,160),("terminal",3416,208,808,1208),
+                ("video",4248,24,848,450),("projects",4248,498,848,300),("hardware",4248,822,848,218),
+                ("music",4248,1064,848,168),("bluetooth",4248,1256,848,160)],
             "Création"=>[
                 ("apps",2584,24,1696,144),("clock",4304,24,792,144),
-                ("terminal",2584,192,1696,1032),("projects",4304,192,792,504),
-                ("usage",4304,720,792,248),("network",4304,992,792,424),
-                ("music",2584,1248,1000,168),("reminders",3608,1248,672,168)],
+                ("terminal",2584,192,1696,912),
+                ("music",2584,1128,480,288),("usage",3088,1128,440,288),("reminders",3552,1128,728,288),
+                ("video",4304,192,792,445),("projects",4304,661,792,336),("network",4304,1021,792,395)],
             "Cinéma"=>[
+                ("terminal",24,24,1424,1392),
+                ("projects",1472,24,1064,648),("reminders",1472,696,1064,168),
+                ("weather",1472,888,520,218),("hardware",2016,888,520,218),
                 ("video",2584,24,1888,1062),("clock",4496,24,600,184),
-                ("network",4496,232,600,300),("audio",4496,556,600,416),
-                ("bluetooth",4496,996,600,420),
+                ("network",4496,232,600,300),("audio",4496,556,600,416),("bluetooth",4496,996,600,420),
                 ("music",2584,1110,1104,306),("apps",3712,1110,760,306)],
             "Focus"=>[
                 ("clock",2584,24,600,168),("reminders",3208,24,1216,168),
-                ("terminal",2584,216,1840,1200),("projects",4448,24,648,504),
-                ("network",4448,552,648,320),("usage",4448,896,648,224),
-                ("apps",4448,1144,648,272)],
+                ("terminal",2584,216,1096,1200),
+                ("video",3704,216,720,405),("music",3704,645,720,192),
+                ("weather",3704,861,376,193),("bluetooth",4104,861,320,193),("hardware",3704,1078,720,338),
+                ("projects",4448,24,648,504),("network",4448,552,648,320),
+                ("usage",4448,896,648,224),("apps",4448,1144,648,272)],
             "Multimédia"=>[
+                ("terminal",24,24,1424,1104),("projects",24,1152,1424,264),("reminders",1472,24,1064,168),
                 ("video",2584,24,1568,1128),("apps",2584,1176,1568,240),
                 ("clock",4176,24,440,168),("weather",4640,24,456,168),
                 ("music",4176,216,920,264),("audio",4176,504,920,420),
@@ -172,6 +169,11 @@ internal sealed class DesktopProfiles
                 ("hardware",3712,768,680,260),("usage",4416,768,680,260),
                 ("countdown",3712,1052,760,364),("weather",4496,1052,600,164),
                 ("bluetooth",4496,1240,600,176)],
+            Mono=>[
+                ("clock",24,24,512,160),("apps",560,24,1976,160),
+                ("terminal",24,208,1536,700),("video",1584,208,952,536),
+                ("projects",24,932,1536,484),("music",1584,932,464,232),
+                ("audio",1584,1188,464,228),("bluetooth",2072,932,464,484)],
             _=>throw new ArgumentException("Scène inconnue.")
         };
         return original.Select(block=>{

@@ -26,13 +26,17 @@ internal sealed partial class DesktopWorkspace
     {
         displayChange?.Stop();
         if(disposed)return;
+        scene.Request(ApplyDisplayChangeNow);
+    }
+    void ApplyDisplayChangeNow()
+    {
         // Cancel an unfinished drag or appearance preview before snapshotting the old scene.
         ClearEditHistory();settingsWindow?.Close();palette?.Dismiss(false);
         SetEditing(false);ReadDisplays();
         try
         {
-            if(profiles.MatchDisplays(connectedScreens==1,station.Layout,station.Settings) is {} scene)
-                station.ApplyAppearance(scene);
+            if(profiles.MatchDisplays(connectedScreens==1,station.Layout,station.Settings) is {} next)
+                station.ApplyAppearance(next);
             station.Layout.Save();displayError=null;
         }
         catch(Exception e) when(e is InvalidOperationException or ArgumentException or System.IO.IOException or UnauthorizedAccessException)

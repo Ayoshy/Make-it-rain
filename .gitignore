@@ -20,3 +20,5 @@ node_modules/
 /*.lib
 # Local icon comparison renders; runtime icons remain versioned.
 /dock/icons/neon/*-preview.png
+# Blender auto-backups next to the source assets.
+*.blend1

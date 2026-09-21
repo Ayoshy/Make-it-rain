@@ -16,6 +16,7 @@ internal sealed class TerminalSession : IDisposable
     ConsoleTitleInfo[] titles=[];
     int x=2700,y=760,w=1464,h=660;
     bool visible=true,starting,polling,disposed,placing,placementDirty,detached;
+    bool visibilityBusy,visibilityDirty;
     bool? sentExternalChrome;
     nint remoteHost;
     public int Pid {get;private set;}
@@ -25,6 +26,9 @@ internal sealed class TerminalSession : IDisposable
     string? sentTheme;
     public bool UseGlassTabs {get;private set;}
     public IReadOnlyList<TerminalTabInfo> Tabs {get;private set;}=[];
+    // Project badge heuristic: a tab whose title carries the folder name means an
+    // agent is likely working there. It is a hint, never an assertion.
+    public bool HasTabNamed(string name)=>name.Length>1&&Tabs.Any(tab=>tab.Title.Contains(name,StringComparison.OrdinalIgnoreCase));
     public long Revision {get;private set;}
     public event Action? HeaderChanged;
     public TerminalSession(Station s)
@@ -59,8 +63,21 @@ internal sealed class TerminalSession : IDisposable
         try{do{placementDirty=false;bool external=UseGlassTabs;if(sentExternalChrome!=external){await Send(external?"chrome:external":"chrome:internal");sentExternalChrome=external;}await Send($"place:{x}:{y}:{w}:{h}");}while(placementDirty&&!disposed);}catch(Exception e){Status=e.Message;}
         finally{placing=false;}
     }
-    public void SetVisible(bool show){if(visible==show)return;visible=show;if(remoteHost!=0)_=VisibilityAsync();}
-    async Task VisibilityAsync(){try{await Send(visible?"show":"hide");}catch{}}
+    public void SetVisible(bool show)
+    {
+        if(visible==show)return;
+        visible=show;
+        if(remoteHost==0)return;
+        // A scene change hides the terminal while the layout is applied and shows it
+        // again at the destination: only the last state must reach the host.
+        if(visibilityBusy){visibilityDirty=true;return;}
+        _=VisibilityAsync();
+    }
+    async Task VisibilityAsync()
+    {
+        visibilityBusy=true;
+        try{do{visibilityDirty=false;await Send(visible?"show":"hide");}while(visibilityDirty&&!disposed);}catch{}finally{visibilityBusy=false;}
+    }
     async Task EnsureHost(string command)
     {
         if(disposed||starting)return;starting=true;

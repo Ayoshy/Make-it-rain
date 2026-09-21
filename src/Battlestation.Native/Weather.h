@@ -7,12 +7,21 @@
 #include <cmath>
 #include <limits>
 #include <string>
+#include <vector>
 
+struct WeatherHour {
+    int hour=-1,code=-1;
+    double temperature=NAN,precipitation=NAN;
+    bool day=true;
+};
 struct DeskWeather {
     bool loaded=false,stale=false,day=true;
     double temperature=NAN,minimum=NAN,maximum=NAN,wind=NAN;
     int code=-1;
     std::wstring time;
+    std::vector<WeatherHour> hours;
+    double rain[4]={NAN,NAN,NAN,NAN};
+    int rainSteps=0;
 };
 inline std::wstring WeatherLabel(int code){
     if(code==0)return L"Ciel dégagé";if(code==1||code==2)return L"Éclaircies";if(code==3)return L"Nuageux";
@@ -28,6 +37,12 @@ inline std::wstring WeatherIcon(int code,bool day){
     if((code>=71&&code<=77)||code==85||code==86)return L"weather-snow";if(code>=95&&code<=99)return L"weather-storm";
     return L"weather-unknown";
 }
+// Ready-to-display text for the next quarter of an hour: nothing, now, or the delay.
+inline std::wstring RainLabel(const DeskWeather& weather){
+    for(int step=0;step<4;step++)if(std::isfinite(weather.rain[step])&&weather.rain[step]>=.1)
+        return step==0?L"Pluie maintenant":L"Pluie dans "+std::to_wstring(step*15)+L" min";
+    return L"";
+}
 inline DeskWeather ParseWeather(const std::wstring& body){
     using namespace winrt::Windows::Data::Json;
     auto json=JsonObject::Parse(body);auto current=json.GetNamedObject(L"current");DeskWeather result;
@@ -38,6 +53,29 @@ inline DeskWeather ParseWeather(const std::wstring& body){
     if(json.HasKey(L"daily")){auto daily=json.GetNamedObject(L"daily");
         auto get=[&](const wchar_t* key){auto a=daily.GetNamedArray(key,JsonArray{});return a.Size()&&a.GetAt(0).ValueType()==JsonValueType::Number?a.GetNumberAt(0):NAN;};
         result.minimum=get(L"temperature_2m_min");result.maximum=get(L"temperature_2m_max");}
+    if(json.HasKey(L"hourly")){
+        auto hourly=json.GetNamedObject(L"hourly");
+        auto times=hourly.GetNamedArray(L"time",JsonArray{}),temperatures=hourly.GetNamedArray(L"temperature_2m",JsonArray{});
+        auto codes=hourly.GetNamedArray(L"weather_code",JsonArray{}),chances=hourly.GetNamedArray(L"precipitation_probability",JsonArray{});
+        for(uint32_t i=0;i<times.Size()&&result.hours.size()<6;i++){
+            if(times.GetAt(i).ValueType()!=JsonValueType::String)continue;
+            auto stamp=std::wstring(times.GetAt(i).GetString());
+            if(stamp.size()<13)continue;
+            WeatherHour item;
+            try{item.hour=std::stoi(stamp.substr(11,2));}catch(...){continue;}
+            if(item.hour<0||item.hour>23)continue;
+            auto number=[&](JsonArray values){return values.Size()>i&&values.GetAt(i).ValueType()==JsonValueType::Number?values.GetNumberAt(i):NAN;};
+            item.temperature=number(temperatures);item.code=(int)number(codes);item.precipitation=number(chances);
+            item.day=item.hour>=7&&item.hour<=20;
+            result.hours.push_back(item);
+        }
+    }
+    if(json.HasKey(L"minutely_15")){
+        auto amounts=json.GetNamedObject(L"minutely_15").GetNamedArray(L"precipitation",JsonArray{});
+        for(int i=0;i<4;i++){
+            if(amounts.Size()>(uint32_t)i&&amounts.GetAt(i).ValueType()==JsonValueType::Number){result.rain[i]=amounts.GetNumberAt(i);result.rainSteps=i+1;}
+        }
+    }
     result.loaded=true;return result;
 }
 inline DeskWeather FetchWeather(const std::wstring& latitude,const std::wstring& longitude,std::atomic<HINTERNET>& activeRequest,std::atomic<bool>& stopping){
@@ -45,7 +83,9 @@ inline DeskWeather FetchWeather(const std::wstring& latitude,const std::wstring&
     Handle session(WinHttpOpen(L"Battlestation/1.0",WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,nullptr,nullptr,0),WinHttpCloseHandle);
     if(!session)throw std::runtime_error("HTTP unavailable");WinHttpSetTimeouts(session.get(),2500,2500,2500,2500);
     Handle connection(WinHttpConnect(session.get(),L"api.open-meteo.com",INTERNET_DEFAULT_HTTPS_PORT,0),WinHttpCloseHandle);
-    auto path=L"/v1/forecast?latitude="+latitude+L"&longitude="+longitude+L"&current=temperature_2m,is_day,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&forecast_days=1&temperature_unit=celsius&wind_speed_unit=kmh&timezone=auto";
+    auto path=L"/v1/forecast?latitude="+latitude+L"&longitude="+longitude+L"&current=temperature_2m,is_day,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&forecast_days=1"
+        L"&hourly=temperature_2m,weather_code,precipitation_probability&forecast_hours=7&minutely_15=precipitation&forecast_minutely_15=4"
+        L"&temperature_unit=celsius&wind_speed_unit=kmh&timezone=auto";
     auto request=WinHttpOpenRequest(connection.get(),L"GET",path.c_str(),nullptr,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,WINHTTP_FLAG_SECURE);
     if(!request)throw std::runtime_error("Request unavailable");activeRequest=request;
     struct Cleanup{HINTERNET request;std::atomic<HINTERNET>& active;~Cleanup(){auto expected=request;if(active.compare_exchange_strong(expected,nullptr))WinHttpCloseHandle(request);}} cleanup{request,activeRequest};

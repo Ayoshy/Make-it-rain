@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Battlestation.Core/Battlestation.Core.csproj" />
+    <Project Path="src/Battlestation.Shopping/Battlestation.Shopping.csproj" />
     <Project Path="src/Battlestation.GpuHelper/Battlestation.GpuHelper.csproj" />
     <Project Path="src/Battlestation.VideoBridge/Battlestation.VideoBridge.csproj" />
     <Project Path="src/Battlestation.NetworkHelper/Battlestation.NetworkHelper.csproj" />
@@ -14,6 +15,7 @@
     <Project Path="tests/Battlestation.DockReview.Tests.csproj" />
     <Project Path="tests/Battlestation.Palette.Tests.csproj" />
     <Project Path="tests/Battlestation.Scenes.Tests.csproj" />
+    <Project Path="tests/Battlestation.Shopping.Tests.csproj" />
     <Project Path="tests/Battlestation.Network.Tests.csproj" />
   </Folder>
 </Solution>

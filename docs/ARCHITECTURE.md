@@ -80,6 +80,21 @@ réutilisées. Une politique d'occultation conserve les effets sur les écrans
 exposés, suspend les producteurs inutilisés et reprend après retour au bureau.
 L'analyse audio et la capture WGC ont leurs workers propriétaires ; aucune
 attente de périphérique ou de transfert GPU ne se fait dans leurs ticks WPF.
+Le Diorama Océan suit la même règle : son eau est tracée par pixel dans le
+shader du bloc (`Shaders/Ocean.fx`, `ps_3_0`), composée dans la fenêtre du dock
+au-dessus du verre natif, et sa boucle de rendu n'existe que pendant qu'une onde
+vit ou qu'un son est entendu. Voir [le diorama](OCEAN.md).
+
+Le radar d'achat sépare le dock de son moteur : `ShoppingSurface` et
+`ShoppingRadar` ne connaissent que `IShoppingEngine`, tandis que
+`Battlestation.Shopping` porte l'analyse de la demande, les adaptateurs de
+boutiques, le verdict et la veille. Les relevés datés et les veilles vivent dans
+`shopping.db` (SQLite, connexions non regroupées) ; `shopping.json` garde les
+seuils et le fournisseur de modèle. Les requêtes passent par un adaptateur par
+enseigne, espacées et mises en cache sur disque ; une boutique qui refuse la
+lecture est signalée comme telle. Le dock ne prend pas le focus clavier : la
+saisie se fait dans une fenêtre ancrée, comme l'édition d'un rappel. Voir [le
+radar d'achat](SHOPPING.md).
 
 Les diagnostics sont écrits en arrière-plan et tolèrent les erreurs disque.
 Le pipe de contrôle borne les messages, impose un délai par requête et évite
@@ -98,4 +113,4 @@ Les sources et assets utilisent des chemins relatifs au projet. Les réglages
 utilisateur sont dans `%LOCALAPPDATA%\Battlestation` ; la date cible déjà choisie
 reste prioritaire sur la valeur initiale de `desk/settings.json`.
 
-Les trois palettes embarquées, le protocole terminal de thème et la persistance des scènes sont décrits dans [THEMES_SCENES.md](THEMES_SCENES.md).
+Les palettes d'ambiance des scènes, le protocole terminal de thème et la persistance des scènes sont décrits dans [THEMES_SCENES.md](THEMES_SCENES.md).

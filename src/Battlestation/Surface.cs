@@ -55,10 +55,13 @@ internal abstract class Surface : FrameworkElement
     {
         D=dc;hits.Clear();if(!displayed)return;RenderCount++;
         // One frame for every dock; widgets supply only content and interactions.
-        if(dockSlot>=0){Panel();Glass(dockSlot,0,0,Width,Height);}
+        if(dockSlot>=0){if(DrawsPanel)Panel();Glass(dockSlot,0,0,Width,Height);}
         Paint();
     }
     protected abstract void Paint();
+    // A dock whose content is drawn by its own layer (the diorama water) keeps the
+    // native glass frame and registers its slot, but adds no panel over it.
+    protected virtual bool DrawsPanel=>true;
     protected static SolidColorBrush B(string color)=>DesktopTheme.Brush(color);
     static Pen Stroke(string color,double width){if(pens.TryGetValue((color,width),out var p))return p;p=new Pen(B(color),width);if(pens.Count>=256)pens.Clear();return pens[(color,width)]=p;}
     protected void Box(double x,double y,double w,double h,string fill,string stroke="#00000000",double radius=0,double thickness=1)=>D.DrawRoundedRectangle(B(fill),Stroke(stroke,thickness),new Rect(x,y,Math.Max(0,w),Math.Max(0,h)),radius,radius);

@@ -17,7 +17,7 @@ internal static class SingleScreenTests
         var dual=layout.Blocks.ToArray();var before=JsonSerializer.Deserialize<ProfileFile>(File.ReadAllText(profilePath))!;
         var mono=profiles.MatchDisplays(true,layout,settings);
         check(mono is not null&&profiles.Current==DesktopProfiles.Mono&&profiles.ReturnScene=="Bureau perso","Débranchement : scène mono et retour à la scène personnelle mémorisés");
-        check(layout.Blocks.Where(b=>b.Visible).Select(b=>b.Id).ToHashSet().SetEquals(["clock","apps","music","audio","bluetooth","terminal"]),"Mono : seulement les six docks demandés");
+        check(layout.Blocks.Where(b=>b.Visible).Select(b=>b.Id).ToHashSet().SetEquals(["clock","apps","terminal","video","projects","music","audio","bluetooth"]),"Mono : les huit docks demandés");
         check(layout.Blocks.Where(b=>b.Visible).All(b=>DesktopLayout.Screens[0].Contains(b.Bounds)),"Tous les docks mono tiennent sur le principal");
         check(mono!.ThemeId==settings.ThemeId&&mono.Glass==settings.GlassOpacity,"Le premier passage mono conserve l’apparence choisie");
         check(profiles.MatchDisplays(true,layout,settings) is null&&profiles.ReturnScene=="Bureau perso","Notifications répétées : aucune seconde bascule ni perte du retour");
@@ -26,7 +26,7 @@ internal static class SingleScreenTests
         check(rejected&&layout.Blocks.SequenceEqual(committed)&&profiles.Current==DesktopProfiles.Mono,"Une scène du secondaire ne remplace pas le mono sur un seul écran");
         var drag=new LayoutGesture(layout.Blocks,"clock",LayoutEdge.Move,new Point(60,60),true,8,false,layout.AvailableScreens);
         check(drag.Preview(new Point(3000,60)).Blocks.Where(b=>b.Visible).All(b=>DesktopLayout.Screens[0].Contains(b.Bounds)),"Le déplacement ne sort pas vers le secondaire absent");
-        layout.SetVisible("clock",false);
+        layout.SetVisible("video",false);
         check(layout.SetVisible("weather",true)&&DesktopLayout.Screens[0].Contains(layout["weather"].Bounds),"Ajouter un dock cherche sa place sur le principal");
         profiles.SaveCurrent(layout,settings);layout.Save();var customMono=layout.Blocks.ToArray();
         profiles=new DesktopProfiles(profilePath);layout=new DesktopLayout(layoutPath,11);
@@ -45,6 +45,6 @@ internal static class SingleScreenTests
         profiles.Switch(DesktopProfiles.Mono,layout,settings);
         check(layout.SingleScreen&&layout.Blocks.SequenceEqual(customMono),"La scène mono peut aussi être préparée avec deux écrans");
         profiles.ResetTemplate(layout,settings,11);
-        check(layout.Blocks.Where(b=>b.Visible).Count()==6&&layout["clock"].Visible&&!layout["weather"].Visible,"Rétablir le modèle mono restaure les six docks sans toucher aux autres scènes");
+        check(layout.Blocks.Where(b=>b.Visible).Count()==8&&layout["clock"].Visible&&layout["terminal"].Visible&&layout["video"].Visible&&layout["projects"].Visible&&!layout["weather"].Visible,"Rétablir le modèle mono restaure les huit docks sans toucher aux autres scènes");
     }
 }

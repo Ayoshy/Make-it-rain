@@ -15,8 +15,9 @@ internal sealed partial class DesktopWorkspace
         profiles=new DesktopProfiles(Path.Combine(station.Data,"profiles.json"));
         // An upgrade must snapshot the live scene, never redesign the user's saved scenes.
         profiles.SaveCurrent(station.Layout,station.Settings);
+        RedesignScenesOnce();
         ReadDisplays();
-        if(profiles.MatchDisplays(connectedScreens==1,station.Layout,station.Settings) is {} scene){station.ApplyAppearance(scene);station.Layout.Save();}
+        if(profiles.MatchDisplays(connectedScreens==1,station.Layout,station.Settings) is {} next){station.ApplyAppearance(next);station.Layout.Save();}
         station.Layout.Saved+=()=>{if(gesture is null)profiles.SaveCurrent(station.Layout,station.Settings);};
         station.SettingsChanged+=()=>{if(gesture is null)profiles.SaveCurrent(station.Layout,station.Settings);};
         mediaClipboard=new MediaClipboard(station.Reserve,()=>station.Settings.KeepMediaLinks);station.ClipboardRegistered=mediaClipboard.Registered;

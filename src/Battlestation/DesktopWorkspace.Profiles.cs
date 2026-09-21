@@ -5,7 +5,26 @@ namespace Battlestation;
 internal sealed partial class DesktopWorkspace
 {
     DesktopProfiles profiles=null!;
-    void SelectProfile(string name)
+    IReadOnlyList<SceneDock> Docks()=>windows.Select(pair=>new SceneDock(pair.Value,pair.Value.IsVisible)).ToArray();
+    // La refonte de format 5 remplace une fois les agencements enregistrés ; la copie
+    // horodatée garde l'état précédent. Un échec disque laisse le bureau démarrer et
+    // la refonte retentera au prochain lancement.
+    void RedesignScenesOnce()
+    {
+        if(!profiles.NeedsRedesign)return;
+        try
+        {
+            string file=Path.Combine(station.Data,"profiles.json");
+            if(File.Exists(file))File.Copy(file,Path.Combine(station.Data,"profiles-v4-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".json"),true);
+            var next=profiles.RedesignAll(station.Layout,station.Settings,station.Apps.Count);
+            station.ApplyAppearance(next);ApplyAll();station.Layout.Save();
+        }
+        catch(Exception e) when(e is IOException or UnauthorizedAccessException){}
+    }
+    // A scene is applied while the desktop is dissolved: the request only states the
+    // destination, and a choice made during the exit replaces the previous one.
+    void SelectProfile(string name)=>scene.Request(()=>SwitchScene(name));
+    void SwitchScene(string name)
     {
         try
         {
@@ -25,15 +44,17 @@ internal sealed partial class DesktopWorkspace
         try{profiles.SaveUser(name,station.Layout,station.Settings);SetEditing(false);}
         catch(Exception e) when(e is ArgumentException or IOException or UnauthorizedAccessException){MessageBox.Show(e.Message,"Scène",MessageBoxButton.OK,MessageBoxImage.Information);}
     }
-    void ResetSceneTemplate()
+    void ResetSceneTemplate()=>scene.Request(ResetSceneTemplateNow);
+    void ResetSceneTemplateNow()
     {
         settingsWindow?.Close();palette?.Dismiss(false);
         try{ClearEditHistory();var next=profiles.ResetTemplate(station.Layout,station.Settings,station.Apps.Count);station.ApplyAppearance(next);SetEditing(false);ApplyAll();station.Layout.Save();}
         catch(Exception e) when(e is ArgumentException or InvalidOperationException or IOException or UnauthorizedAccessException){MessageBox.Show(e.Message,"Scène",MessageBoxButton.OK,MessageBoxImage.Information);}
     }
-    void DeleteUserProfile(string name)
+    void DeleteUserProfile(string name)=>scene.Request(()=>DeleteUserProfileNow(name));
+    void DeleteUserProfileNow(string name)
     {
-        try{if(profiles.Current==name)SelectProfile("Personnel");profiles.DeleteUser(name);}
+        try{if(profiles.Current==name)SwitchScene("Personnel");if(profiles.Current!=name)profiles.DeleteUser(name);}
         catch(Exception e) when(e is ArgumentException or IOException or UnauthorizedAccessException){MessageBox.Show(e.Message,"Scène",MessageBoxButton.OK,MessageBoxImage.Information);}
     }
 }

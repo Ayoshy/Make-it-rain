@@ -21,6 +21,19 @@
     <EmbeddedResource Include="../src/Battlestation/Themes.json" LogicalName="Battlestation.Themes.json"/>
     <Compile Include="../src/Battlestation/DockAppearance.cs"/>
     <Compile Include="../src/Battlestation/ReminderSurface.cs"/>
+    <Compile Include="../src/Battlestation/DeskSurface.cs"/>
+    <Compile Include="../src/Battlestation/Spectrum.cs"/>
+    <Compile Include="../src/Battlestation/AudioEnvelope.cs"/>
+    <Compile Include="../src/Battlestation/AquariumSurface.cs"/>
+    <Compile Include="../src/Battlestation/WaterEffect.cs"/>
+    <Compile Include="../src/Battlestation/OceanSurface.cs"/>
+    <Compile Include="../src/Battlestation/OceanEffect.cs"/>
+    <Compile Include="../src/Battlestation/OceanCamera.cs"/>
+    <Resource Include="../src/Battlestation/Shaders/Water.ps" Link="Shaders/Water.ps"/>
+    <Resource Include="../src/Battlestation/Shaders/Ocean.ps" Link="Shaders/Ocean.ps"/>
+    <Compile Include="../src/Battlestation/LolSurface.cs"/>
+    <Compile Include="../src/Battlestation/LolTelemetry.cs"/>
+    <Compile Include="../src/Battlestation/ProjectSignals.cs"/>
     <Compile Include="../src/Battlestation/DockSurface.cs"/>
     <Compile Include="../src/Battlestation/AudioSurface.cs"/>
     <Compile Include="../src/Battlestation/AudioMixer.cs"/>
@@ -34,6 +47,10 @@
     <Compile Include="../src/Battlestation/BluetoothIconLayout.cs"/>
     <Compile Include="../src/Battlestation/BluetoothDevices.cs"/>
     <Compile Include="../src/Battlestation/BudsBattery.cs"/>
+    <Compile Include="../src/Battlestation/ShoppingSurface.cs"/>
+    <Compile Include="../src/Battlestation/ShoppingRadar.cs"/>
+    <Compile Include="../src/Battlestation.Shopping/ShoppingModels.cs"/>
+    <Compile Include="../src/Battlestation.Shopping/IShoppingEngine.cs"/>
     <Resource Include="../assets/Fonts/art-deco.ttf" Link="Assets/Fonts/art-deco.ttf"/>
   </ItemGroup>
 </Project>

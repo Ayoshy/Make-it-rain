@@ -3,12 +3,14 @@
   <ItemGroup>
     <Compile Include="ScenesTests.cs"/>
     <Compile Include="SingleScreenTests.cs"/>
+    <Compile Include="SceneTransitionTests.cs"/>
     <Compile Include="SettingsFixtures.cs"/>
     <Compile Include="../src/Battlestation/SettingsWindow.cs"/>
     <Compile Include="../src/Battlestation/OverlayStyle.cs"/>
     <Using Remove="System.Windows.Forms"/><Using Remove="System.Drawing"/>
     <Compile Include="../src/Battlestation/DesktopSettings.cs"/>
     <Compile Include="../src/Battlestation/DesktopProfiles.cs"/>
+    <Compile Include="../src/Battlestation/SceneTransition.cs"/>
     <Compile Include="../src/Battlestation/DesktopLayout.cs"/>
     <Compile Include="../src/Battlestation/LayoutGesture.cs"/>
     <Compile Include="../src/Battlestation/DesktopTheme.cs"/>
