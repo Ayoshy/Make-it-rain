@@ -3,6 +3,7 @@
   <ItemGroup>
     <Compile Include="TerminalCacheTests.cs"/>
     <Compile Include="../src/Battlestation/TerminalCacheActivity.cs"/>
+    <Compile Include="../src/Battlestation/TerminalRolloutPath.cs"/>
     <Compile Include="../src/Battlestation/TerminalTabs.cs"/>
     <Compile Include="../src/Battlestation/TerminalActivityIndicator.cs"/>
     <Compile Include="../src/Battlestation/TerminalTabPreferences.cs"/>

@@ -17,7 +17,7 @@ public sealed class VerdictEngine : IVerdictEngine
         var sources=new List<string>();
         if(product.Url.Length>0)sources.Add(product.Url);
         var points=history.Where(point=>point.Usable).OrderBy(point=>point.At).ToArray();
-        decimal? current=product.Price??points.LastOrDefault()?.Price;
+        decimal? current=product.Price;
         if(current is not {} price)
         {
             reasons.Add($"Aucun prix relevé chez {product.Shop}");
@@ -33,7 +33,7 @@ public sealed class VerdictEngine : IVerdictEngine
         if(target is {} wanted&&spec.MaxPrice is {} budget&&wanted>budget)target=budget;
 
         bool overBudget=spec.MaxPrice is {} max&&price>max;
-        var promo=upcoming.FirstOrDefault();
+        var promo=upcoming.FirstOrDefault(item=>item.Shop.Length==0||ShoppingText.Fold(item.Shop)==ShoppingText.Fold(product.Shop));
         if(promo is not null)sources.Add($"calendrier promo · {promo.Label} ({promo.DateText})");
 
         reasons.Add(enough
@@ -42,17 +42,17 @@ public sealed class VerdictEngine : IVerdictEngine
         if(spec.MaxPrice is {} limit)reasons.Add(overBudget
             ?$"Au-dessus du budget : {ShoppingText.Money(price)} > {ShoppingText.Money(limit)}"
             :$"Dans le budget : {ShoppingText.Money(price)} ≤ {ShoppingText.Money(limit)}");
-        if(target is {} goal&&price<=goal)
+        if(enough&&target is {} goal&&price<=goal)
         {
             string position=price<=floor
                 ?$"Au plancher observé ({ShoppingText.Money(floor)})"
-                :$"{(floor-price)/floor*100:N1} % sous le plancher";
+                :$"{(price-floor)/floor*100:N1} % au-dessus du plancher";
             reasons.Add($"{position} · cible {ShoppingText.Money(goal)}");
         }
         if(promo is not null)
         {
             int inDays=promo.Start.DayNumber-DateOnly.FromDateTime(DateTime.Today).DayNumber;
-            reasons.Add($"{promo.Label} dans {inDays} j ({promo.DateText}){(promo.DiscountHint>0?$" · remise annoncée ~{promo.DiscountHint*100:N0} %":"")}");
+            reasons.Add($"{promo.Label} dans {inDays} j ({promo.DateText}) · baisse non garantie sur cet article");
         }
 
         double confidence=Math.Min(.95,.35+.06*points.Length+(days>=30?.2:days>=14?.1:0));
@@ -60,12 +60,12 @@ public sealed class VerdictEngine : IVerdictEngine
 
         // Acheter exige un historique suffisant : un prix seul n'est jamais une bonne affaire démontrée.
         var decision=overBudget?VerdictDecision.Surveiller
-            :!enough?promo is not null?VerdictDecision.Attendre:VerdictDecision.Surveiller
+            :!enough?VerdictDecision.Surveiller
             :price<=target&&(promo is null||price<=floor)?VerdictDecision.Acheter
             :promo is not null&&price>floor?VerdictDecision.Attendre
             :VerdictDecision.Surveiller;
-        if(decision==VerdictDecision.Attendre&&!enough)reasons.Add("Historique trop court pour dire si le prix du jour est bon");
+        if(!enough)reasons.Add("Historique insuffisant pour conseiller d'acheter ou d'attendre");
         if(decision==VerdictDecision.Surveiller&&promo is null&&enough&&price>target)reasons.Add($"Attendu sous {ShoppingText.Money(target)} pour acheter maintenant");
-        return new(decision,confidence,reasons,sources,target);
+        return new(decision,confidence,reasons,sources,target,enough);
     }
 }

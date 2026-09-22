@@ -10,7 +10,7 @@ derrière les applications ordinaires.
 
 Blocs indépendants : horloge, météo, applications, lecteur, projets, terminal,
 compteur Vice City, matériel, compteurs Codex, solde DeepSeek, Nudge, vidéo, audio, Bluetooth,
-DualSense, Réseau, Achats, Aquarium, Diorama Océan et LoL. Le compteur Vice City peut être retiré sans
+DualSense, Réseau, Achats, Montagne et LoL. Le compteur Vice City peut être retiré sans
 toucher au reste.
 
 - **Applications** : cliquer une app déjà lancée réaffiche sa fenêtre existante,
@@ -33,16 +33,17 @@ toucher au reste.
 - L'icône Battlestation dans la zone de notification permet de réorganiser ou
   réafficher les blocs, même lorsque tous sont masqués.
 - **Terminer** quitte l’édition. La disposition est sauvegardée automatiquement.
-- **Scènes**, dans la palette, les réglages, le menu de notification et Réorganiser,
-  conserve **Personnel**, **Jeu**, **Création**, **Cinéma**, **Focus**, **Multimédia**,
-  **Double écran** et les scènes personnelles déjà enregistrées. Chaque scène porte
-  son ambiance — palette et fond natif — et retrouve ses déplacements, tailles,
-  docks visibles, transparence, animation et réactivité musicale. Terminal, projets
-  et vidéo restent visibles dans chaque scène ; Aquarium et Diorama Océan sont
-  masqués. Les gestes validés sont sauvegardés automatiquement.
-  Changer de scène dissout les docks et leur verre, applique l'agencement quand
-  plus rien n'est dessiné, puis les fait revenir en cascade depuis le haut ;
-  aucun dock ne glisse vers sa nouvelle place.
+- **Scènes**, dans la palette, les réglages, le menu de notification et Réorganiser :
+  **Bureau**, **Jeu**, **Multimédia** et **Mono écran**, plus les copies personnelles.
+  Chaque scène conserve ses positions, tailles, docks visibles, transparence,
+  animation et réactivité musicale. Bureau présente New York depuis une baie vitrée ;
+  Multimédia un fjord au crépuscule ; Jeu alterne les deux illustrations Jason/Lucia
+  toutes les cinq minutes visibles, avec deux secondes de fondu. La progression
+  survit au rechargement du bureau ; les animations désactivées la suspendent.
+  Terminal, Projets et Vidéo sont présents dans les quatre modèles. En Jeu, le
+  secondaire porte Vidéo, Terminal, Réseau, LoL et DualSense ; les autres blocs
+  sont sur le principal, où la fenêtre du jeu peut les recouvrir.
+  Changer de scène dissout les docks et leur verre puis les fait revenir en cascade.
 - **Rétablir le modèle** réinitialise la scène courante ; **Sauver sous…** crée
   une copie personnelle en conservant la scène d’origine. Les scènes ne changent
   pas la sortie audio, le volume ou le mute et ne lancent aucune application.
@@ -92,8 +93,8 @@ toucher au reste.
   **Détail par application** demande une autorisation Windows et affiche les cinq
   exécutables les plus actifs. Voir [le fonctionnement du réseau](docs/NETWORK.md).
 - **Achats** : décrire une demande et un budget (« frigo max 800 €, no frost,
-  300 L, blanc »), voir les offres neuves de plusieurs boutiques avec un verdict
-  **achète / attends / surveille** argumenté, surveiller un article et être
+  300 L, blanc »), comparer les modèles et les offres de plusieurs boutiques,
+  séparer les **Choix** vérifiés des **Pistes** encore incomplètes, surveiller un article et être
   prévenu quand son prix descend. Aucun achat ni message automatique ; le clic
   ouvre l'annonce. Voir [le radar d'achat](docs/SHOPPING.md).
 - **Météo** : conditions du moment, plage du jour et vent depuis Open-Meteo.
@@ -109,19 +110,14 @@ toucher au reste.
   socle et le liseré pulse sur les basses. Source, titre, artiste, temps,
   précédent/lecture/suivant et la recherche restent commandés par le lecteur
   Windows.
-- **Aquarium** : bloc visuel et musical, sans réglage ni interaction. Eau teintée
-  par le thème, trois bandes de caustiques, deux massifs de plantes, bulles et
-  cinq à sept poissons qui dérivent, s'enroulent aux bords et se suivent
-  légèrement. L'image avance à ~30 images/s, uniquement quand le bloc est exposé
-  et non recouvert ; l'amplitude des caustiques et la vivacité des poissons
-  suivent le spectre du bloc Lecteur, sans stroboscope.
-- **Diorama Océan** : morceau d'océan coupé net, dont l'eau est un objet 3D
-  calculé par pixel sur le GPU (surface, faces latérales, réfraction du fond,
-  absorption selon l'épaisseur, écume). Caméra fixe, cadrage re-calculé au
-  redimensionnement. Au repos, rien ne bouge : le passage du curseur sur l'eau
-  laisse un sillage amorti, et le spectre du bloc Lecteur nourrit une houle de
-  basses et des rides d'aigus, sans seconde capture audio. Masqué ou occulté, il
-  ne calcule rien. Voir [le diorama](docs/OCEAN.md).
+- **Montagne** : neige perpétuelle sur un pic enneigé, calculée par pixel sur le
+  GPU : ciel de nuit étoilé, lune basse, crête avec ses faces éclairées et
+  ombrées, couloirs de neige soufflée et éclats sur les congères. Des flocons
+  discrets tombent sans fin sur trois plans de profondeur ; le passage du
+  curseur les écarte doucement, et le spectre du bloc Lecteur lève le vent,
+  accélère la chute et fait scintiller la neige, sans seconde capture audio.
+  Masquée ou occultée, elle ne calcule rien. Voir
+  [la montagne](docs/MONTAGNE.md).
 - **LoL** : télémétrie de partie en cours, lue **uniquement** pendant une partie.
   Champion et niveau, temps de partie, K/D/A, CS, or, **Respawn** en cas de mort,
   et bandeau d'objectifs par équipe (dragons, barons, tourelles, inhibiteurs).
@@ -129,7 +125,7 @@ toucher au reste.
   et **Baron +6:00** après le kill correspondant. Source unique, l'API locale du
   client de jeu (`127.0.0.1:2999`), sans jeton ni fichier du jeu. États :
   « Aucune partie », « En attente de la partie », « Télémétrie indisponible ».
-  Voir [les deux nouveaux docks](docs/AQUARIUM_LOL.md).
+  Voir [le dock LoL](docs/LOL.md).
 - **Nudge** : texte Art déco, clic sur le rappel pour le modifier, **✓** pour
   le terminer et **+** pour ajouter. La liste suit la hauteur du bloc
   (`(hauteur - 96) / 44` rappels, borné à la liste) et pagine par **‹ / ›** avec
@@ -137,8 +133,8 @@ toucher au reste.
   reste cliquable et garde son **✓**. La molette change aussi de page.
 - Clic droit sur un onglet terminal : couleur, nom et titre automatique. Les états
   Codex ont un indicateur animé ; voir [les onglets](docs/TERMINAL_TABS.md).
-- Les onglets Codex portent un compte à rebours du cache de prompt (« ⏳ 12 min »
-  puis « cache expiré ») et leur fond se teinte tant qu'aucune couleur n'est
+- Les onglets Codex portent un compte à rebours estimé du cache de prompt (« ⏳ ≈ 12 min »
+  puis « cache incertain ») et leur fond se teinte tant qu'aucune couleur n'est
   choisie ; les onglets Codex (DS) affichent le taux de hit du cache.
 - Le terminal dispose de ses propres onglets PowerShell/Codex ; retirer son bloc
   masque son affichage et conserve ses sessions.
@@ -154,6 +150,9 @@ toucher au reste.
   flèches pour choisir, Entrée pour ouvrir, Échap pour revenir/fermer. Le préfixe
   **>** limite la recherche aux commandes. Un projet propose Explorateur, Codex CLI (ChatGPT),
   Codex CLI (DS) et Kilo CLI (DS) ; Kilo démarre le CLI dans le projet sélectionné.
+  La fenêtre garde sa taille pendant la recherche ; les icônes nacrées du dock
+  suivent le thème, sont chargées en arrière-plan et réutilisées. La colonne **Scènes** conserve
+  les aperçus des dispositions et distingue la scène active du survol.
 - **Réglages** est accessible dans la palette, le menu de notification et le clic
   droit d’un bloc : blocs visibles, applications, dossier des projets, météo,
   compteur, transparence du verre et animation du fond. L’apparence est prévisualisée

@@ -9,6 +9,15 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ShoppingTests.cs" />
+    <Compile Include="ShoppingLlmTests.cs" />
+    <Compile Include="ShoppingRelevanceTests.cs" />
+    <Compile Include="ShoppingAdvisorTests.cs" />
+    <Compile Include="ShoppingSourceExpansionTests.cs" />
+    <Compile Include="ShoppingPipelineTests.cs" />
+    <Compile Include="ShoppingWebTests.cs" />
+    <Compile Include="TavilySearchTests.cs" />
+    <Compile Include="ProductPageLinksTests.cs" />
+    <Compile Include="ShoppingUpgradeTests.cs" />
     <ProjectReference Include="../src/Battlestation.Shopping/Battlestation.Shopping.csproj" />
   </ItemGroup>
 </Project>

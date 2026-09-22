@@ -6,7 +6,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Threading;
 
 namespace Battlestation;
-internal sealed record TerminalTabInfo(Guid Id,string Title,bool Active,string? Accent=null,TerminalActivity Activity=TerminalActivity.Unknown,bool Effects=true,bool AutomaticTitle=true,string? SourceTitle=null,string? Badge=null,TerminalCacheHint CacheHint=TerminalCacheHint.None);
+internal sealed record TerminalTabInfo(Guid Id,string Title,bool Active,string? Accent=null,TerminalActivity Activity=TerminalActivity.Unknown,bool Effects=true,bool AutomaticTitle=true,string? SourceTitle=null,string? Badge=null,TerminalCacheHint CacheHint=TerminalCacheHint.None,string? CacheDetail=null);
 internal enum TerminalTabAction { Rename,Color,CustomColor,AutomaticTitle,Effects,Reset,StatusHelp }
 internal sealed class TerminalTabs : Grid
 {
@@ -26,7 +26,7 @@ internal sealed class TerminalTabs : Grid
     internal IReadOnlyList<TerminalTabInfo> Displayed=>current;
     static SolidColorBrush B(string color)=>DesktopTheme.Brush(color);
     // La teinte automatique suit le restant du cache ; une couleur choisie reste prioritaire.
-    internal static string? CacheTint(TerminalCacheHint hint)=>hint switch{TerminalCacheHint.Fresh=>"#7FD6A6",TerminalCacheHint.Aging=>"#E9BE81",TerminalCacheHint.Expiring=>"#EB9B9B",TerminalCacheHint.Expired=>"#948CA0",_=>null};
+    internal static string? CacheTint(TerminalCacheHint hint)=>hint switch{TerminalCacheHint.Fresh=>"#7FD6A6",TerminalCacheHint.Aging=>"#E9BE81",TerminalCacheHint.Expiring=>"#EB9B9B",TerminalCacheHint.Uncertain=>"#948CA0",_=>null};
     internal static string? EffectiveAccent(string? accent,TerminalCacheHint hint)=>TerminalTabPreferences.Color(accent)??CacheTint(hint);
     internal static string Status(TerminalActivity state)=>state switch{TerminalActivity.Thinking=>"Réflexion",TerminalActivity.Working=>"En cours",TerminalActivity.Ready=>"Prêt",TerminalActivity.Attention=>"Action requise",TerminalActivity.Error=>"Erreur",_=>"État non exposé"};
     public TerminalTabs()
@@ -39,7 +39,9 @@ internal sealed class TerminalTabs : Grid
         previous.Visibility=next.Visibility=Visibility.Collapsed;actions.Children.Add(previous);actions.Children.Add(next);
         actions.Children.Add(ActionButton("▣","Coller",()=>PasteRequested?.Invoke()));actions.Children.Add(ActionButton("+","Nouvel onglet",()=>Added?.Invoke()));
         scroll.ScrollChanged+=(_,_)=>{previous.Visibility=next.Visibility=scroll.ScrollableWidth>1?Visibility.Visible:Visibility.Collapsed;};
-        cacheTimer=new DispatcherTimer(TimeSpan.FromSeconds(10),DispatcherPriority.Background,(_,_)=>{if(current.Length>0&&IsVisible)CacheRefreshRequested?.Invoke();},Dispatcher);cacheTimer.Start();
+        cacheTimer=new DispatcherTimer(TimeSpan.FromSeconds(10),DispatcherPriority.Background,(_,_)=>{if(current.Length>0)CacheRefreshRequested?.Invoke();},Dispatcher);
+        IsVisibleChanged+=(_,_)=>{if(IsVisible){cacheTimer.Start();CacheRefreshRequested?.Invoke();}else cacheTimer.Stop();};
+        Unloaded+=(_,_)=>cacheTimer.Stop();
     }
     Style CreateButtonStyle()
     {
@@ -110,7 +112,7 @@ internal sealed class TerminalTabs : Grid
             select.MaxWidth=data.Badge is null?280:320;
             string color=data.Activity switch{TerminalActivity.Working=>"#9FD5F1",TerminalActivity.Ready=>"#A8E5CD",TerminalActivity.Attention=>"#FFCE8C",TerminalActivity.Error=>"#FFA3B4",_=>"#D2BDF1"};
             indicator.SetState(data.Activity,data.Effects);glow.BorderBrush=B(color);
-            Root.ToolTip=data.Title+"\n"+Status(data.Activity)+(data.Badge is null?"":"\n"+data.Badge);
+            Root.ToolTip=data.Title+"\n"+Status(data.Activity)+(data.Badge is null?"":"\n"+data.Badge)+(data.CacheDetail is null?"":"\n"+data.CacheDetail);
             if(changed)Animate();
         }
         public void Stop(){glow.BeginAnimation(OpacityProperty,null);glow.Opacity=0;}

@@ -12,9 +12,15 @@ public sealed partial class ShoppingSpecParser(ILlmClient? llm=null)
 {
     const string SystemPrompt=
         "Tu extrais une demande d'achat française en JSON strict, sans texte autour. "+
-        "Clés attendues : category (nom de produit au singulier, en minuscules), keywords (2 à 4 termes de recherche), "+
+        "Clés attendues : category (nom de produit au singulier, en minuscules), keywords (marque ou référence, sans répéter la catégorie ni les critères), "+
         "maxPrice (nombre en euros ou null), required (critères obligatoires), optional (critères souhaités). "+
-        "N'invente aucun prix ni aucune marque absente de la demande.";
+        "Garde le type précis demandé (aspirateur robot, pas aspirateur). Pour un appareil complet, n'ajoute pas de pièces ni d'accessoires. "+
+        "Les usages (surface du logement, animaux, cheveux) vont dans les critères, jamais dans keywords. Sans marque ni référence, keywords vaut []. "+
+        "Reformule chaque exigence séparément et de façon vérifiable. Pour deux portes réfrigérateur en haut et tiroirs congélateur en bas, cherche réfrigérateur multi-portes / French Door. "+
+        "Glacière dans cette formulation désigne le congélateur, pas un distributeur de glaçons. Ne déduis pas des tiroirs extérieurs si l'utilisateur ne le précise pas. "+
+        "N'invente aucun prix ni aucune marque absente de la demande. "+
+        "Exemple pour 'frigo max 800 €, no frost, 300 L, blanc' : "+
+        "{\"category\":\"réfrigérateur\",\"keywords\":[],\"maxPrice\":800,\"required\":[\"no frost\",\"300 L\",\"blanc\"],\"optional\":[]}";
 
     public ILlmClient? Model=>llm;
 
@@ -25,7 +31,7 @@ public sealed partial class ShoppingSpecParser(ILlmClient? llm=null)
         if(llm is null||string.IsNullOrWhiteSpace(request))return local;
         try
         {
-            var text=await llm.CompleteAsync(SystemPrompt,request,cancellation);
+            var text=await llm.CompleteAsync(ShoppingPrompts.Rules+SystemPrompt,request,cancellation);
             var draft=LlmJson.Extract<SpecDraft>(text);
             return draft is null?local:Merge(local,draft,request);
         }
@@ -38,10 +44,13 @@ public sealed partial class ShoppingSpecParser(ILlmClient? llm=null)
     static ShoppingSpec Merge(ShoppingSpec local,SpecDraft draft,string request)
     {
         var category=string.IsNullOrWhiteSpace(draft.Category)?local.Category:draft.Category.Trim().ToLowerInvariant();
+        if(local.Category=="aspirateur robot"&&ShoppingText.Fold(category)=="aspirateur")category=local.Category;
         var required=Clean(draft.Required) is {Length:>0} fromModel?fromModel:local.Required;
-        var keywords=Clean(draft.Keywords) is {Length:>0} modelKeywords?modelKeywords:local.Keywords;
+        // [] signifie que le modèle n'a retenu aucun mot-clé : ne pas réinjecter
+        // alors des mots de la phrase libre, comme « robot mon ».
+        var keywords=draft.Keywords is null?local.Keywords:Clean(draft.Keywords);
         var optional=Clean(draft.Optional) is {Length:>0} modelOptional?modelOptional:local.Optional;
-        decimal? budget=draft.MaxPrice is>0?draft.MaxPrice:local.MaxPrice;
+        decimal? budget=local.MaxPrice??(draft.MaxPrice is>0?draft.MaxPrice:null);
         return new(category,keywords,budget,required,optional,request);
     }
 
@@ -56,11 +65,12 @@ public sealed partial class ShoppingSpecParser(ILlmClient? llm=null)
     /// <summary>Analyse locale déterministe : budget, catégorie, volume, froid ventilé, couleur, classe énergie.</summary>
     public static ShoppingSpec Deterministic(string request)
     {
-        var text=(request??"").Trim();
+        var text=(request??"").Trim().TrimStart('>').Trim();
         var folded=ShoppingText.Fold(text);
         var words=folded.Split(' ',StringSplitOptions.RemoveEmptyEntries);
         var required=new List<string>();
         var optional=new List<string>();
+        if(FloorArea().Match(text) is {Success:true} area)required.Add($"{area.Groups[1].Value} m²");
         if(Volume().Match(text) is {Success:true} volume&&int.TryParse(volume.Groups[1].Value,out int litres)&&litres is >=20 and <=5000)
             required.Add($"{litres} L");
         if(NoFrost().IsMatch(folded))required.Add("no frost");
@@ -85,7 +95,8 @@ public sealed partial class ShoppingSpecParser(ILlmClient? llm=null)
         ("micro-ondes",["micro ondes"]),
         ("four",["four encastrable","four"]),
         ("téléviseur",["televiseur","television","oled","qled"]),
-        ("aspirateur",["aspirateur","robot aspirateur"]),
+        ("aspirateur robot",["aspirateur robot","robot aspirateur","aspi robot"]),
+        ("aspirateur",["aspirateur","aspi"]),
         ("cafetière",["cafetiere","machine a cafe","expresso","nespresso"]),
         ("ordinateur portable",["pc portable","ordinateur portable","laptop","macbook","ultrabook"]),
         ("smartphone",["smartphone","iphone","galaxy","telephone portable"]),
@@ -128,28 +139,36 @@ public sealed partial class ShoppingSpecParser(ILlmClient? llm=null)
     {
         var attributes=required.Where(term=>!term.EndsWith(" L",StringComparison.Ordinal)).Select(ShoppingText.Fold).ToArray();
         var attributeWords=attributes.SelectMany(attribute=>attribute.Split(' ',StringSplitOptions.RemoveEmptyEntries)).ToArray();
-        var categoryTerms=Categories.Where(entry=>entry.Category==category).SelectMany(entry=>entry.Tokens).ToArray();
+        var categoryTerms=Categories.Where(entry=>entry.Category==category).SelectMany(entry=>entry.Tokens)
+            .SelectMany(term=>ShoppingText.Fold(term).Split(' ',StringSplitOptions.RemoveEmptyEntries)).ToArray();
         // Les boutiques cherchent mal les demandes longues : « réfrigérateur no frost 300 L »
         // ne renvoie presque rien. La recherche reste courte, les critères servent ensuite
         // à vérifier chaque offre au lieu de la masquer.
-        return words
+        var subject=words.TakeWhile(word=>word is not "pour" and not "avec");
+        return subject
             .Where(word=>word.Length>2&&word.All(char.IsLetter)&&!StopWords.Contains(word)&&!categoryTerms.Contains(word)&&!attributeWords.Contains(word)&&!Colors.Contains(word))
             .Distinct().Take(2).ToArray();
     }
 
     /// <summary>Références de modèle citées par l'utilisateur : « wh1000xm5 », « rcdl180 ».</summary>
     static string[] References(string[] words)=>words
-        .Where(word=>word.Length>=4&&word.Any(char.IsDigit)&&word.Any(char.IsLetter)&&!StopWords.Contains(word))
+        .Where(word=>word.Length>=4&&word.Any(char.IsDigit)&&word.Any(char.IsLetter)&&!StopWords.Contains(word)&&!AreaReference().IsMatch(word))
         .Distinct().Take(2).ToArray();
 
     [GeneratedRegex(@"(?:max(?:imum)?|budget(?:\s*de)?|jusqu'?\s*[aà]|moins\s*de|<)\s*(\d[\d\s\u00A0.,]{0,9})(?:\s*(?:€|eur|euros?))?",RegexOptions.IgnoreCase)]
     private static partial Regex BudgetAmount();
 
-    [GeneratedRegex(@"(\d[\d\s\u00A0.,]{0,9})\s*(?:€|eur|euros?)\b",RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(\d[\d\s\u00A0.,]{0,9})\s*(?:€|euros?\b|eur\b|e\b)",RegexOptions.IgnoreCase)]
     private static partial Regex CurrencyAmount();
 
     [GeneratedRegex(@"(\d{2,4})\s*(?:l|litres?)\b",RegexOptions.IgnoreCase)]
     private static partial Regex Volume();
+
+    [GeneratedRegex(@"\b(\d{1,4})\s*m[²2]",RegexOptions.IgnoreCase)]
+    private static partial Regex FloorArea();
+
+    [GeneratedRegex(@"^\d+m2?$",RegexOptions.IgnoreCase)]
+    private static partial Regex AreaReference();
 
     [GeneratedRegex("no frost|sans givre|froid ventile",RegexOptions.IgnoreCase)]
     private static partial Regex NoFrost();

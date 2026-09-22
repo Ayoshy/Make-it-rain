@@ -41,12 +41,13 @@ public sealed class OllamaClient(HttpClient http,string endpoint,string model):I
     }
 }
 
-/// <summary>Repli distant compatible OpenAI, utilisé seulement si l'utilisateur le choisit.</summary>
+/// <summary>Analyse de la demande avec DeepSeek, sans conserver la clé dans les réglages.</summary>
 public sealed class DeepSeekClient(HttpClient http,string apiKey,string model):ILlmClient
 {
     public const string Endpoint="https://api.deepseek.com/chat/completions";
+    public const string DefaultModel="deepseek-flash";
     public const string KeyVariable="DEEPSEEK_API_KEY";
-    public string Name=>$"DeepSeek · {model}";
+    public string Name=>$"DeepSeek · {model} · réflexion max";
 
     /// <summary>La clé vient de l'environnement utilisateur ; elle n'entre ni dans Git ni dans shopping.json.</summary>
     public static string? ApiKey()
@@ -60,7 +61,7 @@ public sealed class DeepSeekClient(HttpClient http,string apiKey,string model):I
     public static ILlmClient? Create(HttpClient http,ShoppingSettings settings)
     {
         var key=ApiKey();
-        return key is null?null:new DeepSeekClient(http,key,string.IsNullOrWhiteSpace(settings.Model)?"deepseek-chat":settings.Model);
+        return key is null?null:new DeepSeekClient(http,key,settings.Validate().Model);
     }
 
     public async Task<string> CompleteAsync(string system,string user,CancellationToken cancellation)
@@ -68,7 +69,10 @@ public sealed class DeepSeekClient(HttpClient http,string apiKey,string model):I
         var payload=JsonSerializer.Serialize(new
         {
             model,
-            temperature=0,
+            thinking=new{type="enabled"},
+            reasoning_effort="max",
+            // Le plafond par défaut du mode max inclut le raisonnement. L'ancien
+            // plafond du petit JSON final pouvait couper avant la réponse.
             response_format=new{type="json_object"},
             messages=new[]{new{role="system",content=system},new{role="user",content=user}}
         });
@@ -77,7 +81,7 @@ public sealed class DeepSeekClient(HttpClient http,string apiKey,string model):I
             Content=new StringContent(payload,Encoding.UTF8,"application/json")
         };
         request.Headers.Authorization=new AuthenticationHeaderValue("Bearer",apiKey);
-        using var deadline=LlmJson.Deadline(cancellation);
+        using var deadline=LlmJson.Deadline(cancellation,180);
         using var response=await http.SendAsync(request,HttpCompletionOption.ResponseContentRead,deadline.Token);
         if(response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
             throw new InvalidOperationException("Clé DeepSeek refusée.");
@@ -85,6 +89,8 @@ public sealed class DeepSeekClient(HttpClient http,string apiKey,string model):I
         using var document=JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellation));
         if(!document.RootElement.TryGetProperty("choices",out var choices)||choices.GetArrayLength()==0)
             throw new InvalidOperationException("Réponse DeepSeek sans choix.");
+        if(choices[0].TryGetProperty("finish_reason",out var finish)&&finish.GetString()=="length")
+            throw new InvalidOperationException("Réponse DeepSeek interrompue : limite de génération atteinte.");
         return choices[0].TryGetProperty("message",out var message)&&message.TryGetProperty("content",out var content)
             ?content.GetString()??""
             :throw new InvalidOperationException("Réponse DeepSeek sans contenu.");
@@ -96,10 +102,10 @@ public sealed class DeepSeekClient(HttpClient http,string apiKey,string model):I
 public static class LlmJson
 {
     /// <summary>Un modèle local peut être lent : la demande est bornée pour ne pas figer le dock.</summary>
-    public static CancellationTokenSource Deadline(CancellationToken cancellation)
+    public static CancellationTokenSource Deadline(CancellationToken cancellation,int seconds=45)
     {
         var source=CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-        source.CancelAfter(TimeSpan.FromSeconds(45));
+        source.CancelAfter(TimeSpan.FromSeconds(seconds));
         return source;
     }
 

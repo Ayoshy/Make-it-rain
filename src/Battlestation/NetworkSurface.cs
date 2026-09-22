@@ -44,14 +44,15 @@ internal sealed class NetworkSurface : Surface,IDisposable
         if(detailView)Applications();
         else
         {
-            Text("↓ RÉCEPTION",24,72,8,Muted);Text("↑ ENVOI",Width/2+12,72,8,Muted);
-            Text(Rate(current?.Received is null?null:shownDown),24,90,19,Ink,font:DockAppearance.NumberFont);
-            Text(Rate(current?.Sent is null?null:shownUp),Width/2+12,90,19,Ink,font:DockAppearance.NumberFont);
+            var downColor=DesktopTheme.Current.Active[3];var upColor=DesktopTheme.Current.Active[0];
+            Text("↓ RÉCEPTION",24,72,8,downColor);Text("↑ ENVOI",Width/2+12,72,8,upColor);
+            Text(Rate(current?.Received is null?null:shownDown),24,90,19,downColor,font:DockAppearance.NumberFont);
+            Text(Rate(current?.Sent is null?null:shownUp),Width/2+12,90,19,upColor,font:DockAppearance.NumberFont);
             var chart=new Rect(24,132,Width-48,Math.Max(32,Height-200));
             Box(chart.X,chart.Y,chart.Width,chart.Height,"#102D203B",radius:8);
             double max=Math.Max(1024,snapshot.History.Select(s=>Math.Max(s.Received??0,s.Sent??0)).DefaultIfEmpty().Max()*1.12);
-            Curve(snapshot.History,chart,max,true,DesktopTheme.Current.Active[3]);
-            Curve(snapshot.History,chart,max,false,DesktopTheme.Current.Active[0]);
+            Curve(snapshot.History,chart,max,true,downColor);
+            Curve(snapshot.History,chart,max,false,upColor);
             Text("60 s",chart.X,chart.Bottom+5,7,Muted);
             Text(snapshot.Status.Length>0?snapshot.Status:Details.Frame.Status=="Détail inactif"?"":Details.Frame.Status,chart.Right,chart.Bottom+5,7,Muted,align:"right",width:chart.Width-70);
         }
@@ -80,7 +81,7 @@ internal sealed class NetworkSurface : Surface,IDisposable
         for(int i=0;i<frame.Apps.Length;i++)
         {
             var item=frame.Apps[i];double y=96+i*rowHeight;
-            Box(24,y-3,(Width-48)*Math.Clamp((item.Received+item.Sent)/Math.Max(1,max),0,1),rowHeight-5,"#186E4093",radius:6);
+            Box(24,y-3,(Width-48)*Math.Clamp((item.Received+item.Sent)/Math.Max(1,max),0,1),rowHeight-5,"#706E4093",radius:6);
             Text(item.Name,34,y,10,Ink,width:Math.Max(80,Width-310));
             Text("↓ "+Rate(item.Received),Width-154,y,9,DesktopTheme.Current.Active[3],align:"right");
             Text("↑ "+Rate(item.Sent),Width-32,y,9,DesktopTheme.Current.Active[0],align:"right");
@@ -91,7 +92,7 @@ internal sealed class NetworkSurface : Surface,IDisposable
     {
         if(detailView){detailView=false;Refresh();return;}
         detailView=true;
-        if(!Details.Connected)Details.Enable();else Details.Poll();
+        if(!Details.Connected)Details.Enable();
         Refresh();
     }
     void OpenSettings()

@@ -1,15 +1,11 @@
+﻿using System.Globalization;
 using System.IO;
-using System.Text;
 using System.Text.Json;
-using System.Globalization;
 
 namespace Battlestation;
 
-// Etat d'onglet derive du cache de prompt. Aucun contenu de session n'est lu :
-// seuls l'horodatage du dernier evenement et des compteurs de jetons le sont.
-internal enum TerminalCacheHint { None, Fresh, Aging, Expiring, Expired }
-
-internal readonly record struct TerminalCacheState(string? Badge, TerminalCacheHint Hint)
+internal enum TerminalCacheHint { None, Fresh, Aging, Expiring, Uncertain }
+internal readonly record struct TerminalCacheState(string? Badge, TerminalCacheHint Hint, string? Detail = null)
 {
     public static readonly TerminalCacheState None = default;
     public bool HasBadge => !string.IsNullOrEmpty(Badge);
@@ -17,211 +13,213 @@ internal readonly record struct TerminalCacheState(string? Badge, TerminalCacheH
 
 internal static class PromptCache
 {
-    // Fenetre annoncee par OpenAI : un prefixe mis en cache reste reutilisable
-    // 30 minutes apres sa derniere ecriture ou reutilisation.
     public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(30);
-    public const string Expired = "cache expiré";
+    public const string Uncertain = "cache incertain";
     public const string Hourglass = "\u23F3";
     public static TerminalCacheState FromRemaining(TimeSpan? remaining)
     {
-        if (remaining is not { } value || value <= TimeSpan.Zero) return new(Expired, TerminalCacheHint.Expired);
+        if (remaining is not { } value || value <= TimeSpan.Zero)
+            return new(Uncertain, TerminalCacheHint.Uncertain, "La disponibilité du cache serveur n’est pas connue.");
+        value = value > Lifetime ? Lifetime : value;
         var hint = value > TimeSpan.FromMinutes(20) ? TerminalCacheHint.Fresh
-            : value >= TimeSpan.FromMinutes(10) ? TerminalCacheHint.Aging
-            : TerminalCacheHint.Expiring;
-        return new(Hourglass + " " + Math.Max(1, (int)Math.Ceiling(value.TotalMinutes)) + " min", hint);
+            : value >= TimeSpan.FromMinutes(10) ? TerminalCacheHint.Aging : TerminalCacheHint.Expiring;
+        return new(Hourglass + " ≈ " + Math.Max(1, (int)Math.Ceiling(value.TotalMinutes)) + " min", hint,
+            "Estimation depuis la dernière lecture ou écriture de cache observée. Le prochain appel peut réutiliser un préfixe ; ce n’est pas une garantie.");
     }
-    public static TerminalCacheState FromActivity(DateTimeOffset now, DateTimeOffset last) => FromRemaining(Lifetime - (now - last));
-    // Taux du dernier tour, au dixieme et jamais surestime : la valeur bouge a
-    // chaque tour, comme le compte a rebours bouge a chaque evenement.
-    public static TerminalCacheState Hit(long cachedInputTokens, long inputTokens)
+    public static bool HasKnownWindow(string? model) => model is "gpt-6-astra" or "gpt-6-astra-latest" or "gpt-5.6"
+        or "gpt-5.6-sol" or "gpt-5.6-terra" or "gpt-5.6-luna";
+    public static TerminalCacheState FromObservation(DateTimeOffset now, string? model, DateTimeOffset? observed)
+        => FromRemaining(HasKnownWindow(model) && observed is { } at && at <= now ? Lifetime - (now - at) : null);
+    public static TerminalCacheState Hit(long? cached, long? input)
     {
-        if (inputTokens <= 0) return TerminalCacheState.None;
-        var cached = Math.Clamp(cachedInputTokens, 0, inputTokens);
-        double percent = Math.Floor(cached * 1000d / inputTokens) / 10d;
-        string text = percent >= 100 ? "100"
-            : percent == Math.Floor(percent) ? percent.ToString("0", CultureInfo.GetCultureInfo("fr-FR"))
-            : percent.ToString("0.0", CultureInfo.GetCultureInfo("fr-FR"));
-        return new("cache " + text + " %", TerminalCacheHint.None);
+        if (input is not > 0 || cached is null || cached < 0 || cached > input) return TerminalCacheState.None;
+        decimal percent = Math.Floor(cached.Value * 1000m / input.Value) / 10m;
+        return new("cache " + percent.ToString("0.#", CultureInfo.GetCultureInfo("fr-FR")) + " %", TerminalCacheHint.None,
+            "Part des jetons d’entrée réutilisés dans la dernière réponse mesurée de cette conversation.");
     }
 }
 
-internal sealed record RolloutActivity(string Path, string Project, string Provider, DateTimeOffset Last, long InputTokens = 0, long CachedInputTokens = 0);
+internal sealed record RolloutActivity(string Path, string SessionId, string Provider, string? Model,
+    DateTimeOffset? CacheObservedAt, long? InputTokens, long? CachedInputTokens)
+{
+    public TerminalCacheState State(DateTimeOffset now) => Provider switch
+    {
+        "deepseek" => PromptCache.Hit(CachedInputTokens, InputTokens),
+        "openai" => PromptCache.FromObservation(now, Model, CacheObservedAt),
+        _ => TerminalCacheState.None
+    };
+}
+internal sealed record RolloutQuery(Guid Id, int ProcessId);
 
-// Le projet suivi vient de l'action demandee au bureau quand elle est connue
-// (chemin complet, variante exacte) ; sinon du nom de projet porte par le titre
-// de console, comme l'indice de projet des docks.
-internal sealed record RolloutQuery(Guid Id, string Hint, bool? DeepSeek);
-
-// Lecteur d'activite Codex : pour chaque onglet, le rollout le plus recent du
-// projet suivi. La ligne de session (projet et fournisseur) et l'horodatage du
-// dernier evenement sont les seules donnees lues ; le contenu des messages ne
-// l'est jamais. Les resultats sont memorises par chemin, taille et date.
+// Only the CLI's open rollout writers are candidates. No project/mtime fallback.
 internal sealed class CodexRolloutReader
 {
-    static readonly long[] Windows = [64 * 1024, 1024 * 1024, 8 * 1024 * 1024];
-    // Le fichier d'une session en cours garde une date de modification figee :
-    // les derniers candidats sont compares par l'horodatage de leur contenu.
-    const int Candidates = 6;
     readonly string root;
-    readonly Dictionary<string, (long Length, DateTime Write, string? Project, string? Provider)> headers = new(StringComparer.OrdinalIgnoreCase);
-    readonly Dictionary<string, (long Length, DateTime Write, DateTimeOffset Last, long Input, long Cached)> tails = new(StringComparer.OrdinalIgnoreCase);
-    public CodexRolloutReader(string root) => this.root = root;
+    readonly Func<int, string[]> paths;
+    readonly Dictionary<string, RolloutFile> files = new(StringComparer.OrdinalIgnoreCase);
+    public CodexRolloutReader(string root, Func<int, string[]>? paths = null)
+    {
+        this.root = root;
+        this.paths = paths ?? (pid => TerminalRolloutPath.Find(pid, root));
+    }
     public Dictionary<Guid, RolloutActivity> Resolve(IReadOnlyList<RolloutQuery> tabs)
     {
-        var found = new Dictionary<Guid, RolloutActivity>();
-        if (tabs.Count == 0 || !Directory.Exists(root)) return found;
-        var files = Files();
-        foreach (var tab in tabs)
+        var result = new Dictionary<Guid, RolloutActivity>();
+        var live = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in tabs.Where(t => t.ProcessId > 0).GroupBy(t => t.ProcessId))
         {
-            if (string.IsNullOrWhiteSpace(tab.Hint)) continue;
-            RolloutActivity? recent = null; int examined = 0;
-            foreach (var file in files)
+            var candidates = new List<RolloutActivity>();
+            bool failed = false;
+            foreach (string path in paths(group.Key).Distinct(StringComparer.OrdinalIgnoreCase))
             {
-                if (Head(file) is not { } head) continue;
-                if (!Match(head.Provider, tab.DeepSeek) || !Project(head.Project, tab.Hint)) continue;
-                if (Tail(file, out var tokens) is not { } last) continue;
-                if (recent is null || last > recent.Last) recent = new(file.FullName, head.Project!, head.Provider!, last, tokens.Input, tokens.Cached);
-                if (++examined >= Candidates) break;
+                if (TerminalRolloutPath.ScopedPath(path, root) is not { } full) continue;
+                live.Add(full);
+                try
+                {
+                    if (!files.TryGetValue(full, out var file)) files[full] = file = new RolloutFile(full);
+                    if (file.Read() is { } activity) candidates.Add(activity);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    files.Remove(full); failed = true;
+                }
             }
-            if (recent is { } activity) found[tab.Id] = activity;
+            // Subagents have their own writers in the same process. Their metadata
+            // excludes them; multiple main conversations remain deliberately unknown.
+            if (!failed && candidates.Count == 1)
+                foreach (var tab in group) result[tab.Id] = candidates[0];
         }
-        return found;
+        foreach (var path in files.Keys.Except(live, StringComparer.OrdinalIgnoreCase).ToArray()) files.Remove(path);
+        return result;
     }
-    // Une variante inconnue ne filtre pas : le rollout le plus recent du projet decide.
-    static bool Match(string? provider, bool? deepSeek)
-        => deepSeek is not { } wanted || wanted == string.Equals(provider, "deepseek", StringComparison.OrdinalIgnoreCase);
-    // Un chemin complet se compare au projet du rollout ; un nom seul a son dernier dossier.
-    static bool Project(string? project, string hint)
+
+    sealed class RolloutFile(string path)
     {
-        if (project is null) return false;
-        return hint.Contains('\\') || hint.Contains('/')
-            ? string.Equals(project, Normalize(hint), StringComparison.OrdinalIgnoreCase)
-            : string.Equals(Path.GetFileName(project), hint, StringComparison.OrdinalIgnoreCase);
-    }
-    List<FileInfo> Files()
-    {
-        var files = new List<FileInfo>();
-        try
+        const int MaxLine = 4 * 1024 * 1024;
+        readonly byte[] buffer = new byte[64 * 1024];
+        readonly MemoryStream pending = new();
+        long offset;
+        bool skipping, headerKnown, main;
+        string? id, provider, model;
+        DateTimeOffset? observed;
+        Usage? total, last;
+        DateTime creation, write;
+        void Invalidate() { observed = null; last = null; }
+        void Reset()
         {
-            foreach (var path in Directory.EnumerateFiles(root, "*.jsonl", SearchOption.AllDirectories))
+            offset = 0; pending.SetLength(0); skipping = headerKnown = main = false;
+            id = provider = model = null; total = null; Invalidate();
+        }
+        public RolloutActivity? Read()
+        {
+            var info = new FileInfo(path);
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            long length = stream.Length;
+            if (length < offset || (offset > 0 && (creation != info.CreationTimeUtc || (length == offset && write != info.LastWriteTimeUtc)))) Reset();
+            creation = info.CreationTimeUtc; write = info.LastWriteTimeUtc;
+            if (!headerKnown || main)
             {
-                var info = new FileInfo(path);
-                if (info.Length > 0) files.Add(info);
+                stream.Position = offset;
+                while (offset < length)
+                {
+                    int read = stream.Read(buffer, 0, (int)Math.Min(buffer.Length, length - offset));
+                    if (read == 0) break;
+                    offset += read;
+                    int start = 0;
+                    while (start < read)
+                    {
+                        int end = Array.IndexOf(buffer, (byte)'\n', start, read - start);
+                        int count = (end < 0 ? read : end) - start;
+                        if (!skipping)
+                        {
+                            if (pending.Length + count > MaxLine) { pending.SetLength(0); skipping = true; Invalidate(); }
+                            else pending.Write(buffer, start, count);
+                        }
+                        if (end < 0) break;
+                        if (!skipping) Accept(pending.GetBuffer().AsSpan(0, (int)pending.Length));
+                        pending.SetLength(0); skipping = false; start = end + 1;
+                        if (headerKnown && !main) return null;
+                    }
+                }
             }
+            return main && id is not null && provider is not null
+                ? new(path, id, provider, model, observed, last?.Input, last?.Cached) : null;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or DirectoryNotFoundException) { }
-        files.Sort((left, right) => right.LastWriteTimeUtc.CompareTo(left.LastWriteTimeUtc));
-        return files;
-    }
-    (string? Project, string? Provider)? Head(FileInfo file)
-    {
-        if (headers.TryGetValue(file.FullName, out var cached) && cached.Length == file.Length && cached.Write == file.LastWriteTimeUtc)
-            return (cached.Project, cached.Provider);
-        var (project, provider) = ReadHead(file.FullName);
-        headers[file.FullName] = (file.Length, file.LastWriteTimeUtc, project, provider);
-        return (project, provider);
-    }
-    static (string? Project, string? Provider) ReadHead(string path)
-    {
-        try
+
+        // Skip message bodies before constructing a JSON document. Only metadata,
+        // context model and token counters are interpreted; nothing is persisted.
+        void Accept(ReadOnlySpan<byte> bytes)
         {
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, false);
-            using var reader = new StreamReader(stream, Encoding.UTF8, true, 4096, false);
-            if (reader.ReadLine() is not { Length: > 0 } line || line.Length > 4 * 1024 * 1024) return (null, null);
-            using var json = JsonDocument.Parse(line);
-            if (!json.RootElement.TryGetProperty("payload", out var payload)) return (null, null);
-            string? text(string name) => payload.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
-            var project = text("cwd");
-            return (string.IsNullOrWhiteSpace(project) ? null : Normalize(project), text("model_provider"));
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or ArgumentException) { return (null, null); }
-    }
-    // Horodatage du dernier evenement et compteurs cumules de la session
-    // (info.total_token_usage), lus dans le meme bloc de fin de fichier.
-    DateTimeOffset? Tail(FileInfo file, out (long Input, long Cached) tokens)
-    {
-        tokens = default;
-        bool known = tails.TryGetValue(file.FullName, out var cached) && cached.Length == file.Length && cached.Write == file.LastWriteTimeUtc;
-        if (known)
-        {
-            tokens = (cached.Input, cached.Cached);
-            return cached.Last;
-        }
-        DateTimeOffset? last = null; long input = 0, cachedInput = 0;
-        foreach (var window in Windows)
-        {
-            var read = ReadTail(file.FullName, file.Length, window, last is null, input == 0);
-            last ??= read.Stamp;
-            if (input == 0 && read.Input > 0) { input = read.Input; cachedInput = read.Cached; }
-            if (last is not null && input > 0) break;
-        }
-        // Le dernier token_count peut manquer du bloc courant : la mesure
-        // precedente de la meme session reste valable.
-        if (input == 0) { input = cached.Input; cachedInput = cached.Cached; }
-        if (last is { } stamp) tails[file.FullName] = (file.Length, file.LastWriteTimeUtc, stamp, input, cachedInput);
-        tokens = (input, cachedInput);
-        return last;
-    }
-    static (DateTimeOffset? Stamp, long Input, long Cached) ReadTail(string path, long length, long window, bool wantStamp, bool wantTokens)
-    {
-        try
-        {
-            var start = Math.Max(0, length - window);
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, false);
-            stream.Seek(start, SeekOrigin.Begin);
-            var buffer = new byte[length - start];
-            int read = 0;
-            while (read < buffer.Length)
+            if (bytes.IsEmpty) return;
+            try
             {
-                int count = stream.Read(buffer, read, buffer.Length - read);
-                if (count <= 0) break;
-                read += count;
+                var scan = new Utf8JsonReader(bytes);
+                string? type = null, eventType = null;
+                while (scan.Read())
+                {
+                    if (scan.TokenType != JsonTokenType.PropertyName) continue;
+                    bool rootType = scan.CurrentDepth == 1 && scan.ValueTextEquals("type"u8);
+                    bool payloadType = scan.CurrentDepth == 2 && scan.ValueTextEquals("type"u8);
+                    bool payload = scan.CurrentDepth == 1 && scan.ValueTextEquals("payload"u8);
+                    scan.Read();
+                    if (rootType) type = scan.TokenType == JsonTokenType.String ? scan.GetString() : null;
+                    else if (payloadType) eventType = scan.TokenType == JsonTokenType.String ? scan.GetString() : null;
+                    else if (payload && type == "event_msg") continue;
+                    else scan.Skip();
+                }
+                if (type == "compacted") { Invalidate(); return; }
+                if (type == "event_msg" && eventType is "context_compacted" or "model_rerouted") { Invalidate(); return; }
+                if (type is not ("session_meta" or "turn_context") && !(type == "event_msg" && eventType == "token_count")) return;
+                using var doc = JsonDocument.Parse(bytes.ToArray());
+                var record = doc.RootElement;
+                var p = Property(record, "payload");
+                if (type == "session_meta")
+                {
+                    headerKnown = true;
+                    main = Text(p, "source") == "cli" && Guid.TryParse(Text(p, "id"), out _);
+                    id = Text(p, "id"); provider = Text(p, "model_provider");
+                    return;
+                }
+                if (!main) return;
+                if (type == "turn_context")
+                {
+                    string? next = Text(p, "model");
+                    if (next != model) Invalidate();
+                    model = next;
+                    return;
+                }
+                var usage = Property(p, "info");
+                if (usage.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return; // quota-only notification
+                var nextTotal = Usage.Read(Property(usage, "total_token_usage"));
+                var nextLast = Usage.Read(Property(usage, "last_token_usage"));
+                if (nextTotal is null || nextLast is null) { Invalidate(); return; }
+                if (nextTotal == total) return; // repeated notification is not a new request
+                bool reset = total is { } prior && (nextTotal.Input < prior.Input || nextTotal.Output < prior.Output || nextTotal.Total < prior.Total);
+                total = nextTotal;
+                if (reset) { Invalidate(); return; }
+                last = nextLast;
+                observed = (nextLast.Cached > 0 || nextLast.Write > 0)
+                    && DateTimeOffset.TryParse(Text(record, "timestamp"), CultureInfo.InvariantCulture, DateTimeStyles.None, out var at) ? at : null;
             }
-            DateTimeOffset? stamp = null; long input = 0, cached = 0;
-            var lines = Encoding.UTF8.GetString(buffer, 0, read).Split('\n');
-            for (int index = lines.Length - 1; index >= 0; index--)
-            {
-                // Le premier fragment du bloc peut etre tronque : il est ignore.
-                if (start > 0 && index == 0) break;
-                var line = lines[index].Trim();
-                if (line.Length == 0) continue;
-                var (found, tokens, cachedTokens) = Summary(line);
-                if (wantStamp && stamp is null) stamp = found;
-                if (wantTokens && input == 0 && tokens > 0) { input = tokens; cached = cachedTokens; }
-                if ((!wantStamp || stamp is not null) && (!wantTokens || input > 0)) break;
-            }
-            return (stamp, input, cached);
+            catch (JsonException) { Invalidate(); }
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or DecoderFallbackException or ArgumentException) { }
-        return (null, 0, 0);
-    }
-    // Une seule lecture JSON par ligne : horodatage et compteurs du dernier tour
-    // (le total de session sert tant que le tour courant n'est pas compté).
-    static (DateTimeOffset? Stamp, long Input, long Cached) Summary(string line)
-    {
-        try
+        static JsonElement Property(JsonElement element, string name)
+            => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) ? value : default;
+        static string? Text(JsonElement element, string name)
+            => Property(element, name) is { ValueKind: JsonValueKind.String } value ? value.GetString() : null;
+        static long? Counter(JsonElement element, string name)
+            => Property(element, name) is { ValueKind: JsonValueKind.Number } value && value.TryGetInt64(out long n) && n >= 0 ? n : null;
+        sealed record Usage(long Input, long? Cached, long? Write, long Output, long Total)
         {
-            using var json = JsonDocument.Parse(line);
-            DateTimeOffset? stamp = json.RootElement.TryGetProperty("timestamp", out var value) && value.ValueKind == JsonValueKind.String
-                && DateTimeOffset.TryParse(value.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsed) ? parsed : null;
-            long input = 0, cached = 0;
-            if (json.RootElement.TryGetProperty("payload", out var payload) && payload.TryGetProperty("info", out var info))
-                if (!Usage(info, "last_token_usage", out input, out cached)) Usage(info, "total_token_usage", out input, out cached);
-            return (stamp, input, cached);
+            public static Usage? Read(JsonElement value)
+            {
+                var input = Counter(value, "input_tokens"); var cached = Counter(value, "cached_input_tokens");
+                var write = Counter(value, "cache_write_input_tokens");
+                var output = Counter(value, "output_tokens"); var total = Counter(value, "total_tokens");
+                if (input is null || output is null || total is null || cached > input || write > input
+                    || (cached is { } c && write is { } w && c > input - w)) return null;
+                return new(input.Value, cached, write, output.Value, total.Value);
+            }
         }
-        catch (JsonException) { return (null, 0, 0); }
-    }
-    static bool Usage(JsonElement info, string name, out long input, out long cached)
-    {
-        input = 0; cached = 0;
-        if (!info.TryGetProperty(name, out var usage)) return false;
-        if (usage.TryGetProperty("input_tokens", out var tokens) && tokens.TryGetInt64(out var value)) input = value;
-        if (usage.TryGetProperty("cached_input_tokens", out var cachedTokens) && cachedTokens.TryGetInt64(out var cachedValue)) cached = cachedValue;
-        return input > 0;
-    }
-    internal static string Normalize(string path)
-    {
-        try { return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar); }
-        catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException) { return path.Trim(); }
     }
 }

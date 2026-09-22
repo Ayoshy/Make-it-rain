@@ -31,7 +31,7 @@ internal sealed class TerminalTabPreferences
         var preference=Get(tab.Id);bool cli=metadata?.Codex==true||metadata?.Kilo==true;
         var parsed=TerminalTitle.Parse(metadata?.Title,metadata?.Codex==true,metadata?.Kilo==true);
         string automatic=!cli||string.IsNullOrWhiteSpace(parsed.Title)?tab.Title:parsed.Title;
-        return tab with{Title=preference.AutomaticTitle?automatic:preference.Name??tab.Title,Accent=preference.Color,Activity=parsed.Activity,Effects=preference.Effects,AutomaticTitle=preference.AutomaticTitle,SourceTitle=metadata?.Title,Badge=cache.Badge,CacheHint=cache.Hint};
+        return tab with{Title=preference.AutomaticTitle?automatic:preference.Name??tab.Title,Accent=preference.Color,Activity=parsed.Activity,Effects=preference.Effects,AutomaticTitle=preference.AutomaticTitle,SourceTitle=metadata?.Title,Badge=cache.Badge,CacheHint=cache.Hint,CacheDetail=cache.Detail};
     }
 }
 internal static class TerminalTitle

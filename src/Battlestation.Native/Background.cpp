@@ -14,3 +14,4 @@ extern "C" __declspec(dllexport) void BackgroundPanel(int slot,float x,float y,f
 
 extern "C" __declspec(dllexport) void BackgroundPalette(int index,const unsigned int* colors){NativeBackground::SetPalette(index,colors);}
 extern "C" __declspec(dllexport) void BackgroundTheme(int index,int immediate){NativeBackground::SetTheme(index,immediate!=0);}
+extern "C" __declspec(dllexport) void BackgroundWallpaperRotation(int enabled){NativeBackground::SetWallpaperRotation(enabled!=0);}

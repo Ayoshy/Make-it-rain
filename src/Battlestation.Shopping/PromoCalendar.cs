@@ -65,27 +65,21 @@ public sealed class PromoCalendar
             if(named.Length>0)return named[0];
         }
         var generic=upcoming.Where(item=>item.Shop.Length==0).ToArray();
-        return generic.Length>0?generic[0]:upcoming.Count>0?upcoming[0]:null;
+        return generic.Length>0?generic[0]:string.IsNullOrWhiteSpace(shop)?upcoming.FirstOrDefault():null;
     }
 
-    /// <summary>Repères de l'année : soldes légaux, French Days, Prime Day, Black Friday et Cyber Monday.</summary>
+    /// <summary>Repères calendaires fixes. Les opérations décidées par les enseignes exigent une date fournie.</summary>
     public static IReadOnlyList<PromoEvent> Computed(int year)
     {
         var winter=WinterSalesStart(year);
         var summer=SummerSalesStart(year);
-        var frenchSpring=LastWeekday(year,4,DayOfWeek.Wednesday);
-        var frenchAutumn=LastWeekday(year,9,DayOfWeek.Wednesday);
-        var prime=NthWeekday(year,7,DayOfWeek.Tuesday,2);
         var black=BlackFriday(year);
         return
         [
-            new($"soldes-hiver-{year}","","Soldes d'hiver",winter,winter.AddDays(27),.2),
-            new($"french-days-printemps-{year}","","French Days de printemps",frenchSpring,frenchSpring.AddDays(4),.1),
-            new($"prime-day-{year}","Amazon","Prime Day",prime,prime.AddDays(1),.15),
-            new($"soldes-ete-{year}","","Soldes d'été",summer,summer.AddDays(27),.2),
-            new($"french-days-automne-{year}","","French Days d'automne",frenchAutumn,frenchAutumn.AddDays(4),.1),
-            new($"black-friday-{year}","","Black Friday",black,black,.25),
-            new($"cyber-monday-{year}","","Cyber Monday",black.AddDays(3),black.AddDays(3),.15)
+            new($"soldes-hiver-{year}","","Soldes d'hiver",winter,winter.AddDays(27)),
+            new($"soldes-ete-{year}","","Soldes d'été",summer,summer.AddDays(27)),
+            new($"black-friday-{year}","","Black Friday",black,black),
+            new($"cyber-monday-{year}","","Cyber Monday",black.AddDays(3),black.AddDays(3))
         ];
     }
 

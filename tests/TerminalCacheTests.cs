@@ -20,8 +20,13 @@ static class TerminalCacheTests
         var thread = new Thread(() => { var dispatcher = Dispatcher.CurrentDispatcher; ready.SetResult(dispatcher); Dispatcher.Run(); }) { IsBackground = true, Name = "Terminal cache test UI" };
         thread.SetApartmentState(ApartmentState.STA); thread.Start(); return ready.Task.GetAwaiter().GetResult();
     }
-    [STAThread] static void Main()
+    [STAThread] static void Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--hold-rollouts")
+        {
+            var held = args.Skip(1).Select(p => new FileStream(p, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete)).ToArray();
+            Console.WriteLine("ready"); Console.ReadLine(); foreach (var file in held) file.Dispose(); return;
+        }
         var root = Path.Combine(Path.GetTempPath(), "battlestation-terminal-cache-" + Guid.NewGuid().ToString("N"));
         try
         {
@@ -29,7 +34,7 @@ static class TerminalCacheTests
             DeepSeekHitRate();
             AccentPrecedence(root);
             RolloutSelection(root);
-            CommandLines();
+            ProcessBinding(root);
             TabRendering();
             Console.WriteLine("PASS : regle d'affichage, taux de hit DS, priorite de couleur, lecture des rollouts, rendu des onglets.");
         }
@@ -40,22 +45,22 @@ static class TerminalCacheTests
     static void DisplayRule(string root)
     {
         var now = new DateTimeOffset(2026, 9, 21, 12, 0, 0, TimeSpan.FromHours(2));
-        var fresh = PromptCache.FromActivity(now, now.AddMinutes(-1));
-        Equal(PromptCache.Hourglass + " 29 min", fresh.Badge, "1 min ecoulee : 29 min restantes");
+        var fresh = PromptCache.FromObservation(now, "gpt-6-astra", now.AddMinutes(-1));
+        Equal(PromptCache.Hourglass + " ≈ 29 min", fresh.Badge, "1 min ecoulee : 29 min restantes");
         Check(fresh.Hint == TerminalCacheHint.Fresh, "plus de 20 min restantes : teinte verte");
-        var aging = PromptCache.FromActivity(now, now.AddMinutes(-15));
-        Equal(PromptCache.Hourglass + " 15 min", aging.Badge, "15 min ecoulees : 15 min restantes");
+        var aging = PromptCache.FromObservation(now, "gpt-6-astra", now.AddMinutes(-15));
+        Equal(PromptCache.Hourglass + " ≈ 15 min", aging.Badge, "15 min ecoulees : 15 min restantes");
         Check(aging.Hint == TerminalCacheHint.Aging, "10 a 20 min restantes : teinte ambre");
-        var expiring = PromptCache.FromActivity(now, now.AddMinutes(-27));
-        Equal(PromptCache.Hourglass + " 3 min", expiring.Badge, "27 min ecoulees : 3 min restantes");
+        var expiring = PromptCache.FromObservation(now, "gpt-6-astra", now.AddMinutes(-27));
+        Equal(PromptCache.Hourglass + " ≈ 3 min", expiring.Badge, "27 min ecoulees : 3 min restantes");
         Check(expiring.Hint == TerminalCacheHint.Expiring, "moins de 10 min restantes : teinte rouge");
         var partial = PromptCache.FromRemaining(TimeSpan.FromSeconds(20));
-        Equal(PromptCache.Hourglass + " 1 min", partial.Badge, "la precision a la minute n'affiche jamais zero");
+        Equal(PromptCache.Hourglass + " ≈ 1 min", partial.Badge, "la precision a la minute n'affiche jamais zero");
         Check(partial.Hint == TerminalCacheHint.Expiring, "une minute restante reste rouge");
-        var expired = PromptCache.FromActivity(now, now.AddMinutes(-31));
-        Equal(PromptCache.Expired, expired.Badge, "31 min ecoulees : le cache est expire");
-        Check(expired.Hint == TerminalCacheHint.Expired, "cache expire : teinte grise");
-        Check(PromptCache.FromRemaining(TimeSpan.Zero).Hint == TerminalCacheHint.Expired, "un restant nul est expire");
+        var expired = PromptCache.FromObservation(now, "gpt-6-astra", now.AddMinutes(-31));
+        Equal(PromptCache.Uncertain, expired.Badge, "31 min ecoulees : le cache devient incertain");
+        Check(expired.Hint == TerminalCacheHint.Uncertain, "cache incertain : teinte grise");
+        Check(PromptCache.FromRemaining(TimeSpan.Zero).Hint == TerminalCacheHint.Uncertain, "un restant nul est incertain");
         Check(PromptCache.FromRemaining(TimeSpan.FromMinutes(20)).Hint == TerminalCacheHint.Aging, "20 min restantes restent ambre");
         Check(PromptCache.FromRemaining(TimeSpan.FromMinutes(10)).Hint == TerminalCacheHint.Aging, "10 min restantes restent ambre");
         Check(PromptCache.FromRemaining(TimeSpan.FromMinutes(20.1)).Hint == TerminalCacheHint.Fresh, "au dela de 20 min la teinte repasse au vert");
@@ -69,8 +74,8 @@ static class TerminalCacheTests
         Equal("cache 33,3 %", PromptCache.Hit(1, 3).Badge, "un tiers s'affiche au dixieme");
         Equal("cache 66,6 %", PromptCache.Hit(2, 3).Badge, "deux tiers ne sont pas surestimes");
         Equal("cache 82,2 %", PromptCache.Hit(8224, 10000).Badge, "un tour froid reste lisible");
-        Equal("cache 100 %", PromptCache.Hit(150, 100).Badge, "un cache superieur a l'entree reste borne a 100 %");
-        Equal("cache 0 %", PromptCache.Hit(-4, 10).Badge, "un compteur negatif ne produit pas de pourcentage negatif");
+        Check(!PromptCache.Hit(150, 100).HasBadge, "un compteur incoherent ne devient pas 100 %");
+        Check(!PromptCache.Hit(-4, 10).HasBadge, "un compteur negatif ne devient pas zero");
         Check(PromptCache.Hit(0, 0).Badge is null, "une entree nulle ne divise pas par zero");
         Check(PromptCache.Hit(5, 0).Badge is null, "des jetons caches sans entree ne produisent aucun taux");
         var badge = PromptCache.Hit(78, 100);
@@ -81,117 +86,132 @@ static class TerminalCacheTests
     // 3. La couleur choisie reste prioritaire sur la teinte automatique.
     static void AccentPrecedence(string root)
     {
-        Equal("#ED9EC8", TerminalTabs.EffectiveAccent("#ED9EC8", TerminalCacheHint.Expired), "une couleur choisie n'est pas remplacee par la teinte");
+        Equal("#ED9EC8", TerminalTabs.EffectiveAccent("#ED9EC8", TerminalCacheHint.Uncertain), "une couleur choisie n'est pas remplacee par la teinte");
         Equal("#7FD6A6", TerminalTabs.EffectiveAccent(null, TerminalCacheHint.Fresh), "sans couleur choisie, la teinte verte s'applique");
         Equal("#E9BE81", TerminalTabs.EffectiveAccent(null, TerminalCacheHint.Aging), "sans couleur choisie, la teinte ambre s'applique");
         Equal("#EB9B9B", TerminalTabs.EffectiveAccent(null, TerminalCacheHint.Expiring), "sans couleur choisie, la teinte rouge s'applique");
-        Equal("#948CA0", TerminalTabs.EffectiveAccent(null, TerminalCacheHint.Expired), "le cache expire glisse vers le gris");
+        Equal("#948CA0", TerminalTabs.EffectiveAccent(null, TerminalCacheHint.Uncertain), "le cache incertain glisse vers le gris");
         Check(TerminalTabs.EffectiveAccent(null, TerminalCacheHint.None) is null, "sans badge ni couleur, l'onglet garde le verre commun");
         var preferences = new TerminalTabPreferences(Path.Combine(root, "terminal-tabs.json"));
         var id = Guid.NewGuid();
         preferences.Set(id, new TerminalTabPreference(Color: "#ED9EC8"));
         var metadata = new ConsoleTitleInfo(1, "Battlestation | Working | fil | projet", true);
-        var decorated = preferences.Decorate(new TerminalTabInfo(id, "Battlestation", true), metadata, new(PromptCache.Hourglass + " 3 min", TerminalCacheHint.Expiring));
+        var decorated = preferences.Decorate(new TerminalTabInfo(id, "Battlestation", true), metadata, new(PromptCache.Hourglass + " ≈ 3 min", TerminalCacheHint.Expiring));
         Equal("#ED9EC8", decorated.Accent, "la preference de couleur survit a la decoration");
-        Equal(PromptCache.Hourglass + " 3 min", decorated.Badge, "le compte a rebours s'ajoute au titre de l'onglet");
+        Equal(PromptCache.Hourglass + " ≈ 3 min", decorated.Badge, "le compte a rebours s'ajoute au titre de l'onglet");
         Check(decorated.CacheHint == TerminalCacheHint.Expiring, "le niveau de teinte accompagne le badge");
         var plain = preferences.Decorate(new TerminalTabInfo(Guid.NewGuid(), "PowerShell 2", false), new ConsoleTitleInfo(2, "PowerShell 2", false));
         Check(plain.Badge is null && plain.CacheHint == TerminalCacheHint.None, "un onglet sans activite Codex reste sans badge");
     }
 
-    // 4. Lecture du rollout le plus recent par projet, sans contenu de message.
+    static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-09-22T12:00:00Z");
+    static string Record(DateTimeOffset at, string type, object payload)
+        => JsonSerializer.Serialize(new { timestamp = at.ToString("o"), type, payload });
+    static string Usage(DateTimeOffset at, long input, long? cached, long totalInput, long? write = null)
+    {
+        var last = new Dictionary<string, object?> { ["input_tokens"] = input, ["output_tokens"] = 1, ["total_tokens"] = input + 1 };
+        if (cached.HasValue) last["cached_input_tokens"] = cached.Value;
+        if (write.HasValue) last["cache_write_input_tokens"] = write.Value;
+        return Record(at, "event_msg", new { type = "token_count", info = new { last_token_usage = last,
+            total_token_usage = new { input_tokens = totalInput, cached_input_tokens = cached ?? 0, output_tokens = totalInput / 100, total_tokens = totalInput + totalInput / 100 } } });
+    }
+    static string Fixture(string root, string name, string provider = "openai", bool subagent = false)
+    {
+        Directory.CreateDirectory(root); var file = Path.Combine(root, "rollout-" + name + ".jsonl");
+        object source = subagent ? new { subagent = new { thread_spawn = new { parent_thread_id = Guid.NewGuid() } } } : "cli";
+        File.WriteAllText(file, Record(Now.AddHours(-1), "session_meta", new { id = Guid.NewGuid(), cwd = @"C:\same-project", source, model_provider = provider }) + "\n", new UTF8Encoding(false));
+        Append(file, Record(Now.AddHours(-1), "turn_context", new { model = "gpt-6-astra" }));
+        return file;
+    }
+    static void Append(string path, string record) => File.AppendAllText(path, record + "\n", new UTF8Encoding(false));
     static void RolloutSelection(string root)
     {
         var sessions = Path.Combine(root, "sessions");
-        var early = new DateTimeOffset(2026, 9, 21, 9, 0, 0, TimeSpan.FromHours(2));
-        Session(sessions, "2026/09/20", "rollout-kash.jsonl", @"C:\projets\Kash", "openai", early);
-        Session(sessions, "2026/09/21", "rollout-ds.jsonl", @"C:\projets\Battlestation", "deepseek", early.AddHours(2));
-        var openai = Session(sessions, "2026/09/21", "rollout-openai.jsonl", @"C:\projets\Battlestation", "openai", early.AddHours(3));
-        var reader = new CodexRolloutReader(sessions);
-        var codex = Guid.NewGuid(); var deepSeek = Guid.NewGuid(); var missing = Guid.NewGuid(); var kash = Guid.NewGuid();
-        var byName = Guid.NewGuid();
-        var resolved = reader.Resolve([new(codex, @"C:\projets\Battlestation", false), new(deepSeek, @"C:\projets\Battlestation", true),
-            new(missing, @"C:\projets\Absent", false), new(kash, @"C:\projets\Kash", false), new(byName, "Battlestation", null)]);
-        Check(resolved.ContainsKey(codex) && Path.GetFileName(resolved[codex].Path) == "rollout-openai.jsonl", "l'onglet Codex lit le rollout ChatGPT le plus recent du projet");
-        Equal(early.AddHours(3), resolved[codex].Last, "l'horodatage lu est celui du dernier evenement");
-        Check(resolved.ContainsKey(deepSeek) && Path.GetFileName(resolved[deepSeek].Path) == "rollout-ds.jsonl", "l'onglet Codex (DS) lit sa propre variante");
-        Check(!resolved.ContainsKey(missing), "un projet sans rollout ne produit aucun badge");
-        Check(resolved.ContainsKey(kash) && Path.GetFileName(resolved[kash].Path) == "rollout-kash.jsonl", "chaque projet garde son propre rollout");
-        Check(resolved[codex].Path != resolved[deepSeek].Path && !resolved[codex].Provider.Equals("deepseek", StringComparison.OrdinalIgnoreCase) && resolved[deepSeek].Provider == "deepseek", "deux onglets du meme projet gardent chacun leur variante");
-        Equal(100L, resolved[deepSeek].InputTokens, "les jetons d'entree de la session sont lus dans le rollout");
-        Equal(78L, resolved[deepSeek].CachedInputTokens, "les jetons en cache de la session sont lus dans le rollout");
-        Equal("cache 78 %", PromptCache.Hit(resolved[deepSeek].CachedInputTokens, resolved[deepSeek].InputTokens).Badge, "le taux de hit porte sur la session de l'onglet");
-        var quiet = Guid.NewGuid();
-        Session(sessions, "2026/09/21", "rollout-quiet.jsonl", @"C:\projets\Quiet", "deepseek", early.AddHours(7), false);
-        var without = new CodexRolloutReader(sessions).Resolve([new(quiet, @"C:\projets\Quiet", true)]);
-        Check(without.ContainsKey(quiet) && without[quiet].InputTokens == 0, "une session sans compteur reste sans taux");
-        Check(!PromptCache.Hit(without[quiet].CachedInputTokens, without[quiet].InputTokens).HasBadge, "sans compteur de session, l'onglet DS reste nu");
-        // Le dernier tour decrit ce qui vient de se passer, pas la moyenne du jour.
-        var turn = Guid.NewGuid();
-        var turnPath = Session(sessions, "2026/09/21", "rollout-turn.jsonl", @"C:\projets\Turn", "deepseek", early.AddHours(8));
-        File.AppendAllText(turnPath, Usage(early.AddHours(8).AddMinutes(1), 100, 78, 5, 10, 4) + "\n", new UTF8Encoding(false));
-        var turnOnly = new CodexRolloutReader(sessions).Resolve([new(turn, @"C:\projets\Turn", true)]);
-        Equal(10L, turnOnly[turn].InputTokens, "le taux lit le dernier tour de la session");
-        Equal("cache 40 %", PromptCache.Hit(turnOnly[turn].CachedInputTokens, turnOnly[turn].InputTokens).Badge, "un tour froid fait descendre le badge");
-        Check(resolved.ContainsKey(byName) && Path.GetFileName(resolved[byName].Path) == "rollout-openai.jsonl", "un nom de projet suffit quand le CLI est lance depuis un onglet nu");
-        var solo = Guid.NewGuid();
-        Session(sessions, "2026/09/21", "rollout-solo.jsonl", @"C:\projets\Solo", "deepseek", early.AddHours(5));
-        var deep = new CodexRolloutReader(sessions).Resolve([new(solo, "Solo", null)]);
-        Check(deep.ContainsKey(solo) && deep[solo].Provider == "deepseek", "sans variante connue, le fournisseur du rollout le plus recent decide");
-        // La date de modification d'une session en cours peut retarder sur son contenu.
-        var shift = Guid.NewGuid();
-        var active = Session(sessions, "2026/09/21", "rollout-actif.jsonl", @"C:\projets\Shift", "openai", early.AddHours(6));
-        var closed = Session(sessions, "2026/09/21", "rollout-clos.jsonl", @"C:\projets\Shift", "deepseek", early.AddHours(4));
-        File.SetLastWriteTimeUtc(active, early.AddHours(1).UtcDateTime);
-        File.SetLastWriteTimeUtc(closed, early.AddHours(5).UtcDateTime);
-        var latest = new CodexRolloutReader(sessions).Resolve([new(shift, "Shift", null)]);
-        Check(latest.ContainsKey(shift) && Path.GetFileName(latest[shift].Path) == "rollout-actif.jsonl", "le dernier evenement l'emporte sur une date de modification retardee");
-        // Une ligne de sortie volumineuse ne doit pas masquer le dernier evenement.
-        var long1 = Session(sessions, "2026/09/21", "rollout-long.jsonl", @"C:\projets\Long", "openai", early);
-        File.AppendAllText(long1, Event(early.AddHours(1), new string('x', 300 * 1024)) + "\n", new UTF8Encoding(false));
-        File.AppendAllText(long1, Event(early.AddHours(4), "dernier") + "\n", new UTF8Encoding(false));
-        var longTab = Guid.NewGuid();
-        var again = new CodexRolloutReader(sessions).Resolve([new RolloutQuery(longTab, @"C:\projets\Long", false)]);
-        Check(again.ContainsKey(longTab), "un rollout a ligne volumineuse reste lisible");
-        Check(again[longTab].Last >= early.AddHours(4), "l'horodatage final est retrouve malgre la ligne volumineuse");
-        Equal(0, reader.Resolve([]).Count, "aucune requete ne produit aucun resultat");
-        Equal(0, reader.Resolve([new RolloutQuery(Guid.NewGuid(), "   ", false)]).Count, "un nom de projet vide ne produit aucun resultat");
+        var a = Fixture(sessions, "a", "deepseek"); var b = Fixture(sessions, "b", "deepseek");
+        var child = Fixture(sessions, "child", subagent: true);
+        Append(a, Usage(Now.AddMinutes(-10), 100, 20, 100)); Append(b, Usage(Now, 100, 90, 100));
+        var paths = new Dictionary<int, string[]> { [1] = [a, child], [2] = [b] };
+        var reader = new CodexRolloutReader(sessions, pid => paths.GetValueOrDefault(pid) ?? []);
+        var tabA = Guid.NewGuid(); var tabB = Guid.NewGuid();
+        RolloutActivity ReadA() => reader.Resolve([new(tabA, 1)])[tabA];
+        var both = reader.Resolve([new(tabA, 1), new(tabB, 2)]);
+        Equal("cache 20 %", both[tabA].State(Now).Badge, "premier onglet DS du meme projet : sa propre mesure");
+        Equal("cache 90 %", both[tabB].State(Now).Badge, "second onglet DS du meme projet : sa propre mesure");
+        Equal(a, both[tabA].Path, "les sous-agents ne remplacent pas la conversation principale");
+        paths[1] = [a, b]; Check(!reader.Resolve([new(tabA, 1)]).ContainsKey(tabA), "deux conversations principales : aucun choix arbitraire");
+        paths[1] = []; Check(!reader.Resolve([new(tabA, 1)]).ContainsKey(tabA), "association perdue : aucune mesure d'un autre onglet");
+        paths[1] = [a];
+        File.SetLastWriteTimeUtc(a, Now.AddDays(-10).UtcDateTime);
+        for (int i = 0; i < 8; i++) Fixture(sessions, "unrelated-" + i);
+        Equal(a, ReadA().Path, "une session ancienne reste liee malgre huit fichiers plus recents");
+        var openai = Fixture(sessions, "openai"); paths[1] = [openai];
+        Check(ReadA().State(Now).Hint == TerminalCacheHint.Uncertain, "session sans appel : jamais verte");
+        Append(openai, Usage(Now.AddMinutes(-45), 100, 90, 100));
+        Append(openai, Record(Now, "event_msg", new { type = "task_started" }));
+        Check(ReadA().State(Now).Hint == TerminalCacheHint.Uncertain, "un evenement local ne rechauffe pas un ancien cache");
+        Append(openai, Usage(Now.AddMinutes(-5), 100, 90, 200));
+        Equal(Now.AddMinutes(-5), ReadA().CacheObservedAt, "une nouvelle reutilisation date l'observation");
+        Append(openai, Usage(Now, 100, 90, 200));
+        Equal(Now.AddMinutes(-5), ReadA().CacheObservedAt, "une notification dupliquee ne repousse pas l'estimation");
+        Append(openai, Record(Now, "event_msg", new { type = "token_count", info = (object?)null }));
+        Equal(Now.AddMinutes(-5), ReadA().CacheObservedAt, "info:null n'efface pas la mesure et ne bloque pas le lecteur");
+        Append(openai, Record(Now, "compacted", new { }));
+        Check(ReadA().CacheObservedAt is null, "une compaction invalide le prefixe");
+        Append(openai, Usage(Now, 100, 90, 200));
+        Check(ReadA().CacheObservedAt is null, "un doublon apres compaction ne revalide pas le prefixe");
+        Append(openai, Usage(Now, 100, 80, 300));
+        Check(ReadA().CacheObservedAt == Now, "une vraie mesure apres compaction restaure l'estimation");
+        Append(openai, Record(Now, "turn_context", new { model = "gpt-5.6-sol" }));
+        Check(ReadA().CacheObservedAt is null, "un changement de modele invalide le prefixe");
+        Append(openai, Usage(Now, 100, 0, 400));
+        Check(ReadA().CacheObservedAt is null, "un cache miss ne devient pas un cache chaud");
+        Append(openai, Usage(Now, 100, 0, 500, 100));
+        Check(ReadA().CacheObservedAt == Now, "une ecriture explicite constitue une observation");
+        Append(openai, Usage(Now, 100, 90, 100));
+        Check(ReadA().CacheObservedAt is null, "un compteur cumule remis a zero ne simule pas un nouvel appel");
+        Append(openai, Usage(Now, 100, null, 200));
+        Check(ReadA().CachedInputTokens is null && !PromptCache.Hit(ReadA().CachedInputTokens, ReadA().InputTokens).HasBadge, "compteur absent ne signifie pas zero pour cent");
+        Append(openai, Usage(Now, 100, 0, 300));
+        Equal("cache 0 %", PromptCache.Hit(ReadA().CachedInputTokens, ReadA().InputTokens).Badge, "un zero mesure reste un zero");
+        var partial = Usage(Now, 100, 90, 400);
+        File.AppendAllText(openai, partial[..(partial.Length / 2)], new UTF8Encoding(false));
+        Check(ReadA().CacheObservedAt is null, "une ligne incomplete n'est pas appliquee");
+        File.AppendAllText(openai, partial[(partial.Length / 2)..] + "\n", new UTF8Encoding(false));
+        Equal(Now, ReadA().CacheObservedAt, "la suite d'une ligne incomplete est relue au prochain passage");
+        Append(openai, Record(Now, "response_item", new { text = new string('x', 5 * 1024 * 1024) }));
+        Append(openai, Usage(Now, 100, 90, 500));
+        Equal(Now, ReadA().CacheObservedAt, "une ligne volumineuse ne masque pas les mesures suivantes");
+        File.WriteAllText(openai, Record(Now, "session_meta", new { id = Guid.NewGuid(), source = "cli", model_provider = "openai" }) + "\n");
+        Check(ReadA().CacheObservedAt is null, "un fichier tronque perd ses anciennes mesures");
+        Check(PromptCache.FromObservation(Now, "modele-inconnu", Now).Hint == TerminalCacheHint.Uncertain, "aucune duree inventee pour un modele inconnu");
+        Check(PromptCache.FromObservation(Now, "gpt-5.5", Now).Hint == TerminalCacheHint.Uncertain, "aucune garantie de trente minutes pour un ancien modele");
+        Check(PromptCache.FromObservation(Now, "gpt-6-astra", Now.AddMinutes(5)).Hint == TerminalCacheHint.Uncertain, "un horodatage futur n'allonge pas la fenetre");
+        Equal(0, reader.Resolve([]).Count, "aucun onglet : aucune mesure");
     }
-    static string Session(string root, string day, string name, string cwd, string provider, DateTimeOffset stamp, bool counters = true)
+    static void ProcessBinding(string root)
     {
-        var directory = Path.Combine(root, day.Replace('/', Path.DirectorySeparatorChar)); Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, name);
-        var line = "{\"timestamp\":" + JsonSerializer.Serialize(stamp.ToString("o")) + ",\"ordinal\":0,\"type\":\"session_meta\",\"payload\":{\"id\":\"" + Guid.NewGuid().ToString("N") + "\",\"cwd\":" + JsonSerializer.Serialize(cwd) + ",\"model_provider\":\"" + provider + "\"}}";
-        File.WriteAllText(path, line + "\n" + Event(stamp, "session") + "\n" + (counters ? Usage(stamp, 100, 78, 5) + "\n" : ""), new UTF8Encoding(false));
-        // Le fichier le plus recemment modifie est celui de la session la plus recente.
-        File.SetLastWriteTimeUtc(path, stamp.UtcDateTime);
-        return path;
+        var dir = Path.Combine(root, "native");
+        var main = Fixture(dir, "main"); var child = Fixture(dir, "child", subagent: true);
+        var info = new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true,
+            WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden, RedirectStandardInput = true, RedirectStandardOutput = true };
+        info.ArgumentList.Add("--hold-rollouts"); info.ArgumentList.Add(main); info.ArgumentList.Add(child);
+        using var process = System.Diagnostics.Process.Start(info)!;
+        try
+        {
+            Equal("ready", process.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10)).GetAwaiter().GetResult(), "processus synthetique pret sans console interactive");
+            var paths = TerminalRolloutPath.Find(process.Id, dir);
+            Check(paths.Contains(main) && paths.Contains(child), "les handles du processus identifient ses journaux ouverts");
+            var id = Guid.NewGuid(); var bound = new CodexRolloutReader(dir).Resolve([new(id, process.Id)]);
+            Equal(main, bound[id].Path, "liaison native puis filtrage du sous-agent");
+            Equal(0, TerminalRolloutPath.Find(process.Id, Path.Combine(dir, "other")).Length, "aucun fichier hors du dossier de sessions");
+        }
+        finally
+        {
+            process.StandardInput.Close();
+            if (!process.WaitForExit(10000)) { process.Kill(); process.WaitForExit(); }
+        }
+        Equal(0, TerminalRolloutPath.Find(process.Id, dir).Length, "un processus termine ne garde aucune association");
     }
-    static string Event(DateTimeOffset stamp, string text)
-        => "{\"timestamp\":" + JsonSerializer.Serialize(stamp.ToString("o")) + ",\"type\":\"event_msg\",\"payload\":{\"text\":" + JsonSerializer.Serialize(text) + "}}";
-    static string Usage(DateTimeOffset stamp, long input, long cached, long output, long? turnInput = null, long? turnCached = null)
-        => "{\"timestamp\":" + JsonSerializer.Serialize(stamp.ToString("o")) + ",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{"
-            + (turnInput is { } recent ? "\"last_token_usage\":{\"input_tokens\":" + recent + ",\"cached_input_tokens\":" + (turnCached ?? 0) + ",\"output_tokens\":1,\"total_tokens\":" + (recent + 1) + "}," : "")
-            + "\"total_token_usage\":{\"input_tokens\":" + input + ",\"cached_input_tokens\":" + cached + ",\"output_tokens\":" + output + ",\"total_tokens\":" + (input + output) + "}}}}";
-
-    // 4 bis. Variante et projet lus sur la ligne de commande du CLI.
-    static void CommandLines()
-    {
-        const string deepSeek = "\"C:\\Codex\\codex.exe\" -c tui.animations=false -c model_provider=\"deepseek\" -c model=\"deepseek-flash\" -c model_providers.deepseek.base_url=\"https://api.deepseek.com/\" -C C:\\projets\\Battlestation";
-        var variant = CodexCommand.Parse(deepSeek);
-        Check(variant.DeepSeek, "model_provider=deepseek est reconnu comme la variante DeepSeek");
-        Equal(@"C:\projets\Battlestation", variant.Project, "l'argument -C donne le projet suivi");
-        var chatgpt = CodexCommand.Parse("\"C:\\Codex\\codex.exe\" -c tui.animations=false -c tui.terminal_title=['run-state','activity'] -C \"C:\\projets\\Battlestation 2\"");
-        Check(!chatgpt.DeepSeek, "un CLI sans model_provider n'est pas la variante DeepSeek");
-        Equal(@"C:\projets\Battlestation 2", chatgpt.Project, "un chemin entre guillemets reste entier");
-        var url = CodexCommand.Parse("\"C:\\Codex\\codex.exe\" -c model_providers.deepseek.base_url=\"https://api.deepseek.com/\" --cd C:\\projets\\Kash");
-        Check(!url.DeepSeek, "une URL DeepSeek n'est pas la variante DeepSeek");
-        Equal(@"C:\projets\Kash", url.Project, "la forme longue --cd est acceptee");
-        var bare = CodexCommand.Parse("\"C:\\Codex\\codex.exe\"");
-        Check(!bare.DeepSeek && bare.Project is null, "une ligne de commande sans option ne dit rien");
-        Check(!CodexCommand.Parse(null).DeepSeek && CodexCommand.Parse("").Project is null, "une ligne de commande absente ne dit rien");
-    }
-
     // 5. Rendu reel de la barre d'onglets : badge present, teinte automatique,
     // couleur choisie intacte.
     static void TabRendering()
@@ -199,19 +219,19 @@ static class TerminalCacheTests
         var plain = new TerminalTabInfo(Guid.NewGuid(), "PowerShell 2", false);
         var codex = new TerminalTabInfo(Guid.NewGuid(), "Battlestation", true, Activity: TerminalActivity.Ready);
         var manual = new TerminalTabInfo(Guid.NewGuid(), "Battlestation", true, Accent: "#ED9EC8", Activity: TerminalActivity.Ready);
-        var badged = Render([plain, codex with { Badge = PromptCache.Hourglass + " 12 min", CacheHint = TerminalCacheHint.Aging }]);
+        var badged = Render([plain, codex with { Badge = PromptCache.Hourglass + " ≈ 12 min", CacheHint = TerminalCacheHint.Aging }]);
         var bare = Render([plain, codex]);
         Check(!Same(badged, bare), "le badge de cache change le rendu de l'onglet Codex");
         Check(Same(badged, bare, 110), "l'onglet PowerShell nu ne porte aucun badge");
         var fresh = Render([codex with { CacheHint = TerminalCacheHint.Fresh }]);
-        var expired = Render([codex with { CacheHint = TerminalCacheHint.Expired }]);
+        var expired = Render([codex with { CacheHint = TerminalCacheHint.Uncertain }]);
         Check(!Same(fresh, expired), "la teinte automatique suit le restant du cache");
         var manualFresh = Render([manual with { CacheHint = TerminalCacheHint.Fresh }]);
-        var manualExpired = Render([manual with { CacheHint = TerminalCacheHint.Expired }]);
+        var manualExpired = Render([manual with { CacheHint = TerminalCacheHint.Uncertain }]);
         Check(Same(manualFresh, manualExpired), "une couleur choisie n'est pas teintee par le cache");
         // Un titre long ne doit pas repousser le compte a rebours hors de l'onglet.
         var long1 = new TerminalTabInfo(Guid.NewGuid(), "Implémenter l'indicateur de cache | Battlestation", true, Activity: TerminalActivity.Ready);
-        var longBadged = Render([long1 with { Badge = PromptCache.Hourglass + " 12 min", CacheHint = TerminalCacheHint.Aging }]);
+        var longBadged = Render([long1 with { Badge = PromptCache.Hourglass + " ≈ 12 min", CacheHint = TerminalCacheHint.Aging }]);
         Check(Tinted(longBadged, 233, 190, 129) > Tinted(Render([long1 with { CacheHint = TerminalCacheHint.Aging }]), 233, 190, 129), "le texte du compte a rebours reste peint malgre un titre long");
         Check(Tinted(Render([long1]), 233, 190, 129) < 10, "sans badge, la teinte ambre n'apparait pas sur l'onglet");
     }

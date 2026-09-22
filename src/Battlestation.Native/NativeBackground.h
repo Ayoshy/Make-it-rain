@@ -9,6 +9,7 @@ void SetCanvas(int left,int top,int width,int height,int seam);
 void Capture();
 void SetPalette(int index,const unsigned int* colors);
 void SetTheme(int index,bool immediate);
+void SetWallpaperRotation(bool enabled);
 void SetAppearance(bool animate,float opacity);
 void SetAudio(float bass,float middle,float treble,float intensity);
 void SetSceneFade(float alpha);

@@ -19,14 +19,14 @@ internal static class ScenesTests
             var settings=new DesktopSettings(temp,"Aix",43.5,5.4);
             var layout=new DesktopLayout(Path.Combine(temp,"layout.json"),11);
             var profiles=new DesktopProfiles(Path.Combine(temp,"profiles.json"));
-            profiles.SaveCurrent(layout,settings);var personnel=layout.Blocks.ToArray();
+            settings=Settings(settings,profiles.RedesignAll(layout,settings,11));profiles.SaveCurrent(layout,settings);var personnel=layout.Blocks.ToArray();
             foreach(string name in DesktopProfiles.Presets)
             {
                 settings=Settings(settings,profiles.Switch(name,layout,settings));
                 layout.SetVisible("clock",false);settings=settings with{ThemeId="aurore",GlassOpacity=.33,AnimateBackground=false,ReactiveAudio=false,AudioIntensity=.25};
                 profiles.SaveCurrent(layout,settings);var modified=layout.Blocks.ToArray();
-                settings=Settings(settings,profiles.Switch("Personnel",layout,settings));
-                Check(layout.Blocks.SequenceEqual(personnel),"Personnel intact après "+name);
+                settings=Settings(settings,profiles.Switch("Bureau",layout,settings));
+                Check(layout.Blocks.SequenceEqual(personnel),"Bureau intact après "+name);
                 profiles=new DesktopProfiles(Path.Combine(temp,"profiles.json"));
                 var returned=profiles.Switch(name,layout,settings);settings=Settings(settings,returned);
                 Check(layout.Blocks.SequenceEqual(modified)&&settings.ThemeId=="aurore"&&settings.GlassOpacity==.33&&!settings.AnimateBackground&&!settings.ReactiveAudio&&settings.AudioIntensity==.25,name+" retrouve disposition, thème et réglages après relecture");
@@ -34,61 +34,46 @@ internal static class ScenesTests
             var origin=profiles.Current;var originBlocks=layout.Blocks.ToArray();profiles.SaveUser("Travail perso",layout,settings);layout.SetVisible("music",false);profiles.SaveCurrent(layout,settings);
             profiles.Switch(origin,layout,settings);Check(layout.Blocks.SequenceEqual(originBlocks),"Sauver sous conserve sa scène d’origine");
             profiles.Switch("Travail perso",layout,settings);var reset=profiles.ResetTemplate(layout,settings,11);
-            Check(reset.TemplateId==origin&&reset.ThemeId=="aurore"&&layout["music"].Visible,"Rétablir le modèle utilise le modèle de la scène copiée");
-            profiles.Switch("Personnel",layout,settings);Check(layout.Blocks.SequenceEqual(personnel),"Rétablir un modèle conserve Personnel");
+            Check(reset.TemplateId==origin&&reset.ThemeId=="obsidienne"&&layout["music"].Visible,"Rétablir le modèle utilise le modèle de la scène copiée");
+            profiles.Switch("Bureau",layout,settings);Check(layout.Blocks.SequenceEqual(personnel),"Rétablir un modèle conserve Bureau");
             string before=File.ReadAllText(Path.Combine(temp,"profiles.json"));var committed=layout.Blocks.ToArray();layout.SetVisible("clock",false);
             Check(File.ReadAllText(Path.Combine(temp,"profiles.json"))==before,"Un geste intermédiaire ne sauvegarde pas la scène");layout.Restore(committed);
             Check(layout.Blocks.SequenceEqual(personnel),"Annulation du geste restaure le plan enregistré");
-            if(args.Length>0)
-            {
-                string source=Path.GetFullPath(args[0]);File.Copy(Path.Combine(source,"profiles.json"),Path.Combine(temp,"profiles.json"),true);File.Copy(Path.Combine(source,"layout.json"),Path.Combine(temp,"layout.json"),true);
-                var old=JsonSerializer.Deserialize<ProfileFile>(File.ReadAllText(Path.Combine(temp,"profiles.json")))!;
-                layout=new DesktopLayout(Path.Combine(temp,"layout.json"),11);var live=layout.Blocks.ToArray();settings=DesktopSettings.Load(Path.Combine(source,"preferences.json"),settings);
-                profiles=new DesktopProfiles(Path.Combine(temp,"profiles.json"));profiles.SaveCurrent(layout,settings);
-                var migrated=JsonSerializer.Deserialize<ProfileFile>(File.ReadAllText(Path.Combine(temp,"profiles.json")))!;
-                Check(profiles.Current==old.Current&&layout.Blocks.SequenceEqual(live)&&migrated.Profiles[old.Current].Blocks.SequenceEqual(live),"Migration réelle : la scène live reste prioritaire");
-                Check(migrated.Version==5&&migrated.Profiles.All(p=>p.Key==old.Current?p.Value.ThemeId==settings.ThemeId:p.Value.ThemeId==(old.Version<2?"vice-city":old.Profiles[p.Key].ThemeId)),"Migration réelle : format 5 et ambiances conservées");
-                foreach(var (name,profile) in old.Profiles.Where(p=>p.Key!=old.Current))
-                {
-                    var compared=name=="Jeu"?profile.Blocks.Where(b=>b.Id!="countdown"&&b.Id!="dualsense"):profile.Blocks;
-                    Check(compared.All(b=>migrated.Profiles[name].Blocks.Single(n=>n.Id==b.Id)==b),"Migration conserve le profil "+name+" hors ajout Jeu demandé");
-                }
-                var returnTo=profiles.Current;settings=Settings(settings,profiles.Switch("Personnel",layout,settings));
-                Check(migrated.Profiles["Personnel"].Blocks.All(b=>layout[b.Id]==b)&&(migrated.Profiles["Personnel"].Blocks.Any(b=>b.Id=="dualsense")||!layout["dualsense"].Visible),"Migration réelle : retour intégral à Personnel");
-                profiles.Switch(returnTo,layout,settings);Check(layout.Blocks.SequenceEqual(live),"Migration réelle : retour intégral à la scène active");
-            }
+            SceneMigrationTests.Run(temp,Check,args);
             var namesBefore=profiles.AllNames.ToArray();string activeBefore=profiles.Current;
             profiles.RedesignAll(layout,settings,11);
             Check(profiles.Current==activeBefore&&profiles.AllNames.SequenceEqual(namesBefore),"Refonte complète conserve les noms et ne crée pas de copies des anciens agencements");
             foreach(string name in profiles.AllNames){
                 var redesigned=profiles.Switch(name,layout,settings);settings=Settings(settings,redesigned);
                 Check(layout.Blocks.All(block=>layout.Valid(block)),name+" : disposition valide sur les deux écrans");
-                Check(layout["network"].Visible!=(redesigned.TemplateId is "Jeu" or DesktopProfiles.Mono),name+" : réseau selon le modèle");
+                Check(layout["network"].Visible==(redesigned.TemplateId is "Bureau" or "Jeu"),name+" : réseau selon le modèle");
                 foreach(string required in new[]{"terminal","projects","video"})Check(layout[required].Visible,name+" : "+required+" visible");
-                Check(!layout["aquarium"].Visible&&!layout["ocean"].Visible,name+" : aquarium et océan masqués");
+                Check(!layout["montagne"].Visible,name+" : Montagne masquée");
                 Check(layout["lol"].Visible==(redesigned.TemplateId=="Jeu"),name+" : LoL seulement en Jeu");
-                Check(layout["dualsense"].Visible==(redesigned.TemplateId is "Jeu" or "Double écran"),name+" : DualSense en Jeu et Double écran");
+                Check(layout["dualsense"].Visible==(redesigned.TemplateId =="Jeu"),name+" : DualSense en Jeu");
                 Check(layout.Blocks.Where(b=>b.Visible).All(b=>b.Width>=DesktopLayout.Minimum(b.Id).Width&&b.Height>=DesktopLayout.Minimum(b.Id).Height),name+" : tailles minimales respectées");
             }
             var reloaded=new DesktopProfiles(Path.Combine(temp,"profiles.json"));
             Check(!reloaded.NeedsRedesign,"La refonte ne se répète pas au relancement");
-            // Les deux nouveaux docks arrivent masqués et seuls Jeu et Cinéma les intègrent.
+            // Les nouveaux docks arrivent masqués et seul Jeu intègre LoL.
             var models=DesktopLayout.Defaults(11);
-            Check(models.Single(b=>b.Id=="aquarium") is{Visible:false,Width:700,Height:420}&&models.Single(b=>b.Id=="lol") is{Visible:false,Width:700,Height:220},"Aquarium et LoL arrivent masqués avec leur taille par défaut");
-            Check(DesktopLayout.Minimum("aquarium")==new Size(360,240)&&DesktopLayout.Minimum("lol")==new Size(440,180),"Les minimums de l'Aquarium et de LoL sont déclarés");
-            Check(models.Single(b=>b.Id=="ocean") is{Visible:false,Width:720,Height:480},"Le Diorama Océan arrive masqué avec sa taille par défaut");
-            Check(DesktopLayout.Minimum("ocean")==new Size(420,300),"Le minimum du Diorama Océan est déclaré");
+            Check(models.Single(b=>b.Id=="montagne") is{Visible:false,Width:960,Height:600}&&models.Single(b=>b.Id=="lol") is{Visible:false,Width:700,Height:220},"Montagne et LoL arrivent masqués avec leur taille par défaut");
+            Check(DesktopLayout.Minimum("montagne")==new Size(560,340)&&DesktopLayout.Minimum("lol")==new Size(440,180),"Les minimums de Montagne et de LoL sont déclarés");
             foreach(string name in DesktopProfiles.Names)
             {
                 var preset=DesktopProfiles.Preset(name,models);
-                Check(preset.Single(b=>b.Id=="aquarium") is{Visible:false}&&preset.Single(b=>b.Id=="ocean") is{Visible:false},name+" ne place ni Aquarium ni Diorama Océan");
+                Check(preset.Single(b=>b.Id=="montagne") is{Visible:false},name+" ne place pas Montagne");
                 Check(preset.Single(b=>b.Id=="lol").Visible==(name=="Jeu"),name+" ne montre LoL qu'en Jeu");
-                Check(preset.Single(b=>b.Id=="dualsense").Visible==(name is "Jeu" or "Double écran"),name+" ne montre la DualSense qu'en Jeu et Double écran");
+                Check(preset.Single(b=>b.Id=="dualsense").Visible==(name =="Jeu"),name+" ne montre la DualSense qu'en Jeu");
                 foreach(string required in new[]{"terminal","projects","video"})Check(preset.Single(b=>b.Id==required).Visible,name+" réserve "+required);
+                if(name=="Jeu"){
+                    var secondary=preset.Where(b=>b.Visible&&b.X>=2560).Select(b=>b.Id).ToHashSet();
+                    Check(secondary.SetEquals(new[]{"video","terminal","network","lol","dualsense"}),"Jeu : les cinq docks utiles sur le secondaire, le reste sur le principal");
+                    Check(preset.Single(b=>b.Id=="video").Width>=1500&&preset.Single(b=>b.Id=="terminal").Width>=1500,"Jeu : vidéo et terminal restent larges");
+                }
             }
             var committedLayout=layout.Blocks.ToArray();
-            Check(layout.Restore(committedLayout.Where(b=>b.Id is not ("aquarium" or "lol")).ToArray())&&!layout["aquarium"].Visible&&!layout["lol"].Visible,"Une scène existante retrouve les nouveaux blocs masqués");
-            Check(layout.Restore(committedLayout.Where(b=>b.Id!="ocean").ToArray())&&!layout["ocean"].Visible,"Une scène existante retrouve le Diorama Océan masqué");
+            Check(layout.Restore(committedLayout.Where(b=>b.Id is not ("montagne" or "lol")).ToArray())&&!layout["montagne"].Visible&&!layout["lol"].Visible,"Une scène existante retrouve les nouveaux blocs masqués");
             layout.Restore(committedLayout);
             SingleScreenTests.Run(temp,Check);
             ScreenFitTests.Run(temp,Check);
@@ -108,8 +93,8 @@ internal static class ScenesTests
             }
             DesktopTheme.Select("vice-city",false);Check(brush.Color==(Color)ColorConverter.ConvertFromString("#DAD2E7"),"Annulation : couleurs Vice City exactes");
             var state=new Station(new DesktopSettings(temp,"Aix",43.5,5.4),layout);
-            var sceneFile=new DesktopProfiles(Path.Combine(temp,"settings-profiles.json"));sceneFile.SaveCurrent(layout,state.Settings);state.Saved=()=>sceneFile.SaveCurrent(layout,state.Settings);
-            SettingsWindow SettingsWindow()=>new(state,new PaletteHotkey(),(_,_)=>true,()=>{},_=>{},_=>{},()=>{},_=>{},()=>{},()=>[],"Personnel");
+            var sceneFile=new DesktopProfiles(Path.Combine(temp,"settings-profiles.json"));sceneFile.RedesignAll(layout,state.Settings,11);sceneFile.SaveCurrent(layout,state.Settings);state.Saved=()=>sceneFile.SaveCurrent(layout,state.Settings);
+            SettingsWindow SettingsWindow()=>new(state,new PaletteHotkey(),(_,_)=>true,()=>{},_=>{},_=>{},()=>{},_=>{},()=>{},()=>[],"Bureau");
             static IEnumerable<DependencyObject> Tree(DependencyObject item){yield return item;foreach(var child in LogicalTreeHelper.GetChildren(item).OfType<DependencyObject>())foreach(var descendant in Tree(child))yield return descendant;}
             static void Click(SettingsWindow window,string label)=>Tree(window).OfType<Button>().Single(b=>b.Content as string==label).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             static void Toggle(SettingsWindow window,string label){var box=Tree(window).OfType<CheckBox>().Single(b=>(b.Content as string)==label);box.IsChecked=!(box.IsChecked==true);box.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));}
@@ -124,8 +109,8 @@ internal static class ScenesTests
             Check(state.Settings.DualSenseTouchTrail,"Enregistrer l’apparence conserve le choix tactile global");
             Check(state.Settings.GlassOpacity==1-glass/100&&!state.Settings.AnimateBackground&&!state.Settings.ReactiveAudio&&state.Settings.ThemeId=="vice-city","Enregistrer conserve transparence, animation et réactivité musicale");
             window.Close();
-            var cinema=profiles.Switch("Cinéma",layout,state.Settings);
-            Check(cinema.ThemeId=="obsidienne"&&cinema.Blocks.Single(b=>b.Id=="hardware").Visible&&!cinema.Blocks.Single(b=>b.Id=="usage").Visible,"Cinéma : Matériel seul sur l’écran 1, Codex masqué");
+            var cinema=profiles.Switch("Multimédia",layout,state.Settings);
+            Check(cinema.ThemeId=="obsidienne"&&!cinema.Blocks.Single(b=>b.Id=="hardware").Visible&&!cinema.Blocks.Single(b=>b.Id=="usage").Visible,"Multimédia : Matériel et Codex masqués");
             state.ApplySettings(Settings(state.Settings,cinema),state.TargetDate);
             Check(DesktopTheme.Current.Id=="obsidienne","Le changement de scène applique l’ambiance de la scène");
             Console.WriteLine(checks+" checks passed");return 0;

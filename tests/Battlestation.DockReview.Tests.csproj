@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="DockReviewTests.cs"/><Compile Include="DockReviewFixtures.cs"/><Compile Include="BluetoothSurfaceChecks.cs"/>
+    <Compile Include="ShoppingRadarChecks.cs"/>
     <Using Remove="System.Windows.Forms"/><Using Remove="System.Drawing"/>
     <Compile Include="../src/Battlestation/Surface.cs"/>
     <Compile Include="../src/Battlestation/DesktopScreens.cs"/>
@@ -26,13 +27,10 @@
     <Compile Include="../src/Battlestation/DeskSurface.cs"/>
     <Compile Include="../src/Battlestation/Spectrum.cs"/>
     <Compile Include="../src/Battlestation/AudioEnvelope.cs"/>
-    <Compile Include="../src/Battlestation/AquariumSurface.cs"/>
-    <Compile Include="../src/Battlestation/WaterEffect.cs"/>
-    <Compile Include="../src/Battlestation/OceanSurface.cs"/>
-    <Compile Include="../src/Battlestation/OceanEffect.cs"/>
-    <Compile Include="../src/Battlestation/OceanCamera.cs"/>
-    <Resource Include="../src/Battlestation/Shaders/Water.ps" Link="Shaders/Water.ps"/>
-    <Resource Include="../src/Battlestation/Shaders/Ocean.ps" Link="Shaders/Ocean.ps"/>
+    <Compile Include="../src/Battlestation/MontagneSurface.cs"/>
+    <Compile Include="../src/Battlestation/MontagneEffect.cs"/>
+    <Compile Include="../src/Battlestation/MontagneCamera.cs"/>
+    <Resource Include="../src/Battlestation/Shaders/Montagne.ps" Link="Shaders/Montagne.ps"/>
     <Compile Include="../src/Battlestation/LolSurface.cs"/>
     <Compile Include="../src/Battlestation/LolTelemetry.cs"/>
     <Compile Include="../src/Battlestation/ProjectSignals.cs"/>
@@ -51,8 +49,7 @@
     <Compile Include="../src/Battlestation/BudsBattery.cs"/>
     <Compile Include="../src/Battlestation/ShoppingSurface.cs"/>
     <Compile Include="../src/Battlestation/ShoppingRadar.cs"/>
-    <Compile Include="../src/Battlestation.Shopping/ShoppingModels.cs"/>
-    <Compile Include="../src/Battlestation.Shopping/IShoppingEngine.cs"/>
+    <ProjectReference Include="../src/Battlestation.Shopping/Battlestation.Shopping.csproj"/>
     <Resource Include="../assets/Fonts/art-deco.ttf" Link="Assets/Fonts/art-deco.ttf"/>
   </ItemGroup>
 </Project>

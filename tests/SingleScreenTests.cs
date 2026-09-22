@@ -12,7 +12,7 @@ internal static class SingleScreenTests
         var layout=new DesktopLayout(layoutPath,11);
         var settings=new DesktopSettings(folder,"Aix",43.5,5.4){ThemeId="aurore",GlassOpacity=.37};
         var profiles=new DesktopProfiles(profilePath);
-        profiles.SaveCurrent(layout,settings);var personal=layout.Blocks.ToArray();
+        profiles.RedesignAll(layout,settings,11);profiles.SaveCurrent(layout,settings);var personal=layout.Blocks.ToArray();
         profiles.SaveUser("Bureau perso",layout,settings);layout.SetVisible("countdown",false);layout.Save();profiles.SaveCurrent(layout,settings);
         var dual=layout.Blocks.ToArray();var before=JsonSerializer.Deserialize<ProfileFile>(File.ReadAllText(profilePath))!;
         var mono=profiles.MatchDisplays(true,layout,settings);
@@ -22,7 +22,7 @@ internal static class SingleScreenTests
         check(mono!.ThemeId==settings.ThemeId&&mono.Glass==settings.GlassOpacity,"Le premier passage mono conserve l’apparence choisie");
         check(profiles.MatchDisplays(true,layout,settings) is null&&profiles.ReturnScene=="Bureau perso","Notifications répétées : aucune seconde bascule ni perte du retour");
         var committed=layout.Blocks.ToArray();
-        bool rejected=false;try{profiles.Switch("Personnel",layout,settings);}catch(InvalidOperationException){rejected=true;}
+        bool rejected=false;try{profiles.Switch("Bureau",layout,settings);}catch(InvalidOperationException){rejected=true;}
         check(rejected&&layout.Blocks.SequenceEqual(committed)&&profiles.Current==DesktopProfiles.Mono,"Une scène du secondaire ne remplace pas le mono sur un seul écran");
         var drag=new LayoutGesture(layout.Blocks,"clock",LayoutEdge.Move,new Point(60,60),true,8,false,layout.AvailableScreens);
         check(drag.Preview(new Point(3000,60)).Blocks.Where(b=>b.Visible).All(b=>layout.Screens[0].Contains(b.Bounds)),"Le déplacement ne sort pas vers le secondaire absent");
@@ -34,14 +34,14 @@ internal static class SingleScreenTests
         profiles.MatchDisplays(false,layout,settings);layout.Save();
         check(!layout.SingleScreen&&profiles.Current=="Bureau perso"&&profiles.ReturnScene is null&&layout.Blocks.SequenceEqual(dual),"Rebranchement : retour exact aux positions, tailles et visibilités précédentes");
         var after=JsonSerializer.Deserialize<ProfileFile>(File.ReadAllText(profilePath))!;
-        check(before.Profiles.All(p=>JsonSerializer.Serialize(p.Value)==JsonSerializer.Serialize(after.Profiles[p.Key])),"La bascule conserve toutes les scènes existantes");
+        check(before.Profiles.Where(p=>p.Key!=DesktopProfiles.Mono).All(p=>JsonSerializer.Serialize(p.Value)==JsonSerializer.Serialize(after.Profiles[p.Key])),"La bascule conserve les autres scènes et leurs réglages");
         profiles.MatchDisplays(true,layout,settings);layout.Save();
         check(layout.Blocks.SequenceEqual(customMono),"Le débranchement suivant retrouve le mono personnalisé");
         profiles=new DesktopProfiles(profilePath);layout=new DesktopLayout(layoutPath,11);
         profiles.MatchDisplays(false,layout,settings);
         check(profiles.Current=="Bureau perso"&&layout.Blocks.SequenceEqual(dual),"Secondaire rebranché pendant l’arrêt : retour exact au démarrage");
-        profiles.Switch("Personnel",layout,settings);
-        check(layout.Blocks.SequenceEqual(personal),"Personnel reste intact après le cycle complet");
+        profiles.Switch("Bureau",layout,settings);
+        check(layout.Blocks.SequenceEqual(personal),"Bureau reste intact après le cycle complet");
         profiles.Switch(DesktopProfiles.Mono,layout,settings);
         check(layout.SingleScreen&&layout.Blocks.SequenceEqual(customMono),"La scène mono peut aussi être préparée avec deux écrans");
         profiles.ResetTemplate(layout,settings,11);

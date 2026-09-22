@@ -19,12 +19,19 @@ public sealed record PriceSourceOptions(
     public TimeSpan ProductFreshness=>ProductCache??TimeSpan.FromHours(6);
 }
 
+public interface IShoppingProgressSource
+{
+    event Action<string>? Progress;
+}
+
 public interface IPriceSource
 {
+    string Notice=>"";
     string Id{get;}
     string Name{get;}
     Task<IReadOnlyList<Product>> SearchAsync(ShoppingSpec spec,int limit,CancellationToken cancellation);
     Task<PricePoint?> GetPriceAsync(Product product,CancellationToken cancellation);
+    Task<ProductDetails?> GetDetailsAsync(Product product,CancellationToken cancellation)=>Task.FromResult<ProductDetails?>(null);
 }
 
 /// <summary>
@@ -55,6 +62,14 @@ public abstract partial class HtmlPriceSource(HttpClient http,PriceSourceOptions
         if(product.Url.Length==0)return null;
         var html=await FetchAsync(product.Url,options.ProductFreshness,cancellation);
         return ParseProductPage(html,product);
+    }
+
+    public virtual async Task<ProductDetails?> GetDetailsAsync(Product product,CancellationToken cancellation)
+    {
+        if(product.Url.Length==0)return null;
+        var html=await FetchAsync(product.Url,options.ProductFreshness,cancellation);
+        var text=HtmlProductDetails.Read(html);
+        return text.Length==0?null:new(text,product.Url);
     }
 
     /// <summary>Page mise en cache disque, relue sans réseau tant qu'elle est fraîche.</summary>
@@ -96,7 +111,7 @@ public abstract partial class HtmlPriceSource(HttpClient http,PriceSourceOptions
                 throw new PriceSourceUnavailableException($"{Name} a répondu {(int)response.StatusCode}.");
             var bytes=await response.Content.ReadAsByteArrayAsync(timeout.Token);
             var content=Decode(bytes,response.Content.Headers.ContentType?.CharSet);
-            if(Challenge().IsMatch(content))
+            if(Challenge().IsMatch(HtmlProductDetails.WithoutScripts(content)))
                 throw new PriceSourceUnavailableException($"{Name} demande une vérification de navigateur.");
             return content;
         }
@@ -164,7 +179,7 @@ public abstract partial class HtmlPriceSource(HttpClient http,PriceSourceOptions
     [GeneratedRegex(@"charset\s*=\s*[""']?([\w-]+)",RegexOptions.IgnoreCase)]
     private static partial Regex Charset();
 
-    [GeneratedRegex(@"captcha|Just a moment|Something has gone wrong|Access Denied|Vérifiez que vous êtes humain",RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"<(?:title|h1|h2)\b[^>]*>[^<]*(?:captcha|Just a moment|Access Denied)|Something has gone wrong|Vérifiez que vous êtes humain",RegexOptions.IgnoreCase)]
     private static partial Regex Challenge();
 }
 
@@ -173,7 +188,7 @@ public static partial class JsonLdProduct
 {
     public sealed record Offer(decimal? Price,string Currency,bool InStock,string Name,string Image,string Brand);
 
-    public static Offer? Read(string html)
+    public static Offer? Read(string html,string? productUrl=null)
     {
         foreach(Match block in Script().Matches(html))
         {
@@ -184,24 +199,26 @@ public static partial class JsonLdProduct
             try
             {
                 using var document=JsonDocument.Parse(json);
-                var offer=Read(document.RootElement);
+                var offer=Read(document.RootElement,productUrl);
                 if(offer is not null)return offer;
             }
             catch(JsonException){}
         }
         // Le corps JSON-LD peut contenir un tableau de produits : le premier prix suffit.
+        if(productUrl is not null)return null;
         var price=PriceField().Match(html);
         return price.Success?new Offer(HtmlPriceSourceAmount(price.Groups[1].Value),"EUR",!html.Contains("OutOfStock",StringComparison.Ordinal),"","",""):null;
     }
 
-    static Offer? Read(JsonElement root)
+    static Offer? Read(JsonElement root,string? productUrl)
     {
         if(root.ValueKind==JsonValueKind.Array)
         {
-            foreach(var item in root.EnumerateArray())if(Read(item) is {} nested)return nested;
+            foreach(var item in root.EnumerateArray())if(Read(item,productUrl) is {} nested)return nested;
             return null;
         }
         if(root.ValueKind!=JsonValueKind.Object)return null;
+        if(root.TryGetProperty("@graph",out var graph))return Read(graph,productUrl);
         var type=root.TryGetProperty("@type",out var kind)?kind.ToString():"";
         if(!type.Contains("Product",StringComparison.OrdinalIgnoreCase))return null;
         string name=Text(root,"name"), image=Text(root,"image");
@@ -209,12 +226,17 @@ public static partial class JsonLdProduct
             ?brandNode.ValueKind==JsonValueKind.Object?Text(brandNode,"name"):brandNode.ToString()
             :"";
         if(!root.TryGetProperty("offers",out var offers))return new Offer(null,"EUR",true,name,image,brand);
-        if(offers.ValueKind==JsonValueKind.Array&&offers.GetArrayLength()>0)offers=offers[0];
+        if(offers.ValueKind==JsonValueKind.Array&&offers.GetArrayLength()>0)
+        {
+            offers=productUrl is null?offers[0]:offers.EnumerateArray().FirstOrDefault(offer=>Text(offer,"url")==productUrl);
+            if(offers.ValueKind==JsonValueKind.Undefined)return null;
+        }
         if(offers.ValueKind!=JsonValueKind.Object)return new Offer(null,"EUR",true,name,image,brand);
         string currency=Text(offers,"priceCurrency");
         string availability=Text(offers,"availability");
         var price=Number(Text(offers,"price"))??Number(Text(offers,"lowPrice"));
-        bool inStock=!availability.Contains("OutOfStock",StringComparison.OrdinalIgnoreCase)&&!availability.Contains("SoldOut",StringComparison.OrdinalIgnoreCase);
+        bool inStock=productUrl is not null?availability.EndsWith("/InStock",StringComparison.OrdinalIgnoreCase)
+            :!availability.Contains("OutOfStock",StringComparison.OrdinalIgnoreCase)&&!availability.Contains("SoldOut",StringComparison.OrdinalIgnoreCase);
         return new Offer(price,currency.Length==0?"EUR":currency,inStock,name,image,brand);
     }
 

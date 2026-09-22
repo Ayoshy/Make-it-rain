@@ -13,11 +13,12 @@ internal sealed partial class DesktopWorkspace
     void InitializeCommands()
     {
         profiles=new DesktopProfiles(Path.Combine(station.Data,"profiles.json"));
-        // An upgrade must snapshot the live scene, never redesign the user's saved scenes.
-        profiles.SaveCurrent(station.Layout,station.Settings);
+        // Back up the live files before the explicitly requested one-time redesign.
         RedesignScenesOnce();
+        profiles.SaveCurrent(station.Layout,station.Settings);
         ReadDisplays();
         if(profiles.MatchDisplays(connectedScreens==1,station.Layout,station.Settings) is {} next){station.ApplyAppearance(next);station.Layout.Save();}
+        Native.BackgroundWallpaperRotation(profiles.Current=="Jeu"?1:0);
         station.Layout.Saved+=()=>{if(gesture is null)profiles.SaveCurrent(station.Layout,station.Settings);};
         station.SettingsChanged+=()=>{if(gesture is null)profiles.SaveCurrent(station.Layout,station.Settings);};
         mediaClipboard=new MediaClipboard(station.Reserve,()=>station.Settings.KeepMediaLinks);station.ClipboardRegistered=mediaClipboard.Registered;
@@ -71,7 +72,7 @@ internal sealed partial class DesktopWorkspace
         {
             bool show=!block.Visible;entries.Add(new("block:"+block.Id,(show?"Afficher ":"Masquer ")+block.Title,"Bloc du bureau","\uE8A9",()=>{if(!ChangeVisibility(block.Id,show))throw new InvalidOperationException("Pas assez d’espace libre pour ce bloc.");},true));
         }
-        var window=new CommandPaletteWindow(entries,()=>profiles.Current);palette=window;
+        var window=new CommandPaletteWindow(entries,station.Root,()=>profiles.Current);palette=window;
         window.Closed+=(_,_)=>{if(palette==window)palette=null;};
         PaletteEntry Project(string path)=>new("project:"+path,Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar)),"Projet","\uE8B7",()=>window.ProjectActions(Path.GetFileName(path),
             ()=>{if(!Directory.Exists(path))throw new DirectoryNotFoundException("Ce projet a été déplacé ou supprimé.");Process.Start(new ProcessStartInfo(path){UseShellExecute=true})?.Dispose();},

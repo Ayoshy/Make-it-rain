@@ -35,7 +35,7 @@ public sealed class ShoppingStore : IDisposable
     static SqliteConnection Open(string path)
     {
         try{return Connect(path);}
-        catch(SqliteException)
+        catch(SqliteException e) when(e.SqliteErrorCode is 11 or 26) // SQLITE_CORRUPT / SQLITE_NOTADB
         {
             Quarantine(path);
             return Connect(path);
@@ -85,17 +85,17 @@ public sealed class ShoppingStore : IDisposable
     /// <summary>Enregistre un relevé. Une même valeur répétée dans la journée ne crée pas un second point.</summary>
     public bool RecordPrice(PricePoint point)
     {
-        if(point.Price is null)return false;
         lock(gate)
         {
             var last=LastPriceLocked(point.ProductId);
             // Un relevé par jour suffit à décrire la tendance : le prix identique
             // n'est réécrit qu'après une journée complète.
-            if(last is not null&&last.Price==point.Price&&point.At-last.At<TimeSpan.FromHours(20))return false;
+            if(last is not null&&last.Price==point.Price&&last.InStock==point.InStock&&last.Currency==point.Currency
+                &&point.At-last.At<TimeSpan.FromHours(20))return false;
             Run(
                 "INSERT INTO price_point(product_id,at,price,currency,in_stock,source) VALUES($product,$at,$price,$currency,$stock,$source) "+
                 "ON CONFLICT(product_id,at) DO UPDATE SET price=$price,in_stock=$stock",
-                ("$product",point.ProductId),("$at",point.At.ToUnixTimeSeconds()),("$price",(double)point.Price.Value),
+                ("$product",point.ProductId),("$at",point.At.ToUnixTimeSeconds()),("$price",point.Price is {} price?(double)price:DBNull.Value),
                 ("$currency",point.Currency),("$stock",point.InStock?1:0),("$source",point.Source));
             return true;
         }

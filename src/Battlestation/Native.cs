@@ -14,6 +14,7 @@ internal static class Native
     [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundSceneFade(float alpha);
     [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundPalette(int index,uint[] colors);
     [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundTheme(int index,int immediate);
+    [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundWallpaperRotation(int enabled);
     [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundAudio(float bass,float middle,float treble,float intensity);
     [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundPanelFront(int slot);
     [DllImport(G, CallingConvention=CallingConvention.Cdecl)] internal static extern void BackgroundGlass(float x,float cy,float my,float w,float ch,float mh);

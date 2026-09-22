@@ -6,6 +6,9 @@ namespace Battlestation.Shopping;
 /// </summary>
 public interface IShoppingEngine : IDisposable
 {
+    string Activity=>"";
+    IReadOnlyList<ShoppingProgress> Progress=>[];
+    DateTimeOffset? SearchStartedAt=>null;
     bool Busy{get;}
     IReadOnlyList<SourceReport> Sources{get;}
     IReadOnlyList<WatchedItem> Watchlist{get;}
@@ -16,7 +19,7 @@ public interface IShoppingEngine : IDisposable
     void Watch(Product product,decimal? targetPrice,string request);
     void Unwatch(string watchId);
     bool IsWatched(string productId);
-    Task CheckWatchesAsync(CancellationToken cancellation);
+    Task CheckWatchesAsync(CancellationToken cancellation,bool force=false);
     void Apply(ShoppingSettings settings);
     void Start();
     void Stop();

@@ -11,7 +11,7 @@ slots = 20
 panels = (ctypes.c_float * (slots * 4))()
 if len(sys.argv)>3 and sys.argv[3]:
     blocks=json.loads(Path(sys.argv[3]).read_text(encoding="utf-8-sig"))
-    by_id={"clock":0,"weather":1,"apps":2,"music":3,"projects":4,"terminal":5,"hardware":6,"usage":7,"video":9,"audio":10,"reminders":11,"bluetooth":12,"dualsense":13,"network":14,"aquarium":15,"lol":16,"ocean":17}
+    by_id={"clock":0,"weather":1,"apps":2,"music":3,"projects":4,"terminal":5,"hardware":6,"usage":7,"video":9,"audio":10,"reminders":11,"bluetooth":12,"dualsense":13,"network":14,"montagne":15,"lol":16}
     for b in blocks:
         if b["Visible"] and b["Id"] in by_id:
             i=by_id[b["Id"]]*4
@@ -34,6 +34,36 @@ def render_fade(folder, theme, seconds, panel_data, fade):
     result=native.ThemePreviewFade(str(root/"assets/Images"),str(folder),theme,seconds,colors,panel_data,fade)
     assert result==0, hex(result & 0xffffffff)
     return Image.open(folder/"Battlestation/native-background-frame.png").convert("RGB")
+
+native_rotation=ctypes.CDLL(str(output/"theme-preview.dll"))
+assert native_rotation.WallpaperRotationChecks()==0, "Wallpaper timing/pause regression"
+native_rotation.WallpaperPersistenceChecks.argtypes=[ctypes.c_wchar_p]
+assert native_rotation.WallpaperPersistenceChecks(str(output))==0, "Wallpaper progress lost on reload"
+print("PASS wallpaper progress survives reload and pause")
+native_rotation.WallpaperPreview.argtypes=[ctypes.c_wchar_p,ctypes.c_wchar_p,ctypes.c_double,ctypes.POINTER(ctypes.c_uint),ctypes.POINTER(ctypes.c_float)]
+rotation_frames=[]
+for seconds in [299,300,301,302,600,602]:
+    folder=output/("wallpaper-"+str(seconds))
+    assert native_rotation.WallpaperPreview(str(root/"assets/Images"),str(folder),seconds,colors,panels)==0
+    rotation_frames.append(Image.open(folder/"Battlestation/native-background-frame.png").convert("RGB"))
+assert ImageChops.difference(rotation_frames[0],rotation_frames[1]).getbbox() is None, "First fade jumps"
+assert ImageChops.difference(rotation_frames[1],rotation_frames[2]).getbbox(), "Mid-fade absent"
+assert ImageChops.difference(rotation_frames[2],rotation_frames[3]).getbbox(), "Second illustration absent"
+assert ImageChops.difference(rotation_frames[3],rotation_frames[4]).getbbox() is None, "Return fade jumps"
+assert ImageChops.difference(rotation_frames[0],rotation_frames[5]).getbbox() is None, "Cycle does not return to original"
+print("PASS wallpaper rotation: 300s, 2s fade, pause, full image cycle")
+
+native_rotation.PhotoEffectsPreview.argtypes=[ctypes.c_wchar_p,ctypes.c_wchar_p,ctypes.c_int,ctypes.c_int,ctypes.POINTER(ctypes.c_uint),ctypes.POINTER(ctypes.c_float)]
+for selected in [1,2]:
+    versions=[]
+    for enabled in [0,1]:
+        folder=output/("photo-effects-"+str(selected)+"-"+str(enabled))
+        assert native_rotation.PhotoEffectsPreview(str(root/"assets/Images"),str(folder),selected,enabled,colors,panels)==0
+        versions.append(Image.open(folder/"Battlestation/native-background-frame.png").convert("RGB"))
+    difference=ImageChops.difference(*versions)
+    for box in [(0,0,2560,1440),(2560,0,5120,1440)]:
+        assert difference.crop(box).getbbox(), "Photo effects missing on a screen"
+    print("PASS photo effects change pixels on both screens: "+str(selected))
 
 for index, theme in enumerate(themes):
     frame=render(output/"theme-preview.dll",output/theme["Id"],index,15)

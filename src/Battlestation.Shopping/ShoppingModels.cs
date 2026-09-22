@@ -30,7 +30,25 @@ public sealed record Product(
     decimal? Price=null)
 {
     /// <summary>Clé de regroupement entre boutiques : même appareil, même titre normalisé.</summary>
-    public string Identity=>ShoppingText.Identity(Brand+" "+Title);
+    public string Identity=>Model.Length>0?$"{ShoppingText.Fold(Brand)}:{ProductIdentity.Key(Model)}:{ProductIdentity.Variant(Title)}":ShoppingText.Identity(Brand+" "+Title);
+}
+
+/// <summary>Extrait de la fiche réellement consultée, utilisé uniquement pendant l'analyse.</summary>
+public sealed record ProductDetails(string Text,string SourceUrl);
+public sealed record ShoppingProgress(DateTimeOffset At,string Message);
+public sealed record ProductCandidate(Product Product,ProductDetails? Details);
+public enum ProductFit { Recommended, Possible, Unsuitable, Unknown }
+public enum CriterionState { Confirmed, Contradicted, Unknown }
+public sealed record CriterionAssessment(string Criterion,CriterionState State,string Evidence);
+public sealed record ProductAssessment(string ProductId,ProductFit Fit,string Reason,IReadOnlyList<string> Evidence,IReadOnlyList<string> Caveats,IReadOnlyList<CriterionAssessment>? Criteria=null,string EvidenceSource="")
+{
+    public string Label=>Fit switch
+    {
+        ProductFit.Recommended=>"À privilégier",
+        ProductFit.Possible=>"À comparer",
+        ProductFit.Unsuitable=>"Non adapté",
+        _=>"À vérifier"
+    };
 }
 
 /// <summary>Un relevé de prix daté. Un produit sans stock reste relevé : l'absence de prix n'est pas zéro.</summary>
@@ -47,20 +65,26 @@ public sealed record Verdict(
     double Confidence,
     IReadOnlyList<string> Reasons,
     IReadOnlyList<string> Sources,
-    decimal? TargetPrice)
+    decimal? TargetPrice,bool HasSufficientHistory=false)
 {
     public static readonly Verdict Unknown=new(VerdictDecision.Surveiller,0,["Aucun relevé de prix"],[],null);
 
     public string Label=>Decision switch{VerdictDecision.Acheter=>"achète",VerdictDecision.Attendre=>"attends",_=>"surveille"};
+    public string PriceLabel=>!HasSufficientHistory?"Historique insuffisant":Decision switch
+    {
+        VerdictDecision.Acheter=>"Prix bas observé",
+        VerdictDecision.Attendre=>"Baisse à attendre",
+        _=>"Prix à surveiller"
+    };
 }
 
 /// <summary>Une offre retenue pour l'affichage : le produit, son relevé du jour et le verdict.</summary>
-public sealed record ShoppingHit(Product Product, PricePoint? Price, Verdict Verdict, IReadOnlyList<string> Alternatives, int Criteria=0, int CriteriaTotal=0)
+public sealed record ShoppingHit(Product Product, PricePoint? Price, Verdict Verdict, IReadOnlyList<string> Alternatives, int Criteria=0, int CriteriaTotal=0,ProductAssessment? Assessment=null)
 {
     public decimal? Amount=>Price?.Price;
 
-    /// <summary>Critères obligatoires reconnus dans le titre : les offres non conformes restent visibles.</summary>
-    public string CriteriaText=>CriteriaTotal==0?"":$"{Criteria}/{CriteriaTotal} critères";
+    /// <summary>Un critère absent du titre reste à vérifier, sans conclure que l'appareil ne le satisfait pas.</summary>
+    public string CriteriaText=>CriteriaTotal==0?"":Criteria==0?"critères à vérifier":$"{Criteria}/{CriteriaTotal} critères vérifiés";
 }
 
 /// <summary>Une entrée de veille : l'article est revérifié en fond jusqu'à ce que l'utilisateur l'arrête.</summary>
@@ -92,7 +116,7 @@ public sealed record ShoppingAlert(string Title,string Message,string Url,decima
 public sealed record WatchedItem(WatchItem Watch,Product Product);
 
 /// <summary>Résultat d'une recherche : les offres classées, les sources interrogées et l'état de chacune.</summary>
-public sealed record SearchOutcome(IReadOnlyList<ShoppingHit> Hits,IReadOnlyList<SourceReport> Sources,ShoppingSpec Spec,string Request)
+public sealed record SearchOutcome(IReadOnlyList<ShoppingHit> Hits,IReadOnlyList<SourceReport> Sources,ShoppingSpec Spec,string Request,string AnalysisNote="")
 {
     public static SearchOutcome Failed(string request,ShoppingSpec spec,IReadOnlyList<SourceReport> sources)=>new([],sources,spec,request);
 
@@ -108,9 +132,9 @@ public sealed class PriceSourceUnavailableException(string message):Exception(me
 
 /// <summary>Réglages persistés dans shopping.json (%LOCALAPPDATA%\Battlestation).</summary>
 public sealed record ShoppingSettings(
-    string Provider="ollama",
-    string Model="qwen2.5:7b",
-    string Endpoint="http://127.0.0.1:11434",
+    string Provider="deepseek",
+    string Model="",
+    string Endpoint="",
     int CadenceMinutes=30,
     int HistoryDays=90,
     int MinPricePoints=3,
@@ -120,13 +144,13 @@ public sealed record ShoppingSettings(
     string NtfyTopic="",
     bool Enabled=true)
 {
-    public static readonly ShoppingSettings Default=new();
+    public static readonly ShoppingSettings Default=new ShoppingSettings().Validate();
 
     public ShoppingSettings Validate()=>this with
     {
-        Provider=Provider is "deepseek"?"deepseek":"ollama",
-        Model=string.IsNullOrWhiteSpace(Model)?"qwen2.5:7b":Model.Trim(),
-        Endpoint=string.IsNullOrWhiteSpace(Endpoint)?"http://127.0.0.1:11434":Endpoint.Trim().TrimEnd('/'),
+        Provider=Provider is "ollama"?"ollama":"deepseek",
+        Model=string.IsNullOrWhiteSpace(Model)?(Provider is "ollama"?"qwen2.5:7b":DeepSeekClient.DefaultModel):Model.Trim(),
+        Endpoint=string.IsNullOrWhiteSpace(Endpoint)?(Provider is "ollama"?"http://127.0.0.1:11434":"https://api.deepseek.com"):Endpoint.Trim().TrimEnd('/'),
         CadenceMinutes=Math.Clamp(CadenceMinutes,5,24*60),
         HistoryDays=Math.Clamp(HistoryDays,14,365),
         MinPricePoints=Math.Clamp(MinPricePoints,1,30),

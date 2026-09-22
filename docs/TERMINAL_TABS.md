@@ -42,53 +42,80 @@ cartes, animation et lecture du titre d'une console synthétique sans saisie.
 
 ## Cache de prompt
 
-Les onglets qui font tourner Codex portent un compte à rebours du cache de prompt :
-« ⏳ 12 min » tant que le préfixe reste réutilisable, « cache expiré » ensuite. La
-fenêtre de 30 minutes est celle documentée par OpenAI après la dernière écriture ou
-réutilisation du préfixe ; l'indicateur est donc une estimation, pas une garantie du
-fournisseur. Il suit l'horodatage du dernier événement du rollout le plus récent du
-projet suivi (`~/.codex/sessions`), relu toutes les 10 s par le minuteur unique de la
-barre d'onglets, sur une tâche de fond et sans écrire sur le disque. Seuls
-l'horodatage et les compteurs sont lus ; jamais le contenu des messages.
+La barre reste passive : aucune requête de maintien du cache, aucune saisie dans
+les sessions et aucun appel facturé.
 
-Tant qu'aucune couleur n'est choisie, le fond de l'onglet suit le restant : vert
-au-delà de 20 minutes, ambre de 10 à 20, rouge en dessous de 10, gris une fois
-expiré. Une couleur choisie reste toujours prioritaire : seul le texte du compte à
-rebours s'ajoute. Les onglets Codex (DS) n'ont pas de compte à rebours, DeepSeek ne
-publiant aucune durée de vie ; ils affichent le taux de hit du **dernier tour de leur
-propre session** — « cache 99,8 % », au dixième et jamais surestimé, lu dans les
-compteurs `last_token_usage` du rollout de l'onglet, le total de la session servant
-tant que le tour courant n'est pas compté. Il bouge donc à chaque tour, comme le
-compte à rebours bouge à chaque événement, et deux onglets du même projet gardent
-chacun le leur. Sans compteur, sans rollout ou sur un onglet qui ne fait pas tourner
-Codex, aucun badge n'apparaît.
+Chaque onglet est rattaché au **processus Codex de sa console**, puis à son journal
+ouvert en écriture dans `~/.codex/sessions`. Le helper expose seulement son PID et
+le titre de console. La lecture de mémoire et de ligne de commande a été retirée.
+Les handles sont dupliqués localement pour lire leur chemin, jamais leur contenu ;
+les handles du processus distant ne sont ni fermés ni modifiés. Les journaux des
+sous-agents sont exclus par `session_meta.source`. Sans association certaine, ou
+si plusieurs conversations principales sont ouvertes dans le même processus,
+aucun journal n'est deviné à partir du projet ou de sa date de modification.
 
-Le projet et la variante viennent du CLI lui-même : le helper lit la ligne de
-commande du processus Codex de l'onglet — `model_provider="deepseek"` et le chemin
-de `-C` — sans ouvrir de console ni écrire quoi que ce soit. Deux onglets du même
-projet gardent donc chacun sa variante : l'onglet (DS) montre le taux de hit,
-l'onglet ChatGPT le compte à rebours. Sans ligne de commande lisible, le dernier
-champ du titre Codex sert d'indice de projet, comme l'indice de projet des docks, et
-le fournisseur du rollout le plus récent tranche pour la variante. La sélection du
-rollout compare les derniers candidats par l'horodatage de leur dernier événement :
-la date de modification du fichier d'une session en cours peut retarder sur son
-contenu.
+Le lecteur parcourt initialement le journal lié, puis uniquement les octets
+ajoutés. Il conserve en mémoire les métadonnées, compteurs et horodatages utiles,
+jamais les messages. Les lignes incomplètes attendent le prochain passage ; une
+ligne dépassant 4 Mio est ignorée et invalide la mesure jusqu'à la prochaine
+observation exploitable. Aucun cache n'est écrit sur disque. Un minuteur commun
+relit l'état toutes les dix secondes et s'arrête lorsque la barre est masquée.
 
-Validation du 21 septembre 2026 : sur le bureau chargé, les deux onglets Codex du
-même projet ont affiché chacun son état — deux sessions DeepSeek avec leur propre
-taux de dernier tour (« cache 95 % » puis « cache 99,9 % », puis « cache 99,8 % »
-sans rechargement), et un onglet ChatGPT avec son compte à rebours vert (« ⏳ 27 min »
-puis « ⏳ 26 min »), la valeur décroissant de même. Le helper a rendu, pour chaque
-shell, son projet et sa variante (`DeepSeek=true` sur les deux sessions `codex-ds`,
-`false` sur l'onglet ChatGPT). Un rollout synthétique du même projet, plus récent
-par son dernier événement mais daté d'une heure plus tôt sur le disque, avait déjà
-fait apparaître en quatorze secondes un compte à rebours vert, puis le badge
-précédent est revenu après suppression : la relecture périodique et la sélection par
-horodatage réel sont observées en direct. La session du terminal a survécu à quatre
-rechargements du bureau (même PID de shell). Les teintes ambre, rouge et grise et
-l'absence de badge sans activité sont couvertes par les tests de rendu et l'aperçu
-`--preview-terminal-tabs`.
+Pour OpenAI, « ⏳ ≈ 12 min » est une **estimation** depuis la dernière réponse
+ayant effectivement rapporté des jetons lus ou écrits en cache. Un événement
+local ou une notification de compteurs cumulés identique ne remet pas le compteur
+à zéro. Un changement de modèle, une compaction, un cache miss ou une remise à zéro
+des compteurs invalide l'estimation. En l'absence de compteur d'écriture, un
+premier appel sans lecture de cache ne suffit donc pas à annoncer un cache chaud.
 
+La fenêtre de trente minutes s'applique aux identifiants connus GPT-6 Astra et
+GPT-5.6 / Sol / Terra / Luna. Un modèle inconnu ou ancien ne reçoit pas cette durée
+par substitution. Après la fenêtre, le badge devient **« cache incertain »** :
+l'expiration côté serveur n'est pas observable et la conservation peut durer plus
+longtemps. Le survol explique l'estimation. Référence :
+[documentation OpenAI sur la durée du cache](https://developers.openai.com/api/docs/guides/prompt-caching#cache-lifetime).
+
+Sans couleur personnelle, les teintes restent verte au-delà de vingt minutes,
+ambre de dix à vingt, rouge en dessous de dix et grise lorsque le cache est
+incertain. La couleur personnelle conserve toujours la priorité.
+
+DeepSeek affiche « cache 99,8 % », la part d'entrée réutilisée dans la **dernière
+réponse mesurée de la conversation liée**. Ce n'est pas une durée de disponibilité
+ni une moyenne de session. La valeur est tronquée au dixième. Sans compteur valide,
+aucun taux n'apparaît : absence ne signifie pas zéro, et une valeur incohérente
+n'est pas ramenée artificiellement à 0 ou 100 %. Les notifications `info:null`
+concernant les quotas sont ignorées sans interrompre les autres onglets.
+
+La validation historique du 21 septembre 2026 est remplacée par les régressions
+ci-dessus : elle ne démontrait pas l'isolation entre deux sessions du même projet
+et du même fournisseur. `tests/Battlestation.TerminalCache.Tests.csproj` couvre
+maintenant cette isolation, les sous-agents, les notifications dupliquées,
+compactions, modèles, compteurs absents, lignes incomplètes, fichiers tronqués,
+liaison Windows à un processus synthétique et rendu WPF des badges/couleurs.
+Validation et livraison du 22 septembre 2026 : suite TerminalCache et compilation
+complète réussies ; le rendu WPF et une capture du bureau réel montrent les badges
+« ⏳ ≈ … min ». Ayo a confirmé la lisibilité, le changement d'onglet au clic et
+l'explication au survol sur `battlestation-cache-observation-01`. Computer Use
+n'avait pas de connexion native disponible ; les gestes sont donc validés par
+l'utilisateur, pas par l'automatisation. Les trois identifiants d'onglets, leurs
+PID de shell et l'hôte 2196 sont conservés. Les empreintes de `layout.json` et de
+`terminal-tabs.json` sont identiques avant/après.
+
+Le bureau et son helper chargent `build/battlestation-cache-observation-01` ;
+`build/current.txt` sélectionne ce même build. La tâche Windows appelle toujours
+`Start-Battlestation.ps1 -AtLogon` sans build fixé. Aucun raccourci Battlestation
+n'a été trouvé sur les bureaux, menus Démarrer ou éléments épinglés contrôlés.
+Le build remplacé `shopping-relevance-02`, libéré de ses processus/modules et sans
+référence du pont vidéo, est archivé sous `backups/retired-builds/2026-09-22/`.
+L'hôte terminal `deepseek-cli-03` et le pont vidéo `cache-tabs-08` restent en place.
+
+Les mesures de vingt secondes incluent bureau, helper de métadonnées, hôte terminal
+et pont vidéo. CPU bureau/helper : 5 171,9 / 31,2 ms avant, 7 343,8 / 140,6 ms après.
+Les widgets exposés et leur activité ont varié pendant l'usage : ces échantillons
+ne permettent pas d'attribuer un gain ou une régression au cache. Gain global :
+non mesurable. Le lecteur seul, sur les conversations actives, prend environ six
+secondes au premier parcours en arrière-plan puis 14–16 ms aux passages suivants.
+Preuves locales : `artifacts/cache-review-20260922/`.
 Validation du 16 septembre 2026 : les titres Kilo live `Kilo CLI | <sujet>` sont
 repris comme titres automatiques d'onglets sur le bureau (sujets observés dans
 l'inspection des onglets). Le parsing Kilo (icônes comprises) et la non-régression

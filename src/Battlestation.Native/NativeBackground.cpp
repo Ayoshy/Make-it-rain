@@ -34,6 +34,13 @@ static std::wstring images;
 // running that pair keeps the exact same frame.
 static int canvasWidth=5120,canvasHeight=1440,canvasLeft=0,canvasTop=0,seamX=2560;
 static double elapsed=0, easedX=0, easedY=0;
+static std::atomic<bool> wallpaperRotation=false;
+static double wallpaperSeconds=0;
+static void AdvanceWallpaper(double dt,bool visible,bool animated,bool game){
+    if(visible&&animated&&game)wallpaperSeconds+=dt;
+}
+static int WallpaperIndex(){return int(wallpaperSeconds/300)%2;}
+static float WallpaperBlend(){return wallpaperSeconds<300?1.f:float(std::min(1.0,std::fmod(wallpaperSeconds,300.0)/2.0));}
 static std::mutex glassMutex;
 static D2D1_RECT_F glassRects[PanelSlots]={};
 static std::atomic<bool> glassDirty=true;
@@ -46,6 +53,7 @@ static std::atomic<int> frontPanel=-1;
 static std::atomic<float> audioBass=0,audioMiddle=0,audioTreble=0,audioIntensity=0;
 static float bass=0,middle=0,treble=0;
 #ifdef BATTLESTATION_TESTING
+static bool testPhotoEffects=true;
 static std::atomic<bool> testLoseTarget=false;
 static std::atomic<uint64_t> testFrames=0,testLosses=0;
 extern "C" __declspec(dllexport) void BackgroundTestLoseTarget(){testLoseTarget=true;}
@@ -58,13 +66,23 @@ static LRESULT CALLBACK Proc(HWND window,UINT msg,WPARAM w,LPARAM l){return DefW
 static std::filesystem::path Output(){wchar_t local[MAX_PATH];GetEnvironmentVariableW(L"LOCALAPPDATA",local,MAX_PATH);
 return std::filesystem::path(local)/L"Battlestation";
 }
+static void LoadWallpaperProgress(const std::filesystem::path& file){
+    double saved=0;std::ifstream input(file);
+    if(input>>saved&&std::isfinite(saved)&&saved>=0)wallpaperSeconds=saved;
+}
+static bool SaveWallpaperProgress(const std::filesystem::path& file){
+    auto pending=file;pending+=L".tmp";
+    {std::ofstream output(pending);output.precision(15);output<<wallpaperSeconds;output.close();if(!output)return false;}
+    return MoveFileExW(pending.c_str(),file.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)!=0;
+}
 struct Paint {
     ID2D1RenderTarget* target;
-    ComPtr<ID2D1Bitmap> art,posters[2],glows[3],bokeh[3],vignette;
+    ComPtr<ID2D1Bitmap> art,alternateArt,posters[2],glows[3],bokeh[3],vignette;
     ComPtr<ID2D1SolidColorBrush> brush;
     ComPtr<ID2D1LinearGradientBrush> fade,posterFade;
     ComPtr<ID2D1Layer> layer,themeLayer,sceneLayer;
     ComPtr<ID2D1RadialGradientBrush> clouds[2][2];
+    ComPtr<ID2D1RadialGradientBrush> windowLight,waterLight;
     ComPtr<ID2D1PathGeometry> ribbons[4];
     ComPtr<ID2D1BitmapRenderTarget> frost;
     std::unique_ptr<Paint> frostPaint;
@@ -77,7 +95,7 @@ struct Paint {
             ComPtr<IWICBitmapFrameDecode> frame;Check(decoder->GetFrame(0,&frame));
             ComPtr<IWICFormatConverter> converter;Check(wic->CreateFormatConverter(&converter));
             Check(converter->Initialize(frame.Get(),GUID_WICPixelFormat32bppPBGRA,WICBitmapDitherTypeNone,nullptr,0,WICBitmapPaletteTypeCustom));
-            if(wcscmp(file,L"jason-lucia.jpg")==0){
+            if(wcscmp(file,L"jason-lucia.jpg")==0||wcscmp(file,L"jason-lucia-03-painted.png")==0){
                 UINT width,height;Check(converter->GetSize(&width,&height));std::vector<BYTE> pixels(size_t(width)*height*4);Check(converter->CopyPixels(nullptr,width*4,(UINT)pixels.size(),pixels.data()));
                 for(size_t p=0;p<pixels.size();p+=4){
                     float r=pixels[p+2]/255.f,g=pixels[p+1]/255.f,b=pixels[p]/255.f;
@@ -89,8 +107,7 @@ struct Paint {
                 Check(rt->CreateBitmap(D2D1::SizeU(width,height),pixels.data(),width*4,D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED)),&bitmap));
             }else Check(rt->CreateBitmapFromWicBitmap(converter.Get(),nullptr,&bitmap));
         };
-        // Ambiance posters are optional: Ayo drops obsidienne.jpg/aurore.jpg later and
-        // the renderer falls back to Abstract() until they exist.
+        // Decode once on the native render thread, also when recovering a lost target.
         auto optional=[&](const wchar_t* file,ComPtr<ID2D1Bitmap>& bitmap){
             std::filesystem::path source=std::filesystem::path(images)/file;std::error_code missing;
             if(!std::filesystem::exists(source,missing))return;
@@ -103,8 +120,9 @@ struct Paint {
             }catch(HRESULT){bitmap.Reset();}
         };
         load(L"jason-lucia.jpg",art);
-        optional(L"obsidienne.jpg",posters[0]);
-        optional(L"aurore.jpg",posters[1]);
+        load(L"jason-lucia-03-painted.png",alternateArt);
+        optional(L"obsidienne-photo.png",posters[0]);
+        optional(L"aurore-photo.png",posters[1]);
         load(L"vignette.png",vignette);
         for(int i=0;i<3;i++){load((L"glow"+std::to_wstring(i)+L".png").c_str(),glows[i]);load((L"bokeh"+std::to_wstring(i)+L".png").c_str(),bokeh[i]);}
         Check(rt->CreateSolidColorBrush(D2D1::ColorF(0,0,0),&brush));
@@ -121,6 +139,14 @@ struct Paint {
             Check(rt->CreateGradientStopCollection(stops,2,&collection));
             Check(rt->CreateRadialGradientBrush(D2D1::RadialGradientBrushProperties(D2D1::Point2F(0,0),D2D1::Point2F(0,0),1,1),collection.Get(),&clouds[theme][light]));
         }
+        auto photoLight=[&](D2D1_COLOR_F color,ComPtr<ID2D1RadialGradientBrush>& light){
+            auto transparent=color;transparent.a=0;
+            D2D1_GRADIENT_STOP stops[]={{0,color},{.18f,D2D1::ColorF(color.r,color.g,color.b,.35f)},{1,transparent}};
+            ComPtr<ID2D1GradientStopCollection> colors;Check(rt->CreateGradientStopCollection(stops,3,&colors));
+            Check(rt->CreateRadialGradientBrush(D2D1::RadialGradientBrushProperties(D2D1::Point2F(0,0),D2D1::Point2F(0,0),1,1),colors.Get(),&light));
+        };
+        photoLight(D2D1::ColorF(1,.79f,.48f),windowLight);
+        photoLight(D2D1::ColorF(.65f,.79f,.92f),waterLight);
         ComPtr<ID2D1Factory> factory;rt->GetFactory(&factory);
         for(int i=0;i<4;i++){
             Check(factory->CreatePathGeometry(&ribbons[i]));ComPtr<ID2D1GeometrySink> sink;Check(ribbons[i]->Open(&sink));
@@ -149,13 +175,19 @@ struct Paint {
     D2D1_COLOR_F EdgeColor(float alpha){auto c=ThemeColor(5,alpha);c.r+=(1-palettes[0][5].r)*weights[0];c.g+=(.92f-palettes[0][5].g)*weights[0];c.b+=(1-palettes[0][5].b)*weights[0];return c;}
     void Fill(D2D1_RECT_F rect,D2D1_COLOR_F color){brush->SetColor(color);target->FillRectangle(rect,brush.Get());}
     void ViceCity(){auto rt=target;
+        auto selected=WallpaperIndex()==0?art.Get():alternateArt.Get();
+        auto previous=WallpaperIndex()==0?alternateArt.Get():art.Get();
+        float mix=WallpaperBlend();
         Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),D2D1::ColorF(.09f,.055f,.14f));
-        rt->DrawBitmap(art.Get(),D2D1::RectF(0,0,canvasWidth,canvasHeight),.5f,D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,D2D1::RectF(2880,830,3840,1100));
+        auto backdrop=[&](ID2D1Bitmap* bitmap,float alpha){auto size=bitmap->GetSize();rt->DrawBitmap(bitmap,D2D1::RectF(0,0,canvasWidth,canvasHeight),alpha,D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,D2D1::RectF(size.width*.75f,size.height*.38f,size.width,size.height*.51f));};
+        if(mix<1)backdrop(previous,.5f);
+        backdrop(selected,.5f*mix);
         Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),D2D1::ColorF(.16f,.08f,.24f,.75f));
         float dx=float(std::sin(elapsed*.14)*20.48-easedX*15),dy=float(std::cos(elapsed*.11)*5.76-easedY*10);
         fade->SetStartPoint(D2D1::Point2F(-77+dx,0));fade->SetEndPoint(D2D1::Point2F(2637+dx,0));
         rt->PushLayer(D2D1::LayerParameters(D2D1::RectF(0,0,2800,canvasHeight),nullptr,D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,D2D1::Matrix3x2F::Identity(),1.f,fade.Get()),layer.Get());
-        rt->DrawBitmap(art.Get(),D2D1::RectF(-77+dx,-43+dy,2637+dx,1483+dy));rt->PopLayer();
+        if(mix<1)rt->DrawBitmap(previous,D2D1::RectF(-77+dx,-43+dy,2637+dx,1483+dy));
+        rt->DrawBitmap(selected,D2D1::RectF(-77+dx,-43+dy,2637+dx,1483+dy),mix);rt->PopLayer();
         Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),D2D1::ColorF(.063f,.027f,.118f,.14f));
         rt->DrawBitmap(glows[1].Get(),D2D1::RectF(2450,-150,5350,1600),.18f);
         rt->DrawBitmap(glows[2].Get(),D2D1::RectF(200,-200,2800,1600),.09f);
@@ -208,68 +240,62 @@ struct Paint {
     }
     D2D1_COLOR_F Tint(int theme,int role,float alpha){auto c=palettes[theme][role];c.a=alpha;return c;}
     void Blit(ComPtr<ID2D1Bitmap>& bitmap,float weight){
-        auto rt=target;float dx=float(std::sin(elapsed*.14)*20.48-easedX*15),dy=float(std::cos(elapsed*.11)*5.76-easedY*10);
-        posterFade->SetStartPoint(D2D1::Point2F(-77+dx,0));posterFade->SetEndPoint(D2D1::Point2F(2637+dx,0));
-        rt->PushLayer(D2D1::LayerParameters(D2D1::RectF(0,0,2800,canvasHeight),nullptr,D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,D2D1::Matrix3x2F::Identity(),weight,posterFade.Get()),layer.Get());
-        rt->DrawBitmap(bitmap.Get(),D2D1::RectF(-77+dx,-43+dy,2637+dx,1483+dy));
-        rt->PopLayer();
+        // Cover the full desktop without stretching the architecture or introducing a seam.
+        auto size=bitmap->GetSize();float scale=std::max(canvasWidth/size.width,canvasHeight/size.height)*1.025f;
+        float width=size.width*scale,height=size.height*scale;
+        float x=(canvasWidth-width)/2+float(std::sin(elapsed*.035)*6-easedX*5);
+        float y=(canvasHeight-height)/2+float(std::cos(elapsed*.027)*3-easedY*3);
+        target->DrawBitmap(bitmap.Get(),D2D1::RectF(x,y,x+width,y+height),weight);
     }
-    // Obsidienne and Aurore share the Vice City composition, with their own palette
-    // and without the violet GTA grading. Halos and bokeh use palette-tinted radial
-    // brushes: the Vice City glow/bokeh bitmaps keep their colors baked in.
+    // Photo effects follow the image, using two cached brushes rather than the GTA particles.
     void Poster(int theme,float weight){
         auto rt=target;Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),palettes[theme][0]);
         Blit(posters[theme-1],weight);
-        Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),Tint(theme,2,.08f*weight));
-        Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),Tint(theme,3,.18f*weight));
+        Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),Tint(theme,3,.06f*weight));
+        auto size=posters[theme-1]->GetSize();float scale=std::max(canvasWidth/size.width,canvasHeight/size.height)*1.025f;
+        float w=size.width*scale,h=size.height*scale;
+        float ox=(canvasWidth-w)/2+float(std::sin(elapsed*.035)*6-easedX*5);
+        float oy=(canvasHeight-h)/2+float(std::cos(elapsed*.027)*3-easedY*3);
         float t=float(elapsed),energy=bass*.3f+middle*.2f;
-        for(int i=0;i<3;i++){
-            auto light=clouds[theme-1][i%2].Get();
-            float x=900+i*1700.f+std::sin(t*.045f+i*1.7f)*260;
-            float y=560+std::sin(t*.036f+i*1.2f)*480;
-            light->SetCenter(D2D1::Point2F(x,y));light->SetRadiusX(1450+std::sin(t*.027f+i)*240);light->SetRadiusY(720+(i%2)*140.f);
-            light->SetOpacity((.07f+energy*.04f)*weight);
-            rt->FillRectangle(D2D1::RectF(0,0,canvasWidth,canvasHeight),light);
-        }
-        if(bass+middle+treble>.002f){
-            auto bloom=clouds[theme-1][1].Get();float spread=150+bass*260;
-            bloom->SetCenter(D2D1::Point2F(1280,1080));bloom->SetRadiusX(1500+spread);bloom->SetRadiusY(700+spread);
-            bloom->SetOpacity(bass*.20f*weight);
-            rt->FillRectangle(D2D1::RectF(0,0,canvasWidth,canvasHeight),bloom);
-            // The audio ripples stay on the main screen column.
-            for(int wave=0;wave<3;wave++){
-                D2D1_POINT_2F previous{};
-                for(int step=0;step<=80;step++){
-                    float x=step*32.f;
-                    float y=1260+wave*35+std::sin(step*.075f+t*.8f+wave*.7f)*(12+middle*65)+std::sin(step*.17f-t*1.2f)*bass*22;
-                    float edge=std::sin(step/80.f*3.1415926f);
-                    brush->SetColor(Tint(theme,1,(bass*.22f+middle*.17f+treble*.10f)*edge*weight));
-                    if(step)rt->DrawLine(previous,D2D1::Point2F(x,y),brush.Get(),1.4f+treble*1.5f);
-                    previous=D2D1::Point2F(x,y);
+        auto glow=[&](ID2D1RadialGradientBrush* light,float x,float y,float rx,float ry,float alpha){
+            light->SetCenter(D2D1::Point2F(x,y));light->SetRadiusX(rx);light->SetRadiusY(ry);light->SetOpacity(alpha*weight);
+            rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x,y),rx,ry),light);
+        };
+#ifdef BATTLESTATION_TESTING
+        if(testPhotoEffects){
+#endif
+        if(theme==2){
+            // Warm moving reflections on four curtain-wall facades, two restrained optical flares.
+            const float xs[]={.146f,.438f,.761f,.934f},ys[]={.31f,.23f,.20f,.39f};
+            for(int i=0;i<4;i++){
+                float pulse=.5f+.5f*std::sin(t*.34f+i*1.9f);
+                float x=ox+w*xs[i],y=oy+h*ys[i]+std::sin(t*.12f+i)*h*.008f;
+                glow(windowLight.Get(),x,y,w*.004f,h*.16f,.14f+pulse*.20f+energy*.15f);
+                if(i==1||i==2){
+                    float alpha=.10f+pulse*.22f+energy*.16f;
+                    glow(windowLight.Get(),x,y,w*.033f,h*.045f,alpha);
+                    glow(windowLight.Get(),x,y,w*.007f,h*.11f,alpha*.5f);
+                    glow(windowLight.Get(),x+w*.06f,y+h*.06f,w*.016f,h*.025f,alpha*.18f);
                 }
             }
+        }else{
+            // Soft moon/cloud glow and irregular light paths on the water.
+            glow(waterLight.Get(),ox+w*.30f,oy+h*.55f,w*.12f,h*.10f,.06f+.025f*std::sin(t*.15f)+energy*.04f);
+            const float xs[]={.25f,.573f,.868f};
+            for(int source=0;source<3;source++)for(int i=0;i<18;i++){
+                float depth=i/18.f,phase=t*.65f+i*2.7f+source;
+                float x=ox+w*xs[source]+std::sin(phase)*w*(.0008f+depth*.0015f);
+                float y=oy+h*(.625f+depth*.29f);
+                float length=w*(.0015f+depth*.004f)*(1+.4f*std::sin(phase*.7f));
+                float alpha=(.045f+.045f*std::sin(phase))*(1-depth*.65f)*weight*(1+energy);
+                brush->SetColor(source==0?D2D1::ColorF(.70f,.79f,.89f,alpha):D2D1::ColorF(.95f,.73f,.44f,alpha));
+                rt->DrawLine(D2D1::Point2F(x-length,y),D2D1::Point2F(x+length,y),brush.Get(),1.f+depth);
+            }
         }
-        for(int i=0;i<14;i++){
-            int n=i*7;double phase=n*2.39996,depth=fract(n*.414213562+.12);
-            float x=float((fract(n*.61803398875+.09)+std::sin(t*.07+phase)*.045)*canvasWidth);
-            float y=(fract(fract(n*.754877666+.31)-t*.0025)*1.25f-.125f)*canvasHeight;
-            float r=float((25+depth*65)*1.333);
-            auto light=clouds[theme-1][i%2].Get();
-            light->SetCenter(D2D1::Point2F(x,y));light->SetRadiusX(r);light->SetRadiusY(r);
-            light->SetOpacity(float((.33+.25*std::sin(t*.14+phase))*.45)*weight);
-            rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x,y),r,r),light);
+#ifdef BATTLESTATION_TESTING
         }
-        for(int i=0;i<117;i++){
-            double phase=i*2.39996,depth=fract(i*.414213562+.12);
-            float x=(fract(fract(i*.61803398875+.09)+t*.0012*(depth+.2)+std::sin(t*.11+phase)*.013)*1.08f-.04f)*canvasWidth;
-            float y=(fract(fract(i*.754877666+.31)-t*(.007+(i%7)*.0014))*1.12f-.06f)*canvasHeight;
-            float r=float((2.8+depth*8)*1.333),alpha=float((.35+depth*.6)*(.5+.5*std::pow((std::sin(t*.7+phase)+1)/2,2))*.55)*weight;
-            auto light=clouds[theme-1][i%2].Get();
-            light->SetCenter(D2D1::Point2F(x,y));light->SetRadiusX(r);light->SetRadiusY(r);
-            light->SetOpacity(alpha);
-            rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x,y),r,r),light);
-        }
-        rt->DrawBitmap(vignette.Get(),D2D1::RectF(0,0,canvasWidth,canvasHeight),float(.8*weight));
+#endif
+        rt->DrawBitmap(vignette.Get(),D2D1::RectF(0,0,canvasWidth,canvasHeight),.45f*weight);
     }
     void Abstract(int theme){
         auto rt=target;Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),palettes[theme][0]);
@@ -359,6 +385,8 @@ static void SaveFrame(ID2D1Factory* factory,IWICImagingFactory* wic){
 static DWORD WINAPI Run(void*){
     CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
     HWND window=nullptr;
+    const auto progressFile=Output()/L"wallpaper-progress.txt";LoadWallpaperProgress(progressFile);
+    double savedProgress=wallpaperSeconds;ULONGLONG nextProgress=GetTickCount64()+5000;
     const char* stage="register window class";
     try{
         WNDCLASSW cls{};cls.lpfnWndProc=Proc;cls.hInstance=GetModuleHandleW(nullptr);cls.lpszClassName=L"BattlestationBackground";RegisterClassW(&cls);
@@ -390,7 +418,9 @@ static DWORD WINAPI Run(void*){
 #ifdef BATTLESTATION_TESTING
                     if(testLoseTarget.exchange(false)){++testLosses;throw HRESULT(D2DERR_RECREATE_TARGET);}
 #endif
-                    if(!paused)elapsed+=dt;POINT p;GetCursorPos(&p);double blend=1-std::exp(-dt*3);
+                    if(!paused)elapsed+=dt;
+                    AdvanceWallpaper(dt,monitors!=0,animateBackground.load(),wallpaperRotation.load()&&themeIndex==0);
+                    POINT p;GetCursorPos(&p);double blend=1-std::exp(-dt*3);
                     easedX+=(((p.x-canvasLeft)/double(canvasWidth)*2-1)-easedX)*blend;easedY+=(((p.y-canvasTop)/double(canvasHeight)*2-1)-easedY)*blend;
                     auto began=std::chrono::steady_clock::now();paint->Draw(monitors);renderMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-began).count();++rendered;first=false;
 #ifdef BATTLESTATION_TESTING
@@ -400,17 +430,20 @@ static DWORD WINAPI Run(void*){
             }
             if(capture.exchange(false)){try{SaveFrame(factory.Get(),wic.Get());}catch(...){std::ofstream log(Output()/L"native-capture-error.txt");log<<"Capture failed; renderer remains running";}}
             if(GetTickCount64()>=nextState){nextState=GetTickCount64()+(paused?5000:1000);
-                std::ofstream state(Output()/L"native-renderer-state.json");state<<"{\"pid\":"<<GetCurrentProcessId()<<",\"paused\":"<<(paused?"true":"false")<<",\"elapsed\":"<<elapsed<<",\"hwnd\":"<<(uintptr_t)window<<",\"parent\":"<<(uintptr_t)parentWindow<<",\"width\":"<<canvasWidth<<",\"height\":"<<canvasHeight<<",\"renderedFrames\":"<<rendered<<",\"renderMilliseconds\":"<<renderMs<<",\"sceneAlpha\":"<<sceneAlpha.load()<<",\"panels\":[";
+                std::ofstream state(Output()/L"native-renderer-state.json");state<<"{\"pid\":"<<GetCurrentProcessId()<<",\"paused\":"<<(paused?"true":"false")<<",\"elapsed\":"<<elapsed<<",\"hwnd\":"<<(uintptr_t)window<<",\"parent\":"<<(uintptr_t)parentWindow<<",\"width\":"<<canvasWidth<<",\"height\":"<<canvasHeight<<",\"renderedFrames\":"<<rendered<<",\"renderMilliseconds\":"<<renderMs<<",\"wallpaperSeconds\":"<<wallpaperSeconds<<",\"wallpaperIndex\":"<<WallpaperIndex()<<",\"wallpaperBlend\":"<<WallpaperBlend()<<",\"sceneAlpha\":"<<sceneAlpha.load()<<",\"panels\":[";
                 std::lock_guard<std::mutex> lock(glassMutex);bool comma=false;
                 for(int i=0;i<PanelSlots;i++){auto r=glassRects[i];if(r.right<=r.left||r.bottom<=r.top)continue;if(comma)state<<",";comma=true;state<<"{\"slot\":"<<i<<",\"x\":"<<r.left<<",\"y\":"<<r.top<<",\"width\":"<<r.right-r.left<<",\"height\":"<<r.bottom-r.top<<"}";}state<<"]}";
             }
+            if(GetTickCount64()>=nextProgress){nextProgress=GetTickCount64()+5000;if(wallpaperSeconds-savedProgress>=1&&SaveWallpaperProgress(progressFile))savedProgress=wallpaperSeconds;}
             HANDLE events[]={stopEvent,wakeEvent};WaitForMultipleObjects(2,events,FALSE,paused&&!transitioning?500:33);
         }
     }catch(HRESULT hr){std::ofstream log(Output()/L"native-renderer-error.txt");log<<stage<<": HRESULT "<<std::hex<<hr;}catch(...){std::ofstream log(Output()/L"native-renderer-error.txt");log<<stage<<": native renderer failed";}
+    if(wallpaperSeconds!=savedProgress)SaveWallpaperProgress(progressFile);
     if(window)DestroyWindow(window);UnregisterClassW(L"BattlestationBackground",GetModuleHandleW(nullptr));CoUninitialize();return 0;
 }
 void SetPalette(int index,const unsigned int* colors){if(index<0||index>2||!colors)return;for(int i=0;i<6;i++)palettes[index][i]=D2D1::ColorF(colors[i]);}
 void SetTheme(int index,bool immediate){if(index<0||index>2)return;pendingTheme=index+(immediate?4:0);glassDirty=true;if(wakeEvent)SetEvent(wakeEvent);}
+void SetWallpaperRotation(bool enabled){wallpaperRotation=enabled;}
 void Start(HWND parent,const std::wstring& resources,int left,int top,int width,int height,int seam){
     if(thread)return;
     // Virtual desktop box in physical pixels, and the width of its first

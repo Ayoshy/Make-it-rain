@@ -25,15 +25,14 @@ Push-Location $out
 try { & $env:ComSpec /d /c "$out/compile.cmd"; if($LASTEXITCODE){throw 'Native build failed'} } finally { Pop-Location }
 Copy-Item -LiteralPath (Join-Path $sdl 'lib\x64\SDL3.dll') -Destination $out
 Copy-Item -LiteralPath (Join-Path $sdl 'LICENSE.txt') -Destination (Join-Path $out 'SDL3-LICENSE.txt')
-# The aquarium water shader is compiled here and embedded as a WPF resource; the
-# checked-in bytecode keeps a plain `dotnet build` working without the SDK tools.
+# The Montagne scene shader is compiled here and embedded as a WPF resource;
+# the checked-in bytecode keeps a plain `dotnet build` working without the SDK
+# tools.
 $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter 'fxc.exe' -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -like '*\x64\fxc.exe' } | Sort-Object FullName -Descending | Select-Object -First 1
-if(!$fxc){throw 'fxc.exe from the Windows SDK is required to compile the water shader'}
-& $fxc.FullName /nologo /T ps_3_0 /E main /Fo (Join-Path $root 'src\Battlestation\Shaders\Water.ps') (Join-Path $root 'src\Battlestation\Shaders\Water.fx')
-if($LASTEXITCODE){throw 'Water shader compilation failed'}
-& $fxc.FullName /nologo /T ps_3_0 /E main /Fo (Join-Path $root 'src\Battlestation\Shaders\Ocean.ps') (Join-Path $root 'src\Battlestation\Shaders\Ocean.fx')
-if($LASTEXITCODE){throw 'Ocean shader compilation failed'}
+if(!$fxc){throw 'fxc.exe from the Windows SDK is required to compile the Montagne shader'}
+& $fxc.FullName /nologo /T ps_3_0 /E main /Fo (Join-Path $root 'src\Battlestation\Shaders\Montagne.ps') (Join-Path $root 'src\Battlestation\Shaders\Montagne.fx')
+if($LASTEXITCODE){throw 'Montagne shader compilation failed'}
 dotnet publish "$root/src/Battlestation/Battlestation.csproj" -c Release -o $out --nologo
 if($LASTEXITCODE){throw 'Battlestation build failed'}
 dotnet publish "$root/src/Battlestation.GpuHelper/Battlestation.GpuHelper.csproj" -c Release -o "$out/helper" --nologo

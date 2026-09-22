@@ -57,16 +57,6 @@ internal sealed class TerminalSession : IDisposable
         seen=[..ids];
         return changed;
     }
-    // Le CLI lui-meme nomme le projet (-C) et la variante (model_provider). Sans
-    // ligne de commande lisible, le dernier champ du titre Codex sert d'indice,
-    // comme l'indice de projet des docks.
-    string? ProjectHint(TerminalTabInfo tab,ConsoleTitleInfo? metadata)
-    {
-        if(metadata?.Project is { Length: >0 } project)return project;
-        var text=string.IsNullOrWhiteSpace(metadata?.Title)?tab.Title:metadata!.Title!;
-        var parts=text.Split(" | ",StringSplitOptions.TrimEntries|StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length==0?null:parts[^1];
-    }
     // L'etat de cache est relu a la demande (minuteur de la barre d'onglets) et
     // jamais pendant la peinture du bureau.
     public void RefreshCache()=>_=RefreshCacheAsync();
@@ -82,8 +72,7 @@ internal sealed class TerminalSession : IDisposable
             {
                 var metadata=titles.FirstOrDefault(t=>t.Pid==shellPids.GetValueOrDefault(tab.Id));
                 if(metadata?.Codex!=true)continue;
-                if(ProjectHint(tab,metadata) is not { } hint)continue;
-                queries.Add(new(tab.Id,hint,metadata.DeepSeek));
+                queries.Add(new(tab.Id,metadata.CodexPid));
             }
             var next=new Dictionary<Guid,TerminalCacheState>();
             if(queries.Count>0)
@@ -93,14 +82,14 @@ internal sealed class TerminalSession : IDisposable
                 foreach(var query in queries)
                 {
                     if(!resolved.TryGetValue(query.Id,out var activity))continue;
-                    bool deepSeek=query.DeepSeek??string.Equals(activity.Provider,"deepseek",StringComparison.OrdinalIgnoreCase);
-                    next[query.Id]=deepSeek?PromptCache.Hit(activity.CachedInputTokens,activity.InputTokens):PromptCache.FromActivity(now,activity.Last);
+                    if(titles.FirstOrDefault(t=>t.Pid==shellPids.GetValueOrDefault(query.Id))?.CodexPid==query.ProcessId)
+                        next[query.Id]=activity.State(now);
                 }
             }
             if(disposed)return;
             cacheStates=next;RefreshTabPresentation();
         }
-        catch(Exception e) when(e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException){}
+        catch(Exception e) when(e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException){cacheStates.Clear();RefreshTabPresentation();}
         finally{cacheBusy=false;if(cachePending&&!disposed){cachePending=false;RefreshCache();}}
     }
     public object InspectTabMetadata()=>new{helperPid=metadata.Pid,tabs=Tabs.Select(tab=>new{tab.Id,tab.Title,tab.Accent,activity=tab.Activity.ToString(),tab.AutomaticTitle,tab.Effects,badge=tab.Badge,hint=tab.CacheHint.ToString()})};
@@ -178,9 +167,12 @@ internal sealed class TerminalSession : IDisposable
             rawTabs=sessions.Select(tab=>new TerminalTabInfo(tab.GetProperty("id").GetGuid(),tab.GetProperty("title").GetString()??"Terminal",tab.GetProperty("active").GetBoolean())).ToArray();
             shellPids=sessions.ToDictionary(tab=>tab.GetProperty("id").GetGuid(),tab=>tab.GetProperty("pid").GetInt32());
             bool tabset=TrackTabs();
-            titles=await metadata.Read(shellPids.Values);
+            var nextTitles=await metadata.Read(shellPids.Values);
+            bool processesChanged=!titles.Select(t=>(t.Pid,t.CodexPid)).SequenceEqual(nextTitles.Select(t=>(t.Pid,t.CodexPid)));
+            titles=nextTitles;
+            if(processesChanged)cacheStates.Clear();
             if(disposed)return;RefreshTabPresentation();
-            if(tabset)RefreshCache();
+            if(tabset||processesChanged)RefreshCache();
             bool external=root.TryGetProperty("chromeVersion",out var version)&&version.GetInt32()>=1;
             if(UseGlassTabs!=external){UseGlassTabs=external;HeaderChanged?.Invoke();}
             ThemeSupported=root.TryGetProperty("themeVersion",out var themeVersion)&&themeVersion.GetInt32()>=1;

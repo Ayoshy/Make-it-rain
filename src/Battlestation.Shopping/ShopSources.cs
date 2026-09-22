@@ -21,7 +21,7 @@ public sealed partial class RueDuCommerceSource(HttpClient http,PriceSourceOptio
         {
             var reference=Attribute(card,"data-url-id");
             var title=Unescape(Element(card,TitleElement()));
-            if(reference.Length==0||title.Length==0)continue;
+            if(reference.Length==0||title.Length==0||!ShoppingRelevance.Matches(title,spec))continue;
             var brand=GuessBrand(title);
             // Une offre remisée porte « new-price », une offre au prix courant un simple « price ».
             var price=Element(card,NewPriceElement());
@@ -87,7 +87,9 @@ public sealed partial class BoulangerSource(HttpClient http,PriceSourceOptions o
             if(reference.Length==0)reference=Attribute(card,"data-analytics_product_sap");
             var title=Unescape(Attribute(card,"data-product-label"));
             if(title.Length==0)title=Unescape(Attribute(card,"data-analytics_product_name").Replace('_',' '));
-            if(reference.Length==0||title.Length==0||!seen.Add(reference))continue;
+            var condition=ShoppingText.Fold(Attribute(card,"data-analytics_product_condition")+" "+Attribute(card,"data-analytics_product_grade"));
+            if(condition.Contains("reconditionne",StringComparison.Ordinal)||condition.Contains("occasion",StringComparison.Ordinal))continue;
+            if(reference.Length==0||title.Length==0||!seen.Add(reference)||!ShoppingRelevance.Matches(title,spec))continue;
             var brand=Attribute(card,"data-product-brand-name");
             if(brand.Length==0)brand=GuessBrand(title);
             products.Add(new(

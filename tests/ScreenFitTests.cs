@@ -31,7 +31,7 @@ internal static class ScreenFitTests
         // blocks written for the secondary move into the smaller panel.
         var dual=new DesktopLayout(Path.Combine(folder,"dual.json"),11,secondary1080);
         check(dual.Blocks.All(b=>secondary1080.Any(screen=>screen.Contains(b.Bounds))),"Secondaire 1920 x 1080 : tous les blocs restent sur une dalle connue");
-        foreach(string id in new[]{"clock","weather","apps","dualsense","network","aquarium"})
+        foreach(string id in new[]{"clock","weather","apps","dualsense","network","montagne"})
             check(dual[id].X==DesktopLayout.Defaults(11).Single(b=>b.Id==id).X,id+" garde la position du plan sur le premier ecran");
 
         // A saved arrangement from the 1440p pair must fit the new pair at load.

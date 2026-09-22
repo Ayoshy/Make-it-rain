@@ -13,7 +13,7 @@ static class DockReviewTests
     static bool Has(Surface surface,string name)=>Hits(surface).EnumerateArray().Any(h=>h.GetProperty("name").GetString()==name);
     static void Render(Surface surface,string file,FrameworkElement? under=null)
     {
-        // A dock may own a layer under its drawings: the aquarium water is one.
+        // A dock may own a layer under its drawings: the Montagne snow is one.
         var root=Layered(surface,under);
         root.Measure(new Size(surface.Width,surface.Height));
         root.Arrange(new Rect(0,0,surface.Width,surface.Height));root.UpdateLayout();
@@ -97,14 +97,27 @@ static class DockReviewTests
     /// </summary>
     static void ShoppingChecks(Station station,string output)
     {
-        var dock=new ShoppingSurface(station){Width=700,Height=520};
+        ShoppingRadarChecks.Run();
+        using var dock=new ShoppingSurface(station){Width=700,Height=520};
         Render(dock,Path.Combine(output,"shopping-empty.png"));
         Check(Has(dock,"ShoppingEdit"),"Le champ de demande est cliquable");
         Check(Has(dock,"ShoppingSearch")==false,"Sans demande, rien à chercher");
         var empty=Pixels(dock);
-        station.Shopping.SearchAsync("frigo max 800 €, no frost, 300 L, blanc").GetAwaiter().GetResult();
+        ShoppingRadarChecks.Submit(dock,"frigo max 800 €, no frost, 300 L, blanc");
+        Check(station.Shopping.Query=="frigo max 800 €, no frost, 300 L, blanc","La demande saisie quitte la fenêtre et atteint le radar");
+        ShoppingRadarChecks.WaitUntil(()=>!station.Shopping.Busy);
         dock.Refresh();
         Render(dock,Path.Combine(output,"shopping-results.png"));
+        var shoppingTexts=ShoppingRadarChecks.DrawnTexts(dock);
+        Check(shoppingTexts.Contains("À privilégier")&&shoppingTexts.Contains("À comparer")&&shoppingTexts.Contains("À vérifier")&&shoppingTexts.Contains("CHOIX")&&shoppingTexts.Contains("PISTES · À VÉRIFIER"),"Choix puis pistes partagent une liste avec deux titres");
+        Check(shoppingTexts.Any(text=>text.Contains("Historique insuffisant"))&&shoppingTexts.Contains("100 % vérifiés")&&shoppingTexts.Contains("33 % vérifiés")&&!shoppingTexts.Contains("35 %"),"Le pourcentage reflète les critères confirmés, indépendamment de la confiance du verdict prix");
+        Check(!Has(dock,"ShoppingPending")&&Has(dock,"ShoppingOpen:2"),"La piste est directement visible sous les deux choix, sans bouton de bascule");
+        Check(shoppingTexts.Any(text=>text.StartsWith("Réserve : ")),"La réserve principale reste visible dans le dock");
+        var details=ShoppingRadarChecks.HoverDetails(dock,new Point(100,150));
+        Check(details.Contains("Éléments relevés dans la fiche")&&details.Contains("La fiche indique 300 L et NoFrost.")&&details.Contains("Dimensions à confirmer")&&details.Contains("Prix · Prix bas observé"),"Le survol donne les preuves, réserves et motifs prix complets");
+        Check(details.Contains("Critères demandés")&&details.Contains("300 L : confirmé")&&details.Contains("Autres offres observées"),"Le détail expose les contrôles de chaque critère et les offres alternatives");
+        Check(ShoppingRadarChecks.HoverDetails(dock,new Point(5,5)).Length==0,"Quitter une offre efface son détail");
+        Check(ShoppingRadarChecks.HoverDetails(dock,new Point(100,380)).Contains("1/3 critères confirmés")&&ShoppingRadarChecks.HoverDetails(dock,new Point(100,380)).Contains("Volume et type de froid"),"La piste explique son pourcentage et ses critères inconnus au survol");
         Check(Different(empty,Pixels(dock)),"Les offres remplacent l'état vide");
         Check(Has(dock,"ShoppingSearch"),"Une demande envoyée peut être relancée");
         Check(Has(dock,"ShoppingOpen:0")&&Has(dock,"ShoppingOpen:1"),"Chaque offre s'ouvre au clic");
@@ -112,7 +125,7 @@ static class DockReviewTests
         var order=Hits(dock).EnumerateArray().Select(hit=>hit.GetProperty("name").GetString()!).ToArray();
         Check(Array.IndexOf(order,"ShoppingWatch:0")>Array.IndexOf(order,"ShoppingOpen:0"),"L'étoile garde la priorité sur l'ouverture de l'offre");
         var before=Pixels(dock);
-        station.Shopping.Watch(station.Shopping.Results[0]);
+        station.Shopping.Watch(station.Shopping.Results[0]).GetAwaiter().GetResult();
         dock.Refresh();
         Render(dock,Path.Combine(output,"shopping-watched.png"));
         Check(station.Shopping.Watchlist.Count==1,"Surveiller ajoute l'offre à la veille");
@@ -122,9 +135,20 @@ static class DockReviewTests
         Check(Different(before,Pixels(dock)),"La veille change visiblement le dock");
         station.Shopping.Open(station.Shopping.Results[0]);
         Check(Station.Opened.Count==1&&Station.Opened[0]=="https://exemple.fr/frigo-1","Le clic ouvre l'annonce dans le navigateur");
-        station.Shopping.Unwatch("fixture:1");
+        station.Shopping.Unwatch("fixture:1").GetAwaiter().GetResult();
         dock.Refresh();
         Check(station.Shopping.Watchlist.Count==0,"Retirer la veille la supprime");
+        station.ShoppingEngine.AssessmentAvailable=false;
+        station.Shopping.SearchAsync(station.Shopping.Query).GetAwaiter().GetResult();
+        Render(dock,Path.Combine(output,"shopping-pending-automatic.png"));
+        Check(Has(dock,"ShoppingOpen:0")&&ShoppingRadarChecks.DrawnTexts(dock).Contains("PISTES · À VÉRIFIER"),"Une recherche sans choix confirmé affiche directement ses pistes dans le dock existant");
+        using var unavailable=new ShoppingSurface(station){Width=700,Height=520};
+        Render(unavailable,Path.Combine(output,"shopping-analysis-unavailable.png"));
+        Check(Has(unavailable,"ShoppingOpen:0")&&!Has(unavailable,"ShoppingPending"),"Les pistes sont visibles à la réouverture, sans bouton vers des choix vides");
+        var unavailableTexts=ShoppingRadarChecks.DrawnTexts(unavailable);
+        Check(unavailableTexts.Contains("À vérifier")&&unavailableTexts.Contains("Analyse indisponible")&&!unavailableTexts.Contains("À privilégier")&&!unavailableTexts.Any(text=>text.EndsWith("% vérifiés")),"Une analyse indisponible reste explicite, sans pourcentage inventé");
+        station.ShoppingEngine.AssessmentAvailable=true;
+        ShoppingRadarChecks.Loading(station,(surface,name)=>Render(surface,Path.Combine(output,name)),surface=>Pixels(surface));
     }
     [STAThread] static void Main(string[] args)
     {
@@ -132,16 +156,16 @@ static class DockReviewTests
         string root=Path.GetFullPath(args[0]),output=Path.Combine(root,"artifacts/validation/dock-review");
         Directory.CreateDirectory(output);
         var station=new Station{Root=root};
-        // Water preview: a real window, so the pixel shader actually runs (a
+        // Scene preview: a real window, so the pixel shader actually runs (a
         // RenderTargetBitmap ignores pixel shaders). Captured from outside.
         if(args.Contains("--water-preview"))
         {
             station.MusicBands=[.85f,.75f,.65f,.55f,.40f,.30f,.45f,.20f,.15f,.30f,.20f,.10f];
-            var tank=new AquariumSurface(station){Width=700,Height=420};
-            tank.SetActive(true);
-            var stack=new System.Windows.Controls.Grid{Width=700,Height=420};
-            stack.Children.Add(tank.WaterLayer);stack.Children.Add(tank);
-            var window=new Window{Width=700,Height=420,Left=180,Top=180,WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,
+            var mountain=new MontagneSurface(station){Width=960,Height=600};
+            mountain.SetActive(true);
+            var stack=new System.Windows.Controls.Grid{Width=960,Height=600};
+            stack.Children.Add(mountain.SceneLayer);stack.Children.Add(mountain);
+            var window=new Window{Width=960,Height=600,Left=180,Top=180,WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,
                 Background=new SolidColorBrush(Color.FromRgb(18,14,28)),Content=stack,ShowInTaskbar=false,Topmost=true};
             var close=new System.Windows.Threading.DispatcherTimer(TimeSpan.FromSeconds(9),System.Windows.Threading.DispatcherPriority.Background,(_,_)=>{window.Close();},app.Dispatcher);
             window.Loaded+=(_,_)=>close.Start();
@@ -359,51 +383,56 @@ static class DockReviewTests
             Check(Different(front,Pixels(states)),"Leaving the foreground visibly changes the icon material");
         }
         states.Dispose();
-        // Aquarium: two instants differ, a hidden dock stops moving.
-        using(var tank=new AquariumSurface(station){Width=700,Height=420})
+        // Montagne: the snow falls while it is exposed, a hidden dock stops.
+        using(var mountain=new MontagneSurface(station){Width=960,Height=600})
         {
-            var first=Pixels(tank);
-            Check(Native.Panels[15]==new Rect(0,0,700,420),"The aquarium owns the glass slot 15");
-            tank.SetActive(true);
-            Check(tank.Animating,"The aquarium animates while it is exposed");
-            for(int frame=0;frame<15;frame++)tank.Advance(1d/30d);
-            var second=Pixels(tank,tank.WaterLayer);
-            Check(Different(first,second),"Two instants of the aquarium differ");
-            Render(tank,Path.Combine(output,"aquarium.png"),tank.WaterLayer);
-            Check(JsonSerializer.SerializeToElement(tank.Inspect()).GetProperty("water").GetString() is "shader" or "dessinée" or "island","The aquarium states which water it runs");
-            tank.SetActive(false);
-            var frozen=tank.Elapsed;tank.Advance(.5);
-            Check(!tank.Animating&&tank.Elapsed==frozen,"A hidden aquarium stops advancing");
-            Check(!Different(second,Pixels(tank,tank.WaterLayer)),"A hidden aquarium keeps the same image");
+            // The first render registers the dock's glass slot, exactly like the
+            // desktop does.
+            Pixels(mountain);
+            Check(Native.Panels[15]==new Rect(0,0,960,600),"The mountain owns the glass slot 15");
+            mountain.SetActive(true);
+            Check(mountain.Animating,"The mountain animates while it is exposed");
+            var before=mountain.Elapsed;
+            for(int frame=0;frame<30;frame++)mountain.Advance(1d/60d);
+            Check(mountain.Elapsed>before,"The mountain advances its time while it is exposed");
+            Render(mountain,Path.Combine(output,"montagne.png"),mountain.SceneLayer);
+            Check(JsonSerializer.SerializeToElement(mountain.Inspect()).GetProperty("scene").GetString() is "shader" or "dessinée","The mountain states which scene it runs");
+            mountain.SetActive(false);
+            var frozen=mountain.Elapsed;mountain.Advance(.5);
+            Check(!mountain.Animating&&mountain.Elapsed==frozen,"A hidden mountain stops advancing");
+        }
+        // The stir the pointer leaves and the shader reads: it builds with the
+        // gesture, decays back to rest, and never leaves the bounded range.
+        using(var mountain=new MontagneSurface(station){Width=960,Height=600})
+        {
+            mountain.SetActive(true);
+            mountain.Stir(40);
+            var stirred=JsonSerializer.SerializeToElement(mountain.Inspect()).GetProperty("stir").GetProperty("X").GetDouble();
+            Check(Math.Abs(stirred)>1&&Math.Abs(stirred)<=26,"The stir builds within its bounds");
+            for(int frame=0;frame<180;frame++)mountain.Advance(1d/60d);
+            var rested=JsonSerializer.SerializeToElement(mountain.Inspect()).GetProperty("stir").GetProperty("X").GetDouble();
+            Check(Math.Abs(rested)<1,"The stir decays back to rest");
         }
         // LoL: rest state, synthetic reading, timers and the certificate predicate.
-        // Diorama Océan: the block owns its slot, stays perfectly still without sound
-        // or pointer, then answers the music and returns to the same still water.
-        using(var diorama=new OceanSurface(station){Width=720,Height=480})
+        // Montagne and music: the bass raises the wind and shakes the flakes with
+        // one bounded gust per beat.
+        using(var mountain=new MontagneSurface(station){Width=960,Height=600})
         {
-            var still=JsonSerializer.SerializeToElement(diorama.Inspect());
-            Check(still.GetProperty("water").GetString() is "shader" or "dessinée","Le Diorama Océan déclare son eau");
             station.MusicBands=new float[12];
-            diorama.SetActive(true);
-            for(int frame=0;frame<60;frame++)diorama.Advance(1d/60d);
-            // The first render registers the dock's glass slot, exactly like the desktop does.
-            var before=Pixels(diorama,diorama.WaterLayer);
-            Check(Native.Panels[17]==new Rect(0,0,720,480),"Le Diorama Océan possède le verre 17");
-            Check(!diorama.Animating,"Sans son et sans souris, le Diorama Océan ne bouge pas");
-            Check(!Different(before,Pixels(diorama,diorama.WaterLayer)),"Deux images de repos sont identiques");
+            mountain.SetActive(true);
+            for(int frame=0;frame<60;frame++)mountain.Advance(1d/60d);
             station.MusicBands=[.92f,.80f,.70f,.60f,.30f,.20f,.15f,.10f,.08f,.06f,.05f,.04f];
-            for(int frame=0;frame<40;frame++)diorama.Advance(1d/60d);
-            Check(diorama.Animating,"Les basses excitent une onde");
-            var excited=JsonSerializer.SerializeToElement(diorama.Inspect());
-            Check(excited.GetProperty("packets").GetInt32()>0&&excited.GetProperty("energy").GetDouble()>0,"L'énergie musicale est mesurée");
-            Render(diorama,Path.Combine(output,"ocean.png"),diorama.WaterLayer);
+            for(int frame=0;frame<40;frame++)mountain.Advance(1d/60d);
+            Check(mountain.Animating,"La montagne reste animée");
+            var excited=JsonSerializer.SerializeToElement(mountain.Inspect());
+            Check(excited.GetProperty("stir").GetProperty("X").GetDouble()!=0&&excited.GetProperty("energy").GetDouble()>0,"L'énergie musicale est mesurée");
+            Render(mountain,Path.Combine(output,"montagne-music.png"),mountain.SceneLayer);
             station.MusicBands=new float[12];
-            for(int frame=0;frame<600;frame++)diorama.Advance(1d/60d);
-            Check(!diorama.Animating,"Le silence ramène l'eau au repos");
-            Check(Math.Abs(JsonSerializer.SerializeToElement(diorama.Inspect()).GetProperty("elapsed").GetDouble()-still.GetProperty("elapsed").GetDouble())>0,"Le temps du dock a bien avancé");
-            diorama.SetActive(false);
-            var frozen=diorama.Elapsed;diorama.Advance(.5);
-            Check(diorama.Elapsed==frozen,"Un Diorama Océan masqué n'avance plus");
+            for(int frame=0;frame<600;frame++)mountain.Advance(1d/60d);
+            Check(Math.Abs(JsonSerializer.SerializeToElement(mountain.Inspect()).GetProperty("stir").GetProperty("X").GetDouble())<1,"Le silence ramène le calme");
+            mountain.SetActive(false);
+            var frozen=mountain.Elapsed;mountain.Advance(.5);
+            Check(mountain.Elapsed==frozen,"Une Montagne masquée n'avance plus");
         }
         Check(LolTelemetry.IsLiveClientEndpoint("127.0.0.1",2999)&&!LolTelemetry.IsLiveClientEndpoint("localhost",2999)
             &&!LolTelemetry.IsLiveClientEndpoint("127.0.0.1",3000)&&!LolTelemetry.IsLiveClientEndpoint("127.0.0.1.evil.test",2999),
@@ -524,7 +553,7 @@ static class DockReviewTests
         station.Terminal=null;
         var plain=Pixels(new DeskSurface(station,DeskWidget.Projects){Width=720,Height=293});
         Check(Different(badge,plain),"An open terminal tab adds the neon badge to the project card");
-        Console.WriteLine("PASS: font, reminders, app packs and compact add button, audio bounds and meter smoothing, Bluetooth targets, native icon fallback, aquarium, LoL telemetry, weather strip, project card. Render fixtures are not live click validation.");
+        Console.WriteLine("PASS: font, reminders, app packs and compact add button, audio bounds and meter smoothing, Bluetooth targets, native icon fallback, Montagne snow, LoL telemetry, weather strip, project card. Render fixtures are not live click validation.");
     }
 
     // One synthetic live client response: no game, no account and no engine is involved.

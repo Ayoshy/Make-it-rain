@@ -15,7 +15,7 @@ internal static class TerminalTabsPreview
         var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};
         // Un onglet par etat, plus les deux badges de cache : compte a rebours
         // OpenAI teinte et couleur choisie, puis taux de hit DeepSeek.
-        var tabs=new TerminalTabs();tabs.SetTabs([new(Guid.NewGuid(),"Battlestation",true,"#BBA0EA",TerminalActivity.Thinking),new TerminalTabInfo(Guid.NewGuid(),"Implémenter l'indicateur de cache | Battlestation",false,Activity:TerminalActivity.Ready,Badge:"\u23F3 12 min",CacheHint:TerminalCacheHint.Aging),new TerminalTabInfo(Guid.NewGuid(),"Codex CLI (DS)",false,Activity:TerminalActivity.Ready,Badge:"cache 78 %")]);
+        var tabs=new TerminalTabs();tabs.SetTabs([new(Guid.NewGuid(),"Battlestation",true,"#BBA0EA",TerminalActivity.Thinking),new TerminalTabInfo(Guid.NewGuid(),"Implémenter l'indicateur de cache | Battlestation",false,Activity:TerminalActivity.Ready,Badge:"\u23F3 ≈ 12 min",CacheHint:TerminalCacheHint.Aging),new TerminalTabInfo(Guid.NewGuid(),"Codex CLI (DS)",false,Activity:TerminalActivity.Ready,Badge:"cache 78 %")]);
         var layout=new DockPanel();DockPanel.SetDock(tabs,Dock.Top);layout.Children.Add(tabs);
         var scroll=new ScrollBar{Orientation=Orientation.Vertical,Minimum=0,Maximum=180,Value=110,ViewportSize=29,Style=TerminalScrollBar.CreateStyle(),HorizontalAlignment=HorizontalAlignment.Right};
         var console=new Border{Margin=new Thickness(0,10,0,0),Background=new SolidColorBrush(Color.FromRgb(33,24,43)),Child=scroll};layout.Children.Add(console);

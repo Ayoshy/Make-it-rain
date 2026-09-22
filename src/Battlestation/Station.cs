@@ -35,7 +35,7 @@ internal sealed class Station : IDisposable
     public DesktopSettings Settings {get;private set;}
     internal bool? PreviewReactiveAudio {get;set;}
     internal double? PreviewAudioIntensity {get;set;}
-    // Published by the music dock: the aquarium follows the same spectrum instead
+    // Published by the music dock: the Montagne scene follows the same spectrum
     // of opening a second audio capture.
     internal float[] MusicBands{get;set;}=new float[12];
     internal bool ReactiveAudio=>PreviewReactiveAudio??Settings.ReactiveAudio;
@@ -88,7 +88,9 @@ internal sealed class Station : IDisposable
         var http=new HttpClient{Timeout=Timeout.InfiniteTimeSpan};
         var options=new PriceSourceOptions(Path.Combine(Data,"shopping-cache"));
         List<IPriceSource> sources=shoppingSettings.Enabled
-            ?[new RueDuCommerceSource(http,options),new BoulangerSource(http,options)]
+            ?[new WebShoppingSource(WebShoppingSource.CreateHttpClient(),options,
+                    shoppingSettings.Provider=="deepseek"?DeepSeekClient.Create(http,shoppingSettings):new OllamaClient(http,shoppingSettings.Endpoint,shoppingSettings.Model)),
+              new RueDuCommerceSource(http,options),new BoulangerSource(http,options)]
             :[];
         Shopping=new ShoppingRadar(new ShoppingService(shoppingStore,sources,shoppingSettings,Data,http),Data,Dispatcher.CurrentDispatcher);
     }
