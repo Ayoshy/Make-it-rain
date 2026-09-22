@@ -81,7 +81,7 @@ public sealed class DeepSeekClient(HttpClient http,string apiKey,string model):I
             Content=new StringContent(payload,Encoding.UTF8,"application/json")
         };
         request.Headers.Authorization=new AuthenticationHeaderValue("Bearer",apiKey);
-        using var deadline=LlmJson.Deadline(cancellation,180);
+        using var deadline=LlmJson.Deadline(cancellation,900);
         using var response=await http.SendAsync(request,HttpCompletionOption.ResponseContentRead,deadline.Token);
         if(response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
             throw new InvalidOperationException("Clé DeepSeek refusée.");

@@ -70,7 +70,7 @@ lues servent ensuite à chercher d'autres offres exactes ; le même modèle peut
 avec son URL, indépendamment du vendeur retenu pour son prix. Cette recherche est
 bornée à trois requêtes de découverte et deux recherches d'offres (une pour
 chacune des deux références retenues), huit lectures initiales et quatre lectures
-d'offres supplémentaires, dans une fenêtre de 10 minutes pour laisser le temps
+d'offres supplémentaires, dans une fenêtre de 30 minutes pour laisser le temps
 aux appels de réflexion maximale.
 
 Pour une demande d'aspirateur robot, le type d'appareil est conservé et les pièces
@@ -121,7 +121,7 @@ recherche et la comparaison. Tous ces appels activent `thinking.type=enabled`
 et `reasoning_effort=max`. Le budget de génération reste celui de l'API pour ce
 mode (128K par défaut au 22 septembre 2026), car il inclut la réflexion ; les
 anciens plafonds de 768/4 500 tokens étaient trop courts pour ce fonctionnement.
-Chaque appel DeepSeek expire après 3 minutes ; Ollama conserve ses 45 secondes.
+Chaque appel DeepSeek expire après 15 minutes ; Ollama conserve ses 45 secondes.
 Seul le contenu final est exploité, sans conserver le texte de réflexion.
 Une réponse signalée comme tronquée est refusée. Le protocole suit les guides
 [JSON Output](https://api-docs.deepseek.com/guides/json_mode/) et
@@ -310,7 +310,7 @@ les candidats au comparateur DeepSeek. L'API du modèle ne dispose pas d'une
 recherche web intégrée : les opérations sont fournies par le dock.
 
 Bornes de découverte : trois recherches initiales et deux recherches d'offres,
-huit pages initiales et quatre pages d'offres, douze candidats et dix minutes.
+huit pages initiales et quatre pages d'offres, douze candidats et trente minutes.
 Jusqu'à quatre appels de planification/extraction, en plus de l'interprétation
 initiale et de la comparaison finale. Aucune analyse LLM ne part lors de la veille
 automatique. Les refus de sites restent explicites et ne sont pas contournés.
@@ -499,3 +499,13 @@ puis la comparaison DeepSeek a atteint la limite de 180 secondes (17:32:01 à
 analyse indisponible. Le délai est imposé par le client ; l'observation seule ne
 distingue pas une réflexion longue d'une attente du service. Réflexion `max` et
 délai inchangés dans cette publication, sans nouvelle requête de test facturée.
+
+À la demande d'Ayo après cet essai, la réflexion `max` est conservée et le délai
+est porté à 15 minutes par appel DeepSeek, avec 30 minutes pour le parcours web.
+Les délais courts des lectures de pages et d'Ollama restent inchangés. Il s'agit
+de plafonds d'attente, pas d'une durée attendue ni d'une garantie de réponse.
+Les 302 contrôles Shopping passent et la compilation réussit sans requête payante.
+Build chargé/sélectionné : `battlestation-shopping-wait-01` (PID 3948), hôte 2196,
+sessions et réglages conservés. Le build remplacé `shopping-glass-01` est archivé
+sous `backups/retired-builds/2026-09-22/` après contrôle des processus, modules et
+références. Validation : `artifacts/validation/shopping-wait-20260922/`.

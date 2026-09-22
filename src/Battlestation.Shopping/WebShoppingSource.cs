@@ -51,7 +51,7 @@ public sealed class WebShoppingSource(HttpClient http,PriceSourceOptions options
     {
         Notice=planner is null?"Planification indisponible : recherche par type de produit, sans modèle.":"";
         using var deadline=CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-        deadline.CancelAfter(TimeSpan.FromMinutes(10));
+        deadline.CancelAfter(TimeSpan.FromMinutes(30));
         var token=deadline.Token;
         var offers=new List<Product>();
         var results=new List<SearchLink>();
@@ -129,9 +129,9 @@ public sealed class WebShoppingSource(HttpClient http,PriceSourceOptions options
         }
         catch(OperationCanceledException) when(!cancellation.IsCancellationRequested)
         {
-            Notice="Recherche web interrompue après 10 min ; résultats partiels.";
+            Notice="Recherche web interrompue après 30 min ; résultats partiels.";
             Report(Notice);
-            if(offers.Count==0)throw new PriceSourceUnavailableException("La recherche web n'a pas abouti dans le délai de 10 min.");
+            if(offers.Count==0)throw new PriceSourceUnavailableException("La recherche web n'a pas abouti dans le délai de 30 min.");
             return offers.Take(Math.Clamp(limit,1,12)).ToArray();
         }
 
