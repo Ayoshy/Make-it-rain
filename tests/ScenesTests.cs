@@ -54,7 +54,6 @@ internal static class ScenesTests
                 Check(layout.Blocks.All(block=>layout.Valid(block)),name+" : disposition valide sur les deux écrans");
                 Check(layout["network"].Visible==(redesigned.TemplateId is "Bureau" or "Jeu"),name+" : réseau selon le modèle");
                 foreach(string required in new[]{"terminal","projects","video"})Check(layout[required].Visible,name+" : "+required+" visible");
-                Check(!layout["montagne"].Visible,name+" : Montagne masquée");
                 Check(layout["lol"].Visible==(redesigned.TemplateId=="Jeu"),name+" : LoL seulement en Jeu");
                 Check(layout["dualsense"].Visible==(redesigned.TemplateId =="Jeu"),name+" : DualSense en Jeu");
                 Check(layout.Blocks.Where(b=>b.Visible).All(b=>b.Width>=DesktopLayout.Minimum(b.Id).Width&&b.Height>=DesktopLayout.Minimum(b.Id).Height),name+" : tailles minimales respectées");
@@ -74,12 +73,11 @@ internal static class ScenesTests
             migratedAtelier.Save();
             var restoredAtelier=new DesktopLayout(legacyPath,11);
             Check(restoredAtelier["atelier"]==placedAtelier&&restoredAtelier.Blocks.Where(b=>b.Id!="atelier").SequenceEqual(beforeAtelier),"La place d'Atelier et la disposition personnelle survivent à la relecture");
-            Check(models.Single(b=>b.Id=="montagne") is{Visible:false,Width:960,Height:600}&&models.Single(b=>b.Id=="lol") is{Visible:false,Width:700,Height:220},"Montagne et LoL arrivent masqués avec leur taille par défaut");
-            Check(DesktopLayout.Minimum("montagne")==new Size(560,340)&&DesktopLayout.Minimum("lol")==new Size(440,180),"Les minimums de Montagne et de LoL sont déclarés");
+            Check(models.Single(b=>b.Id=="lol") is{Visible:false,Width:700,Height:220},"LoL starts hidden with its default dimensions");
+            Check(DesktopLayout.Minimum("lol")==new Size(440,180),"LoL minimum dimensions are declared");
             foreach(string name in DesktopProfiles.Names)
             {
                 var preset=DesktopProfiles.Preset(name,models);
-                Check(preset.Single(b=>b.Id=="montagne") is{Visible:false},name+" ne place pas Montagne");
                 Check(preset.Single(b=>b.Id=="lol").Visible==(name=="Jeu"),name+" ne montre LoL qu'en Jeu");
                 Check(preset.Single(b=>b.Id=="dualsense").Visible==(name =="Jeu"),name+" ne montre la DualSense qu'en Jeu");
                 foreach(string required in new[]{"terminal","projects","video"})Check(preset.Single(b=>b.Id==required).Visible,name+" réserve "+required);
@@ -90,7 +88,7 @@ internal static class ScenesTests
                 }
             }
             var committedLayout=layout.Blocks.ToArray();
-            Check(layout.Restore(committedLayout.Where(b=>b.Id is not ("montagne" or "lol")).ToArray())&&!layout["montagne"].Visible&&!layout["lol"].Visible,"Une scène existante retrouve les nouveaux blocs masqués");
+            Check(layout.Restore(committedLayout.Where(b=>b.Id!="lol").ToArray())&&!layout["lol"].Visible,"Une scène existante retrouve les nouveaux blocs masqués");
             layout.Restore(committedLayout);
             SingleScreenTests.Run(temp,Check);
             ScreenFitTests.Run(temp,Check);

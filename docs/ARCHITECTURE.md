@@ -87,10 +87,6 @@ réutilisées. Une politique d'occultation conserve les effets sur les écrans
 exposés, suspend les producteurs inutilisés et reprend après retour au bureau.
 L'analyse audio et la capture WGC ont leurs workers propriétaires ; aucune
 attente de périphérique ou de transfert GPU ne se fait dans leurs ticks WPF.
-La Montagne suit la même règle : sa scène est tracée par pixel dans le shader du
-bloc (`Shaders/Montagne.fx`, `ps_3_0`), composée dans la fenêtre du dock
-au-dessus du verre natif, et sa boucle de rendu n'existe que pendant que le bloc
-est exposé. Voir [la montagne](MONTAGNE.md).
 
 Le radar d'achat sépare le dock de son moteur : `ShoppingSurface` et
 `ShoppingRadar` ne connaissent que `IShoppingEngine`, tandis que

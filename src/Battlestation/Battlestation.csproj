@@ -13,10 +13,6 @@
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="Themes.json" LogicalName="Battlestation.Themes.json" />
-    <!-- Compiled by scripts/Build-Battlestation.ps1 from Shaders/Montagne.fx
-         (fxc); a WPF pixel shader is addressed by pack URI, so it is a
-         Resource. -->
-    <Resource Include="Shaders/Montagne.ps" />
     <Resource Include="../../assets/Fonts/art-deco.ttf" Link="Assets/Fonts/art-deco.ttf" />
     <ProjectReference Include="../Battlestation.Core/Battlestation.Core.csproj" />
     <ProjectReference Include="../Battlestation.Shopping/Battlestation.Shopping.csproj" />

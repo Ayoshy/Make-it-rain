@@ -11,10 +11,9 @@ static class DockReviewTests
     static void Check(bool value,string message){if(!value)throw new Exception(message);}
     static JsonElement Hits(Surface surface)=>JsonSerializer.SerializeToElement(surface.InspectHits());
     static bool Has(Surface surface,string name)=>Hits(surface).EnumerateArray().Any(h=>h.GetProperty("name").GetString()==name);
-    static void Render(Surface surface,string file,FrameworkElement? under=null)
+    static void Render(Surface surface,string file)
     {
-        // A dock may own a layer under its drawings: the Montagne snow is one.
-        var root=Layered(surface,under);
+        var root=surface;
         root.Measure(new Size(surface.Width,surface.Height));
         root.Arrange(new Rect(0,0,surface.Width,surface.Height));root.UpdateLayout();
         var image=new RenderTargetBitmap((int)Math.Ceiling(surface.Width),(int)Math.Ceiling(surface.Height),96,96,PixelFormats.Pbgra32);
@@ -29,22 +28,12 @@ static class DockReviewTests
             Check(x>=0&&y>=0&&x+hit.GetProperty("width").GetDouble()<=surface.Width&&y+hit.GetProperty("height").GetDouble()<=surface.Height,"Hit must fit inside dock");
         }
     }
-    static FrameworkElement Layered(Surface surface,FrameworkElement? under)
-    {
-        if(under is null)return surface;
-        // A WPF element keeps its parent: detach before reusing the same dock again.
-        if(surface.Parent is System.Windows.Controls.Panel previous)previous.Children.Remove(surface);
-        if(under.Parent is System.Windows.Controls.Panel previousUnder)previousUnder.Children.Remove(under);
-        var stack=new System.Windows.Controls.Grid{Width=surface.Width,Height=surface.Height};
-        stack.Children.Add(under);stack.Children.Add(surface);
-        return stack;
-    }
-    static byte[] Pixels(Surface surface,FrameworkElement? under=null)
+    static byte[] Pixels(Surface surface)
     {
         // A dock only repaints when it is invalidated; the fixture changes the data
         // behind the same dock, so every capture starts from a fresh render.
         surface.Refresh();
-        var root=Layered(surface,under);
+        var root=surface;
         root.Measure(new Size(surface.Width,surface.Height));
         root.Arrange(new Rect(0,0,surface.Width,surface.Height));root.UpdateLayout();
         var image=new RenderTargetBitmap((int)Math.Ceiling(surface.Width),(int)Math.Ceiling(surface.Height),96,96,PixelFormats.Pbgra32);
@@ -252,6 +241,22 @@ static class DockReviewTests
         var station=new Station{Root=root};
         if(args.Contains("--apps-only")){AppLayoutChecks(station,output);return;}
         if(args.Contains("--glass-only")){GlassChecks(station,output);return;}
+        if(args.Contains("--gallery-only"))
+        {
+            // Public documentation fixtures: no accounts, probes or live sessions.
+            DesktopTheme.Select("aurore",false);
+            foreach(var pair in new Dictionary<string,string>{
+                ["days"]="56",["hours"]="14",["minutes"]="28",["seconds"]="09",["date"]="19 NOVEMBRE 2026",
+                ["cpu"]="42",["gpu"]="48",["fan"]="34 %",["watts"]="62 W",["cpuLoad"]="18 %",["gpuLoad"]="24 %",
+                ["sensorStatus"]="",["codexStatus"]="",["quotaLabel"]="FENÊTRE EN COURS",["remaining"]="72",
+                ["reset"]="Réinitialisation dans 3 h",["today"]="128 k",["total"]="4,2 M"
+            })Native.Values[pair.Key]=pair.Value;
+            Render(new CountdownSurface(station){Width=779,Height=706},Path.Combine(output,"gallery-countdown.png"));
+            Render(new DashboardSurface(station,true){Width=640,Height=224},Path.Combine(output,"gallery-hardware.png"));
+            Render(new DashboardSurface(station,false){Width=640,Height=224},Path.Combine(output,"gallery-usage.png"));
+            Console.WriteLine("Rendered documentation fixtures with synthetic values; no live backend.");
+            return;
+        }
         if(args.Contains("--projects-only"))
         {
             Native.Values["projectCount"]="1";Native.Values["project:0:name"]="Battlestation";Native.Values["project:0:path"]=root;
@@ -271,22 +276,6 @@ static class DockReviewTests
                 Check(Has(projects,"Project0")&&!Has(projects,"OpenKilo"),"Folding restores the project cards without launching a CLI");
             }
             Console.WriteLine("PASS project menus: wide/default/minimum render, action bounds, no overlapping launches, fold restores cards. No live clicks or CLI launches.");
-            return;
-        }
-        // Scene preview: a real window, so the pixel shader actually runs (a
-        // RenderTargetBitmap ignores pixel shaders). Captured from outside.
-        if(args.Contains("--water-preview"))
-        {
-            station.MusicBands=[.85f,.75f,.65f,.55f,.40f,.30f,.45f,.20f,.15f,.30f,.20f,.10f];
-            var mountain=new MontagneSurface(station){Width=960,Height=600};
-            mountain.SetActive(true);
-            var stack=new System.Windows.Controls.Grid{Width=960,Height=600};
-            stack.Children.Add(mountain.SceneLayer);stack.Children.Add(mountain);
-            var window=new Window{Width=960,Height=600,Left=180,Top=180,WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,
-                Background=new SolidColorBrush(Color.FromRgb(18,14,28)),Content=stack,ShowInTaskbar=false,Topmost=true};
-            var close=new System.Windows.Threading.DispatcherTimer(TimeSpan.FromSeconds(9),System.Windows.Threading.DispatcherPriority.Background,(_,_)=>{window.Close();},app.Dispatcher);
-            window.Loaded+=(_,_)=>close.Start();
-            app.Run(window);
             return;
         }
         var face=new Typeface(new FontFamily(new Uri("pack://application:,,,/"),"./Assets/Fonts/#GTAArtDeco Condensed"),FontStyles.Normal,FontWeights.Normal,FontStretches.Normal);
@@ -503,57 +492,7 @@ static class DockReviewTests
             Check(Different(front,Pixels(states)),"Leaving the foreground visibly changes the icon material");
         }
         states.Dispose();
-        // Montagne: the snow falls while it is exposed, a hidden dock stops.
-        using(var mountain=new MontagneSurface(station){Width=960,Height=600})
-        {
-            // The first render registers the dock's glass slot, exactly like the
-            // desktop does.
-            Pixels(mountain);
-            Check(Native.Panels[15]==new Rect(0,0,960,600),"The mountain owns the glass slot 15");
-            mountain.SetActive(true);
-            Check(mountain.Animating,"The mountain animates while it is exposed");
-            var before=mountain.Elapsed;
-            for(int frame=0;frame<30;frame++)mountain.Advance(1d/60d);
-            Check(mountain.Elapsed>before,"The mountain advances its time while it is exposed");
-            Render(mountain,Path.Combine(output,"montagne.png"),mountain.SceneLayer);
-            Check(JsonSerializer.SerializeToElement(mountain.Inspect()).GetProperty("scene").GetString() is "shader" or "dessinée","The mountain states which scene it runs");
-            mountain.SetActive(false);
-            var frozen=mountain.Elapsed;mountain.Advance(.5);
-            Check(!mountain.Animating&&mountain.Elapsed==frozen,"A hidden mountain stops advancing");
-        }
-        // The stir the pointer leaves and the shader reads: it builds with the
-        // gesture, decays back to rest, and never leaves the bounded range.
-        using(var mountain=new MontagneSurface(station){Width=960,Height=600})
-        {
-            mountain.SetActive(true);
-            mountain.Stir(40);
-            var stirred=JsonSerializer.SerializeToElement(mountain.Inspect()).GetProperty("stir").GetProperty("X").GetDouble();
-            Check(Math.Abs(stirred)>1&&Math.Abs(stirred)<=26,"The stir builds within its bounds");
-            for(int frame=0;frame<180;frame++)mountain.Advance(1d/60d);
-            var rested=JsonSerializer.SerializeToElement(mountain.Inspect()).GetProperty("stir").GetProperty("X").GetDouble();
-            Check(Math.Abs(rested)<1,"The stir decays back to rest");
-        }
         // LoL: rest state, synthetic reading, timers and the certificate predicate.
-        // Montagne and music: the bass raises the wind and shakes the flakes with
-        // one bounded gust per beat.
-        using(var mountain=new MontagneSurface(station){Width=960,Height=600})
-        {
-            station.MusicBands=new float[12];
-            mountain.SetActive(true);
-            for(int frame=0;frame<60;frame++)mountain.Advance(1d/60d);
-            station.MusicBands=[.92f,.80f,.70f,.60f,.30f,.20f,.15f,.10f,.08f,.06f,.05f,.04f];
-            for(int frame=0;frame<40;frame++)mountain.Advance(1d/60d);
-            Check(mountain.Animating,"La montagne reste animée");
-            var excited=JsonSerializer.SerializeToElement(mountain.Inspect());
-            Check(excited.GetProperty("stir").GetProperty("X").GetDouble()!=0&&excited.GetProperty("energy").GetDouble()>0,"L'énergie musicale est mesurée");
-            Render(mountain,Path.Combine(output,"montagne-music.png"),mountain.SceneLayer);
-            station.MusicBands=new float[12];
-            for(int frame=0;frame<600;frame++)mountain.Advance(1d/60d);
-            Check(Math.Abs(JsonSerializer.SerializeToElement(mountain.Inspect()).GetProperty("stir").GetProperty("X").GetDouble())<1,"Le silence ramène le calme");
-            mountain.SetActive(false);
-            var frozen=mountain.Elapsed;mountain.Advance(.5);
-            Check(mountain.Elapsed==frozen,"Une Montagne masquée n'avance plus");
-        }
         Check(LolTelemetry.IsLiveClientEndpoint("127.0.0.1",2999)&&!LolTelemetry.IsLiveClientEndpoint("localhost",2999)
             &&!LolTelemetry.IsLiveClientEndpoint("127.0.0.1",3000)&&!LolTelemetry.IsLiveClientEndpoint("127.0.0.1.evil.test",2999),
             "Only 127.0.0.1:2999 justifies accepting the live client certificate");
@@ -673,7 +612,7 @@ static class DockReviewTests
         station.Terminal=null;
         var plain=Pixels(new DeskSurface(station,DeskWidget.Projects){Width=720,Height=293});
         Check(Different(badge,plain),"An open terminal tab adds the neon badge to the project card");
-        Console.WriteLine("PASS: font, reminders, app packs and compact add button, audio bounds and meter smoothing, Bluetooth targets, native icon fallback, Montagne snow, LoL telemetry, weather strip, project card. Render fixtures are not live click validation.");
+        Console.WriteLine("PASS: font, reminders, app packs and compact add button, audio bounds and meter smoothing, Bluetooth targets, native icon fallback, LoL telemetry, weather strip, project card. Render fixtures are not live click validation.");
     }
 
     // One synthetic live client response: no game, no account and no engine is involved.

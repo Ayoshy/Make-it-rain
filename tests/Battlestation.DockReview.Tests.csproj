@@ -25,12 +25,11 @@
     <Compile Include="../src/Battlestation/DockAppearance.cs"/>
     <Compile Include="../src/Battlestation/ReminderSurface.cs"/>
     <Compile Include="../src/Battlestation/DeskSurface.cs"/>
+    <Compile Include="../src/Battlestation/CountdownSurface.cs"/>
+    <Compile Include="../src/Battlestation/DashboardSurface.cs"/>
+    <Compile Include="../src/Battlestation/DashboardTransition.cs"/>
     <Compile Include="../src/Battlestation/Spectrum.cs"/>
     <Compile Include="../src/Battlestation/AudioEnvelope.cs"/>
-    <Compile Include="../src/Battlestation/MontagneSurface.cs"/>
-    <Compile Include="../src/Battlestation/MontagneEffect.cs"/>
-    <Compile Include="../src/Battlestation/MontagneCamera.cs"/>
-    <Resource Include="../src/Battlestation/Shaders/Montagne.ps" Link="Shaders/Montagne.ps"/>
     <Compile Include="../src/Battlestation/LolSurface.cs"/>
     <Compile Include="../src/Battlestation/LolTelemetry.cs"/>
     <Compile Include="../src/Battlestation/ProjectSignals.cs"/>

@@ -40,9 +40,6 @@ internal sealed class Station : IDisposable
     public DesktopSettings Settings {get;private set;}
     internal bool? PreviewReactiveAudio {get;set;}
     internal double? PreviewAudioIntensity {get;set;}
-    // Published by the music dock: the Montagne scene follows the same spectrum
-    // of opening a second audio capture.
-    internal float[] MusicBands{get;set;}=new float[12];
     internal bool ReactiveAudio=>PreviewReactiveAudio??Settings.ReactiveAudio;
     internal double AudioIntensity=>PreviewAudioIntensity??Settings.AudioIntensity;
     public string TargetDate {get;private set;}="";

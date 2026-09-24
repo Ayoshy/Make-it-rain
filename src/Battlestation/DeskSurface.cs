@@ -41,7 +41,6 @@ internal sealed class DeskSurface : Surface
             float kept=level>peaks[i]?level:Math.Max(0,peaks[i]-.010f);
             changed|=Math.Abs(kept-peaks[i])>.001;peaks[i]=kept;
         }
-        Station.MusicBands=bands;
         if(changed&&visible)Refresh();
         if(reactive)Native.BackgroundAudio(next.Take(4).Max(),next.Skip(4).Take(4).Average(),next.Skip(8).Max(),(float)Station.AudioIntensity);
         else Native.BackgroundAudio(0,0,0,0);

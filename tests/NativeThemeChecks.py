@@ -11,7 +11,7 @@ slots = 20
 panels = (ctypes.c_float * (slots * 4))()
 if len(sys.argv)>3 and sys.argv[3]:
     blocks=json.loads(Path(sys.argv[3]).read_text(encoding="utf-8-sig"))
-    by_id={"clock":0,"weather":1,"apps":2,"music":3,"projects":4,"terminal":5,"hardware":6,"usage":7,"video":9,"audio":10,"reminders":11,"bluetooth":12,"dualsense":13,"network":14,"montagne":15,"lol":16}
+    by_id={"clock":0,"weather":1,"apps":2,"music":3,"projects":4,"terminal":5,"hardware":6,"usage":7,"video":9,"audio":10,"reminders":11,"bluetooth":12,"dualsense":13,"network":14,"lol":16}
     for b in blocks:
         if b["Visible"] and b["Id"] in by_id:
             i=by_id[b["Id"]]*4

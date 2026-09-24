@@ -122,7 +122,10 @@ Ne pas laisser le lanceur sur une ancienne version après livraison. Le pointeur
 désigne le prochain lancement ; le chemin des processus identifie la version
 chargée. Ne pas choisir un build par son nom ou sa date seuls.
 
-Atelier sert à conserver la version ouverte et à nettoyer les builds inutilisés.
+Le choix ou le rejet d'une version se fait désormais via le dock **Atelier**.
+Ne pas solliciter de décision d'acceptation ou de rejet en parallèle dans le chat ;
+lire l'état d'Atelier et n'y substituer aucun verdict de l'agent.
+Atelier sert aussi à conserver la version ouverte et à nettoyer les builds inutilisés.
 Le clic utilisateur **Garder cette version** vaut acceptation et aligne lui-même
 le prochain lancement ; ne pas demander une deuxième validation du même build.
 Une disposition ou un réglage ne nécessite pas d'essai Atelier. Ne pas fabriquer

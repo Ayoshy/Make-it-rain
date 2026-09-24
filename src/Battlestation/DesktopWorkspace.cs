@@ -37,7 +37,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
             ["apps"]=new DockSurface(station),["music"]=new DeskSurface(station,DeskWidget.Music),["projects"]=new DeskSurface(station,DeskWidget.Projects),
             ["terminal"]=new TerminalSurface(station),["countdown"]=new CountdownSurface(station),
             ["hardware"]=new DashboardSurface(station,true),["usage"]=new DashboardSurface(station,false),["reminders"]=new ReminderSurface(station),["video"]=new VideoSurface(station),["audio"]=new AudioSurface(station),["bluetooth"]=new BluetoothSurface(station),["dualsense"]=new DualSenseSurface(station),["network"]=new NetworkSurface(station),
-            ["montagne"]=new MontagneSurface(station),["lol"]=new LolSurface(station),["shopping"]=new ShoppingSurface(station),["notes"]=new NotesSurface(station),["atelier"]=new AtelierSurface(station)};
+            ["lol"]=new LolSurface(station),["shopping"]=new ShoppingSurface(station),["notes"]=new NotesSurface(station),["atelier"]=new AtelierSurface(station)};
         for(int i=0;i<DesktopTheme.Definitions.Length;i++)
         {
             var theme=DesktopTheme.Definitions[i];
@@ -118,9 +118,6 @@ internal sealed partial class DesktopWorkspace : IDisposable
     void CreateWindow(DesktopBlock block)
     {
         var surface=surfaces[block.Id];var grid=new System.Windows.Controls.Grid();
-        // The scene is its own layer under the dock: the shader runs on the
-        // mountain alone, and the block itself adds no panel over it.
-        if(surface is MontagneSurface mountain)grid.Children.Add(mountain.SceneLayer);
         grid.Children.Add(surface);
         if(surface is NotesSurface notes)grid.Children.Add(notes.Editor);
         var overlay=new Border{Background=Brush("#38251936"),BorderBrush=Brush("#DAC19BEA"),BorderThickness=new Thickness(2),CornerRadius=new CornerRadius(24),Cursor=Cursors.SizeAll,Visibility=Visibility.Collapsed};
@@ -150,7 +147,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
     }
     void ClearGlass(string id)
     {
-        int[] slots=id switch{"clock"=>[0],"weather"=>[1],"apps"=>[2],"music"=>[3],"projects"=>[4,8],"terminal"=>[5],"hardware"=>[6],"usage"=>[7],"video"=>[9],"audio"=>[10],"reminders"=>[11],"bluetooth"=>[12],"dualsense"=>[13],"network"=>[14],"montagne"=>[15],"lol"=>[16],"shopping"=>[18],"notes"=>[19],"atelier"=>[20],_=>[]};
+        int[] slots=id switch{"clock"=>[0],"weather"=>[1],"apps"=>[2],"music"=>[3],"projects"=>[4,8],"terminal"=>[5],"hardware"=>[6],"usage"=>[7],"video"=>[9],"audio"=>[10],"reminders"=>[11],"bluetooth"=>[12],"dualsense"=>[13],"network"=>[14],"lol"=>[16],"shopping"=>[18],"notes"=>[19],"atelier"=>[20],_=>[]};
         foreach(int slot in slots)Native.BackgroundPanel(slot,0,0,0,0);
     }
     void Apply(string id,bool arrange=true,bool refresh=true)
@@ -165,7 +162,6 @@ internal sealed partial class DesktopWorkspace : IDisposable
         if(surface is AudioSurface mixer)mixer.SetActive(block.Visible&&!editing);
         if(surface is DualSenseSurface controller)controller.SetActive(block.Visible&&!editing&&exposed.Contains(id));
         if(surface is NetworkSurface network)network.SetActive(block.Visible&&!editing&&exposed.Contains(id));
-        if(surface is MontagneSurface mountain)mountain.SetActive(block.Visible&&!editing&&exposed.Contains(id));
         if(surface is LolSurface league)league.SetActive(block.Visible&&!editing&&exposed.Contains(id));
         if(id=="projects"){Native.DeskProjectsActive(block.Visible?1:0);station.Projects.Watch(station.ProjectRoot,block.Visible,name=>Native.DeskCommand("ProjectChanged:"+name));}
         if(id=="terminal")
@@ -191,13 +187,12 @@ internal sealed partial class DesktopWorkspace : IDisposable
         ((AudioSurface)surfaces["audio"]).SetActive(station.Layout["audio"].Visible&&!value);
         ((DualSenseSurface)surfaces["dualsense"]).SetActive(exposed.Contains("dualsense")&&!value);
         ((NetworkSurface)surfaces["network"]).SetActive(exposed.Contains("network")&&!value);
-        ((MontagneSurface)surfaces["montagne"]).SetActive(exposed.Contains("montagne")&&!value);
         ((LolSurface)surfaces["lol"]).SetActive(exposed.Contains("lol")&&!value);
         ((AtelierSurface)surfaces["atelier"]).SetActive(exposed.Contains("atelier")&&!value);
         station.Terminal?.SetVisible(station.Layout["terminal"].Visible&&!editing);
         if(value){var screen=station.Layout.AvailableScreens.Last();toolbar.Left=screen.Left+(screen.Width-toolbar.Width)/2;toolbar.Top=screen.Top+(screen.Height-toolbar.Height)*.54;toolbar.Show();toolbar.Activate();}else{toolbar.Hide();station.Layout.Save();}
     }
-    object Inspect()=>new{pid=Environment.ProcessId,mode="desktop",editing,profile=profiles.Current,scene=new{phase=scene.State,busy=scene.Busy,alpha=scene.GlassAlpha,applyMs=Math.Round(scene.LastApplyMilliseconds,1)},displays=new{connectedScreens,singleScreen=station.Layout.SingleScreen,profiles.ReturnScene,error=displayError},theme=DesktopTheme.Current.Id,terminalThemeSupported=station.Terminal?.ThemeSupported,rendering=new{monitorMask,exposed=exposed.ToArray(),counts=surfaces.ToDictionary(p=>p.Key,p=>p.Value.RenderCount)},layoutOptions=new{station.Settings.GridEnabled,station.Settings.GridStep,station.Settings.LinkDocks},terminalPid=station.Terminal?.Pid,palette=new{open=palette?.IsVisible==true,hotkeyRegistered=paletteHotkey.Registered,hotkeyError=paletteHotkey.Error},settingsOpen=settingsWindow?.IsVisible==true,weather=new{temperature=Native.Read("weatherTemp"),condition=Native.Read("weatherCondition"),at=Native.Read("weatherTime"),hours=Native.Read("weatherHours"),rain=Native.Read("weatherRain")},lol=((LolSurface)surfaces["lol"]).Inspect(),montagne=((MontagneSurface)surfaces["montagne"]).Inspect(),blocks=station.Layout.Blocks,windows=placement.Inspect(),hits=surfaces.ToDictionary(p=>p.Key,p=>p.Value.InspectHits())};
+    object Inspect()=>new{pid=Environment.ProcessId,mode="desktop",editing,profile=profiles.Current,scene=new{phase=scene.State,busy=scene.Busy,alpha=scene.GlassAlpha,applyMs=Math.Round(scene.LastApplyMilliseconds,1)},displays=new{connectedScreens,singleScreen=station.Layout.SingleScreen,profiles.ReturnScene,error=displayError},theme=DesktopTheme.Current.Id,terminalThemeSupported=station.Terminal?.ThemeSupported,rendering=new{monitorMask,exposed=exposed.ToArray(),counts=surfaces.ToDictionary(p=>p.Key,p=>p.Value.RenderCount)},layoutOptions=new{station.Settings.GridEnabled,station.Settings.GridStep,station.Settings.LinkDocks},terminalPid=station.Terminal?.Pid,palette=new{open=palette?.IsVisible==true,hotkeyRegistered=paletteHotkey.Registered,hotkeyError=paletteHotkey.Error},settingsOpen=settingsWindow?.IsVisible==true,weather=new{temperature=Native.Read("weatherTemp"),condition=Native.Read("weatherCondition"),at=Native.Read("weatherTime"),hours=Native.Read("weatherHours"),rain=Native.Read("weatherRain")},lol=((LolSurface)surfaces["lol"]).Inspect(),blocks=station.Layout.Blocks,windows=placement.Inspect(),hits=surfaces.ToDictionary(p=>p.Key,p=>p.Value.InspectHits())};
     string Command(string command)
     {
         if(command=="inspect")return JsonSerializer.Serialize(Inspect());
@@ -279,13 +274,6 @@ internal sealed partial class DesktopWorkspace : IDisposable
         }
         if(command.StartsWith("drawer:")&&int.TryParse(command[7..],out int drawer)&&drawer is >=1 and <=5){((DashboardSurface)surfaces[drawer<=2?"hardware":"usage"]).Toggle(drawer);return "OK";}
         if(command=="capture"){Native.BackgroundCapture();return "OK";}
-        if(command.StartsWith("montagne-stir:"))
-        {
-            var parts=command.Split(':');
-            if(parts.Length!=2||!double.TryParse(parts[1],System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out double velocity))
-                throw new ArgumentException("Perturbation invalide");
-            ((MontagneSurface)surfaces["montagne"]).Stir(velocity);return "OK";
-        }
         throw new InvalidOperationException("Commande inconnue");
     }
     void Tick()
@@ -315,7 +303,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
                 "hardware"=>station.Backend.Revision(true),"usage"=>station.Backend.Revision(false),"reminders"=>station.Reminders.GetHashCode(),
                 "terminal"=>HashCode.Combine(station.Terminal?.Revision,station.Terminal?.RemoteHandle,station.Terminal?.UseGlassTabs),
                 "apps"=>station.Apps.GetHashCode(),_=>0};
-            if(pair.Key is "audio" or "video" or "dualsense" or "network" or "montagne" or "lol")continue;
+            if(pair.Key is "audio" or "video" or "dualsense" or "network" or "lol")continue;
             if(!renderRevisions.TryGetValue(pair.Key,out var previous)||revision!=previous){renderRevisions[pair.Key]=revision;pair.Value.Refresh();}
         }
         if(ticks%20==0)Battlestation.Core.DiagnosticFile.Write(Path.Combine(station.Data,"host-state.json"),JsonSerializer.Serialize(Inspect()));
@@ -336,7 +324,6 @@ internal sealed partial class DesktopWorkspace : IDisposable
         ((AudioSurface)surfaces["audio"]).SetActive(exposed.Contains("audio")&&!editing);
         ((DualSenseSurface)surfaces["dualsense"]).SetActive(exposed.Contains("dualsense")&&!editing);
         ((NetworkSurface)surfaces["network"]).SetActive(exposed.Contains("network")&&!editing);
-        ((MontagneSurface)surfaces["montagne"]).SetActive(exposed.Contains("montagne")&&!editing);
         ((LolSurface)surfaces["lol"]).SetActive(exposed.Contains("lol")&&!editing);
         ((VideoSurface)surfaces["video"]).SetOccluded(!exposed.Contains("video"));
         ((AtelierSurface)surfaces["atelier"]).SetActive(exposed.Contains("atelier")&&!editing);
@@ -354,7 +341,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
         ((VideoSurface)surfaces["video"]).Dispose();
         ((AudioSurface)surfaces["audio"]).Dispose();((BluetoothSurface)surfaces["bluetooth"]).Dispose();
         ((DualSenseSurface)surfaces["dualsense"]).Dispose();((NetworkSurface)surfaces["network"]).Dispose();
-        ((MontagneSurface)surfaces["montagne"]).Dispose();((LolSurface)surfaces["lol"]).Dispose();
+        ((LolSurface)surfaces["lol"]).Dispose();
         ((ShoppingSurface)surfaces["shopping"]).Dispose();
         ((NotesSurface)surfaces["notes"]).Dispose();
         ((AtelierSurface)surfaces["atelier"]).Dispose();

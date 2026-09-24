@@ -18,6 +18,10 @@ internal sealed class TerminalSession
 internal sealed class Station
 {
     public string Root {get;set;}="";
+    public string Error=>"";
+    public string M(string key)=>Native.Read(key);
+    public double N(string key)=>double.TryParse(M(key),System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out double value)?value:double.NaN;
+    public void Command(string command)=>throw new InvalidOperationException("No backend commands during render tests");
     public string Assets=>System.IO.Path.Combine(Root,"assets");
     public string Data=>System.IO.Path.Combine(Root,"artifacts/validation/network-fixture");
     internal DesktopSettings Settings {get;private set;}=new(Environment.CurrentDirectory,"Aix",43.5,5.4);
@@ -33,7 +37,6 @@ internal sealed class Station
     // Fixture only: the desk supplies the track artwork, there is no media session here.
     internal System.Windows.Media.Imaging.BitmapSource? Cover=>CoverArt;
     internal System.Windows.Media.Imaging.BitmapSource? CoverArt{get;set;}
-    internal float[] MusicBands{get;set;}=new float[12];
     internal double AudioIntensity=>.55;
     public void SaveReminders(IEnumerable<ReminderItem> reminders)=>Reminders=reminders.ToList();
     public void SaveApps(List<DockApp> apps){Apps=apps;DockChanged?.Invoke();}
