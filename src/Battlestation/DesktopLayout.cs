@@ -16,7 +16,7 @@ internal sealed class DesktopLayout
         "projects"=>new(360,240),"apps"=>new(240,112),"terminal"=>new(480,300),
         "countdown"=>new(400,360),"hardware"=>new(440,218),"usage"=>new(440,209),
         "network"=>new(440,280),"dualsense"=>new(480,380),"video"=>new(480,270),"audio"=>new(440,220),"bluetooth"=>new(128,128),"reminders"=>new(440,112),
-        "montagne"=>new(560,340),"lol"=>new(440,180),"shopping"=>new(560,420),_=>new(120,100)
+        "montagne"=>new(560,340),"lol"=>new(440,180),"shopping"=>new(560,420),"notes"=>new(320,180),"atelier"=>new(440,280),_=>new(120,100)
     };
     static DesktopBlock Dimensions(DesktopBlock original,DesktopBlock saved)=>original with
     {
@@ -55,7 +55,9 @@ internal sealed class DesktopLayout
         new("montagne","Montagne",960,600,24,384,false),
         new("lol","LoL",700,220,24,960,false),
         // Le radar d'achat arrive masqué lui aussi : il s'ajoute depuis « Ajouter un bloc ».
-        new("shopping","Achats",700,520,1080,384,false)
+        new("shopping","Achats",700,520,1080,384,false),
+        new("notes","Bloc-notes",480,320,24,384,false),
+        new("atelier","Atelier",560,280,24,384,false)
     ];
     static double TerminalY(int apps)=>Math.Max(720,Math.Ceiling((336+DockHeight(apps)-116+293+Gap)/Grid)*Grid);
     public static double DockHeight(int apps)=>Math.Max(1,Math.Ceiling(apps/6d))*88+28;

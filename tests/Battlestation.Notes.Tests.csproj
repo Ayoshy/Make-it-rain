@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="NotesTests.cs"/>
+    <Compile Include="../src/Battlestation/NotesFile.cs"/>
+    <Compile Include="../src/Battlestation/NotesSurface.cs"/>
+    <Compile Include="../src/Battlestation/Surface.cs"/>
+    <Compile Include="../src/Battlestation/DesktopSettings.cs"/>
+    <Compile Include="../src/Battlestation/DesktopTheme.cs"/>
+    <Compile Include="../src/Battlestation/DockAppearance.cs"/>
+    <EmbeddedResource Include="../src/Battlestation/Themes.json" LogicalName="Battlestation.Themes.json"/>
+    <Resource Include="../assets/Fonts/art-deco.ttf" Link="Assets/Fonts/art-deco.ttf"/>
+  </ItemGroup>
+</Project>

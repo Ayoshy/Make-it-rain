@@ -71,6 +71,20 @@ dépendances ou options sans besoin concret. Préserver le travail concurrent.
 En cas de délégation, borner la tâche ; le principal relit le diff, vérifie les
 preuves et reste responsable de l'intégration. La délégation ne vaut pas validation.
 
+Limiter le contexte transporté à ce qui sert la tâche. Chercher avec `rg` avant
+de lire les plages utiles ; éviter les fichiers entiers, inventaires et journaux
+volumineux lorsque quelques résultats suffisent. Borner les sorties d'outils,
+sans masquer les erreurs ni les preuves nécessaires. Réutiliser les lectures et
+validations encore valables ; les refaire si l'état concerné a changé.
+En cas de délégation autorisée, transmettre un contrat court et autonome
+(objectif, fichiers, contraintes, preuves attendues), sans recopier tout
+l'historique. Pour un nouveau sujet indépendant, privilégier une nouvelle
+conversation ; avant une transition, conserver un bref état des décisions,
+changements, validations et points ouverts utiles à la reprise.
+Évaluer l'efficacité par tâche terminée, avec qualité et reprises : distinguer
+entrée non cachée, entrée cachée et sortie, raisonnement inclus. Une réponse plus
+courte ou moins de tokens bruts ne prouve pas une économie de coût ou de quota.
+
 Vérifier les comportements touchés et les régressions plausibles sur ce PC.
 Pas de revalidation intégrale pour une modification locale, ni de tests exhaustifs
 de configurations étrangères à cet usage. Ajouter ou maintenir des tests utiles
@@ -107,6 +121,14 @@ et du démarrage Windows. Une compilation réussie seule ne promeut pas un build
 Ne pas laisser le lanceur sur une ancienne version après livraison. Le pointeur
 désigne le prochain lancement ; le chemin des processus identifie la version
 chargée. Ne pas choisir un build par son nom ou sa date seuls.
+
+Atelier sert à conserver la version ouverte et à nettoyer les builds inutilisés.
+Le clic utilisateur **Garder cette version** vaut acceptation et aligne lui-même
+le prochain lancement ; ne pas demander une deuxième validation du même build.
+Une disposition ou un réglage ne nécessite pas d'essai Atelier. Ne pas fabriquer
+un verdict utilisateur ni cliquer à sa place pour déclarer un candidat accepté.
+Le bouton **Nettoyer les builds** est une demande explicite de suppression des
+builds inutilisés ; utiliser son contrôle des références, sans fermer de session.
 
 Retirer le build remplacé de `build/` : l'archiver sous
 `backups/retired-builds/<date>/` par défaut, ou le supprimer sur demande explicite.

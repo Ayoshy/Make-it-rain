@@ -35,6 +35,9 @@ internal static class Program
         };
         app.Exit+=(_,_)=>{runtime?.Dispose();station?.Dispose();};
         app.Run();
+        // The UI is closed; finish the last note write before releasing the desktop mutex.
+        runtime?.PendingNotesSave.GetAwaiter().GetResult();
+        runtime?.PendingAtelierSave.GetAwaiter().GetResult();
         return 0;
     }
 }

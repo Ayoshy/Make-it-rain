@@ -57,6 +57,17 @@ internal static class ScenesTests
             Check(!reloaded.NeedsRedesign,"La refonte ne se répète pas au relancement");
             // Les nouveaux docks arrivent masqués et seul Jeu intègre LoL.
             var models=DesktopLayout.Defaults(11);
+            var beforeAtelier=models.Where(b=>b.Id!="atelier").ToArray();
+            var legacyPath=Path.Combine(temp,"before-atelier.json");
+            File.WriteAllText(legacyPath,JsonSerializer.Serialize(beforeAtelier));
+            var migratedAtelier=new DesktopLayout(legacyPath,11);
+            Check(migratedAtelier.Blocks.Where(b=>b.Id!="atelier").SequenceEqual(beforeAtelier),"Ajouter Atelier conserve tous les blocs de la disposition existante");
+            Check(!migratedAtelier["atelier"].Visible,"Atelier arrive masqué dans une disposition existante");
+            Check(migratedAtelier.SetVisible("atelier",true),"Atelier trouve une place libre sans déplacer les blocs");
+            var placedAtelier=migratedAtelier["atelier"];
+            migratedAtelier.Save();
+            var restoredAtelier=new DesktopLayout(legacyPath,11);
+            Check(restoredAtelier["atelier"]==placedAtelier&&restoredAtelier.Blocks.Where(b=>b.Id!="atelier").SequenceEqual(beforeAtelier),"La place d'Atelier et la disposition personnelle survivent à la relecture");
             Check(models.Single(b=>b.Id=="montagne") is{Visible:false,Width:960,Height:600}&&models.Single(b=>b.Id=="lol") is{Visible:false,Width:700,Height:220},"Montagne et LoL arrivent masqués avec leur taille par défaut");
             Check(DesktopLayout.Minimum("montagne")==new Size(560,340)&&DesktopLayout.Minimum("lol")==new Size(440,180),"Les minimums de Montagne et de LoL sont déclarés");
             foreach(string name in DesktopProfiles.Names)

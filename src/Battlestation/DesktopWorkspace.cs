@@ -37,7 +37,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
             ["apps"]=new DockSurface(station),["music"]=new DeskSurface(station,DeskWidget.Music),["projects"]=new DeskSurface(station,DeskWidget.Projects),
             ["terminal"]=new TerminalSurface(station),["countdown"]=new CountdownSurface(station),
             ["hardware"]=new DashboardSurface(station,true),["usage"]=new DashboardSurface(station,false),["reminders"]=new ReminderSurface(station),["video"]=new VideoSurface(station),["audio"]=new AudioSurface(station),["bluetooth"]=new BluetoothSurface(station),["dualsense"]=new DualSenseSurface(station),["network"]=new NetworkSurface(station),
-            ["montagne"]=new MontagneSurface(station),["lol"]=new LolSurface(station),["shopping"]=new ShoppingSurface(station)};
+            ["montagne"]=new MontagneSurface(station),["lol"]=new LolSurface(station),["shopping"]=new ShoppingSurface(station),["notes"]=new NotesSurface(station),["atelier"]=new AtelierSurface(station)};
         for(int i=0;i<DesktopTheme.Definitions.Length;i++)
         {
             var theme=DesktopTheme.Definitions[i];
@@ -122,6 +122,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
         // mountain alone, and the block itself adds no panel over it.
         if(surface is MontagneSurface mountain)grid.Children.Add(mountain.SceneLayer);
         grid.Children.Add(surface);
+        if(surface is NotesSurface notes)grid.Children.Add(notes.Editor);
         var overlay=new Border{Background=Brush("#38251936"),BorderBrush=Brush("#DAC19BEA"),BorderThickness=new Thickness(2),CornerRadius=new CornerRadius(24),Cursor=Cursors.SizeAll,Visibility=Visibility.Collapsed};
         var header=new DockPanel{VerticalAlignment=VerticalAlignment.Top,Margin=new Thickness(14)};
         var remove=new Button{Content="×",Width=30,Height=30,ToolTip="Retirer ce bloc"};DockPanel.SetDock(remove,Dock.Right);remove.Click+=(_,_)=>HideBlock(block.Id);header.Children.Add(remove);
@@ -145,11 +146,11 @@ internal sealed partial class DesktopWorkspace : IDisposable
             var quit=new MenuItem{Header="Quitter"};quit.Click+=(_,_)=>app.Shutdown();menu.Items.Add(quit);
         };window.ContextMenu=menu;
         WireEdit(block.Id,overlay,header);
-        window.Show();placement.Add(window);windows[block.Id]=window;overlays[block.Id]=overlay;
+        window.Show();placement.Add(window,acceptsFocus:block.Id=="notes");windows[block.Id]=window;overlays[block.Id]=overlay;
     }
     void ClearGlass(string id)
     {
-        int[] slots=id switch{"clock"=>[0],"weather"=>[1],"apps"=>[2],"music"=>[3],"projects"=>[4,8],"terminal"=>[5],"hardware"=>[6],"usage"=>[7],"video"=>[9],"audio"=>[10],"reminders"=>[11],"bluetooth"=>[12],"dualsense"=>[13],"network"=>[14],"montagne"=>[15],"lol"=>[16],"shopping"=>[18],_=>[]};
+        int[] slots=id switch{"clock"=>[0],"weather"=>[1],"apps"=>[2],"music"=>[3],"projects"=>[4,8],"terminal"=>[5],"hardware"=>[6],"usage"=>[7],"video"=>[9],"audio"=>[10],"reminders"=>[11],"bluetooth"=>[12],"dualsense"=>[13],"network"=>[14],"montagne"=>[15],"lol"=>[16],"shopping"=>[18],"notes"=>[19],"atelier"=>[20],_=>[]};
         foreach(int slot in slots)Native.BackgroundPanel(slot,0,0,0,0);
     }
     void Apply(string id,bool arrange=true,bool refresh=true)
@@ -192,6 +193,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
         ((NetworkSurface)surfaces["network"]).SetActive(exposed.Contains("network")&&!value);
         ((MontagneSurface)surfaces["montagne"]).SetActive(exposed.Contains("montagne")&&!value);
         ((LolSurface)surfaces["lol"]).SetActive(exposed.Contains("lol")&&!value);
+        ((AtelierSurface)surfaces["atelier"]).SetActive(exposed.Contains("atelier")&&!value);
         station.Terminal?.SetVisible(station.Layout["terminal"].Visible&&!editing);
         if(value){var screen=station.Layout.AvailableScreens.Last();toolbar.Left=screen.Left+(screen.Width-toolbar.Width)/2;toolbar.Top=screen.Top+(screen.Height-toolbar.Height)*.54;toolbar.Show();toolbar.Activate();}else{toolbar.Hide();station.Layout.Save();}
     }
@@ -199,6 +201,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
     string Command(string command)
     {
         if(command=="inspect")return JsonSerializer.Serialize(Inspect());
+        if(command=="atelier-inspect")return JsonSerializer.Serialize(((AtelierSurface)surfaces["atelier"]).Inspect());
         if(command=="terminal-tabs-inspect")return JsonSerializer.Serialize(station.Terminal?.InspectTabMetadata());
         if(command=="audio-inspect"){((AudioSurface)surfaces["audio"]).Mixer.Poll();return JsonSerializer.Serialize(new{mixer=((AudioSurface)surfaces["audio"]).Mixer,spectrum=new{((DeskSurface)surfaces["music"]).Audio.Running,((DeskSurface)surfaces["music"]).Audio.DeviceId,((DeskSurface)surfaces["music"]).Audio.Error,bands=((DeskSurface)surfaces["music"]).Audio.Bands},reactive=station.ReactiveAudio,intensity=station.AudioIntensity});}
         if(command=="video-inspect")return JsonSerializer.Serialize(((VideoSurface)surfaces["video"]).Inspect());
@@ -319,9 +322,12 @@ internal sealed partial class DesktopWorkspace : IDisposable
         ((MontagneSurface)surfaces["montagne"]).SetActive(exposed.Contains("montagne")&&!editing);
         ((LolSurface)surfaces["lol"]).SetActive(exposed.Contains("lol")&&!editing);
         ((VideoSurface)surfaces["video"]).SetOccluded(!exposed.Contains("video"));
+        ((AtelierSurface)surfaces["atelier"]).SetActive(exposed.Contains("atelier")&&!editing);
         bool listen=station.ReactiveAudio&&monitorMask!=0||exposed.Contains("music")&&Native.Read("playing")=="1";
         if(listen){if(!audio.IsEnabled)audio.Start();}else{audio.Stop();((DeskSurface)surfaces["music"]).Audio.Stop();Native.BackgroundAudio(0,0,0,0);}
     }
+    internal Task PendingNotesSave=>((NotesSurface)surfaces["notes"]).PendingSave;
+    internal Task PendingAtelierSave=>((AtelierSurface)surfaces["atelier"]).PendingSave;
     public void Dispose()
     {
         EndGesture(false);CompositionTarget.Rendering-=RenderGesture;foreach(var grid in editGrids)grid.Close();
@@ -333,6 +339,8 @@ internal sealed partial class DesktopWorkspace : IDisposable
         ((DualSenseSurface)surfaces["dualsense"]).Dispose();((NetworkSurface)surfaces["network"]).Dispose();
         ((MontagneSurface)surfaces["montagne"]).Dispose();((LolSurface)surfaces["lol"]).Dispose();
         ((ShoppingSurface)surfaces["shopping"]).Dispose();
+        ((NotesSurface)surfaces["notes"]).Dispose();
+        ((AtelierSurface)surfaces["atelier"]).Dispose();
         mediaClipboard.Dispose();reserveWindow?.Close();
         Native.BackgroundStop();station.Terminal?.Detach();
     }

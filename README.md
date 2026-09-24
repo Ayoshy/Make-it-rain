@@ -10,7 +10,7 @@ derrière les applications ordinaires.
 
 Blocs indépendants : horloge, météo, applications, lecteur, projets, terminal,
 compteur Vice City, matériel, compteurs Codex, solde DeepSeek, Nudge, vidéo, audio, Bluetooth,
-DualSense, Réseau, Achats, Montagne et LoL. Le compteur Vice City peut être retiré sans
+DualSense, Réseau, Achats, Montagne, LoL, Bloc-notes et Atelier. Le compteur Vice City peut être retiré sans
 toucher au reste.
 
 - **Applications** : cliquer une app déjà lancée réaffiche sa fenêtre existante,
@@ -126,6 +126,15 @@ toucher au reste.
   client de jeu (`127.0.0.1:2999`), sans jeton ni fichier du jeu. États :
   « Aucune partie », « En attente de la partie », « Télémétrie indisponible ».
   Voir [le dock LoL](docs/LOL.md).
+- **Atelier** : **Garder cette version** conserve le build ouvert pour les prochains
+  lancements ; **Nettoyer les builds** libère l'espace des builds inutilisés en
+  protégeant les sessions et le pont vidéo. Ajout depuis **Réorganiser → Ajouter →
+  Atelier** ; chemins techniques dans **Détails**. Voir
+  [le dock Atelier](docs/ATELIER.md).
+- **Bloc-notes** : texte libre éditable directement dans le dock, avec retour à la
+  ligne, défilement et copier-coller. Sauvegarde automatique locale dans
+  `%LOCALAPPDATA%\Battlestation\notes.txt`, commune aux scènes. Retirer le bloc
+  conserve le texte ; ajout depuis **Réorganiser → Ajouter → Bloc-notes**.
 - **Nudge** : texte Art déco, clic sur le rappel pour le modifier, **✓** pour
   le terminer et **+** pour ajouter. La liste suit la hauteur du bloc
   (`(hauteur - 96) / 44` rappels, borné à la liste) et pagine par **‹ / ›** avec
