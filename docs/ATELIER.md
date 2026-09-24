@@ -8,7 +8,8 @@ Deux actions pour les builds de ce PC :
 - **Nettoyer les builds** supprime les dossiers compilés inutilisés sous `build/`.
   L'espace libérable est affiché avant le clic, l'espace réellement libéré après.
 
-**Détails** donne les chemins du build ouvert, du prochain lancement et la liste
+Le nom exact du build ouvert apparaît directement sous son état, qu'il soit à
+l'essai ou conservé. **Détails** donne les chemins du build ouvert, du prochain lancement et la liste
 des builds protégés. Aucun nom d'ancien chantier n'est présenté comme un essai en
 cours. Il n'y a plus de note, de verdict ni d'essai à préparer. Les anciens fichiers
 locaux `atelier-trial.json`, `atelier-feedback.json` et `atelier-runtime.json`

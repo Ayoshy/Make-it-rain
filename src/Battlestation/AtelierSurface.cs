@@ -11,6 +11,7 @@ internal sealed class AtelierSurface : Surface,IDisposable
     readonly AtelierStore store;
     readonly DispatcherTimer poll;
     readonly string loadedBuild=AppContext.BaseDirectory;
+    readonly string loadedBuildName=Path.GetFileName(Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory));
     string nextLaunch="",error="",cleanupStatus="";
     bool displayed,active,reading,working,disposed,known;
     BuildCleanup? cleanup;
@@ -74,7 +75,7 @@ internal sealed class AtelierSurface : Surface,IDisposable
         D.PushOpacity(.65);D.DrawEllipse(artwork.Glow,null,new(55,82),114,96);D.Pop();D.Pop();
         D.PushTransform(new TranslateTransform(20,48));D.PushTransform(new ScaleTransform(64d/104,64d/104));D.DrawDrawing(artwork.Emblem);D.Pop();D.Pop();
         Text(!known?"Lecture de la version…":Kept?"Version conservée":"Version à l’essai",102,53,17,Ink,width:Width-126);
-        Text(Kept?"Identique au prochain lancement":"Garde-la pour les prochains lancements.",102,85,9,Muted,width:Width-126);
+        Text(loadedBuildName,102,85,9,Muted,width:Width-126);
         double y=Height-146;
         Button("AtelierKeep",Kept?"Version conservée":"Garder cette version",24,y,Width-48,42,()=>Run(true,false),11,Ink,!working&&known&&!Kept,radius:21);
         Button("AtelierClean","Nettoyer les builds",24,y+54,Width-48,36,()=>Run(false,true),10,Ink,!working,radius:18);
@@ -83,6 +84,6 @@ internal sealed class AtelierSurface : Surface,IDisposable
     }
     void ShowDetails()=>MessageBox.Show(Window.GetWindow(this),$"Version ouverte :\n{loadedBuild}\n\nProchain lancement :\n{(nextLaunch.Length>0?nextLaunch:"Non défini")}\n\nBuilds protégés :\n{string.Join("\n",cleanup?.Protected??[])}"+(error.Length>0?$"\n\nDernière erreur :\n{error}":""),"Versions de Battlestation",MessageBoxButton.OK,MessageBoxImage.None);
     protected override void OnPointer(MouseEventArgs e){ToolTip=error.Length>0?error:null;}
-    internal object Inspect()=>new{active,displayed,busy=reading||working,error,loadedBuild,nextLaunch,keptBuild=Kept,cleanup,cleanupStatus};
+    internal object Inspect()=>new{active,displayed,busy=reading||working,error,loadedBuild,loadedBuildName,nextLaunch,keptBuild=Kept,cleanup,cleanupStatus};
     public void Dispose(){disposed=true;poll.Stop();DesktopTheme.Changed-=ApplyTheme;}
 }
