@@ -13,6 +13,37 @@ internal static class ShoppingWebTests
         var spec=ShoppingSpecParser.Deterministic(Request);
         PriceSourceOptions Options(string name)=>new(Path.Combine(temp,"web-"+name),MinimumInterval:TimeSpan.Zero);
 
+        using(var handler=new WebHandler("{}"))
+        using(var http=new HttpClient(handler))
+        using(var gate=new SemaphoreSlim(1,1))
+        {
+            handler.Pages[First]=ProductPage(First,"Robot R1",499m);
+            var client=new CountingSearch();var shared=Options("shared-discovery");
+            var one=new WebShoppingSource(http,shared,search:client,discoveryGate:gate);
+            var two=new WebShoppingSource(http,shared,search:client,discoveryGate:gate);
+            var running=one.SearchAsync(spec,4,CancellationToken.None);
+            await client.Entered.Task;
+            using var cancelled=new CancellationTokenSource();
+            var waiting=two.SearchAsync(spec,4,cancelled.Token);cancelled.Cancel();
+            bool stopped=false;try{await waiting;}catch(OperationCanceledException){stopped=true;}
+            check(stopped&&!running.IsCompleted,"Annuler l'attente d'un onglet n'annule pas la découverte de l'autre");
+            client.Release.SetResult();await running;
+            var second=await two.SearchAsync(spec,4,CancellationToken.None);
+            check(client.Calls==1&&second.Count==1,"Les recherches identiques entre onglets réutilisent le cache et consomment un seul appel fournisseur");
+        }
+
+        using(var handler=new WebHandler(Results((First,"Robot R1"))))
+        using(var http=new HttpClient(handler))
+        {
+            handler.Pages[First]="<script>"+new string(' ',4*1024*1024)+"</script>"+ProductPage(First,"Robot R1",499m);
+            var source=new WebShoppingSource(http,Options("large-merchant"));
+            var found=await source.SearchAsync(spec,4,CancellationToken.None);
+            check(found.Count==1&&found[0].Price==499m,"Une fiche de plus de 3 Mo reste lisible et conserve son offre structurée");
+            int requests=handler.Requests.Count;
+            var cached=await source.SearchAsync(spec,4,CancellationToken.None);
+            check(cached.Count==1&&handler.Requests.Count==requests,"La grande fiche se relit aussi depuis le cache sans nouvelle requête");
+        }
+
         using(var handler=new WebHandler(Results((First,"Robot R1"),(Second,"Robot R2"))))
         using(var http=new HttpClient(handler))
         {
@@ -339,6 +370,14 @@ internal static class ShoppingWebTests
             if(index>=replies.Length)throw new InvalidOperationException("Unexpected extra planner call");
             return Task.FromResult(replies[index]);
         }
+    }
+
+    sealed class CountingSearch:IWebSearchClient
+    {
+        public string Id=>"serper";public string Name=>"Serper";public int Calls;
+        public TaskCompletionSource Entered=new(TaskCreationOptions.RunContinuationsAsynchronously),Release=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public async Task<IReadOnlyList<WebSearchResult>> SearchAsync(string query,CancellationToken cancellation)
+        {Calls++;Entered.TrySetResult();await Release.Task.WaitAsync(cancellation);return [new(First,"Robot R1","")];}
     }
 
     sealed record SearchRequest(Uri Uri,HttpMethod Method,string Query,string Country,string Language);

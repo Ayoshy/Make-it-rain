@@ -15,18 +15,29 @@ namespace Battlestation;
 /// </summary>
 internal sealed class ShoppingSurface : Surface,IDisposable
 {
-    const double RowHeight=96,WatchHeight=46;
+    const double WatchHeight=46;
     const string Buy="#A6ECBD",Wait="#F0D08A";
     readonly List<(Rect Bounds,RadarRow Row)> rowTargets=[];
     readonly TextBlock detailTip=new(){MaxWidth=480,TextWrapping=TextWrapping.Wrap};
     readonly DispatcherTimer loadingTimer;
     readonly TranslateTransform loadingMotion=new();
+    readonly Dictionary<Guid,(DateTimeOffset At,double Width,DrawingGroup Drawing)> tabPulses=[];
     DrawingGroup? loadingDrawing;
     double loadingWidth;
     System.Windows.Media.Color loadingColor;
     string? tipText;
-    int page;
-    bool displayed=true,disposed,wasBusy,showJournal;
+    Rect summaryBounds=Rect.Empty;
+    int tabStart;
+    double maxScroll;
+    int page {get=>Tabs.Active.Page;set=>Tabs.Active.Page=value;}
+    bool showJournal {get=>Tabs.Active.Journal;set=>Tabs.Active.Journal=value;}
+    bool displayed=true,disposed,wasBusy,paintingBody;
+    ShoppingRadar? previousRadar;
+    const double TabHeight=40;
+    static readonly TranslateTransform BodyOffset=new(0,TabHeight);
+    static ShoppingSurface()=>BodyOffset.Freeze();
+    double BodyHeight=>Height-TabHeight;
+    protected override double HitOffsetY=>paintingBody?TabHeight:0;
 
     public ShoppingSurface(Station station):base(station,18)
     {
@@ -36,22 +47,86 @@ internal sealed class ShoppingSurface : Surface,IDisposable
         // animé par le compositeur WPF, indépendamment du rendu du journal.
         loadingTimer=new(DispatcherPriority.Background,Dispatcher){Interval=TimeSpan.FromSeconds(1)};
         loadingTimer.Tick+=LoadingTick;
-        station.Shopping.Changed+=RadarChanged;
+        station.ShoppingTabs.Changed+=RadarChanged;
         IsVisibleChanged+=VisibilityChanged;
         Unloaded+=OnUnloaded;
         showJournal=Radar.Error.Length>0&&Radar.Progress.Count>0;
         SyncLoading();
     }
 
-    ShoppingRadar Radar=>Station.Shopping;
+    ShoppingTabs Tabs=>Station.ShoppingTabs;
+    ShoppingRadar Radar=>Tabs.Active.Radar;
 
     protected override void Paint()
     {
         rowTargets.Clear();
+        summaryBounds=Rect.Empty;
         var radar=Radar;
         Text("ACHATS",24,12,14,"#D8C8E3","GTAArtDeco");
+        Text($"{(radar.Settings.Provider=="deepseek"?"DeepSeek":"Ollama")} · {radar.ReasoningEffort}",108,16,9,Muted,width:Math.Max(1,Width-266));
+        Button("ShoppingSettings","⚙",Width-146,7,28,25,ConfigureSearch,12,Muted,enabled:!Tabs.AnyBusy);
         if(!radar.Busy&&(radar.Progress.Count>0||radar.SearchStartedAt is not null))
             Button("ShoppingJournal",showJournal?"Résultats":"Journal",Width-108,7,84,25,()=>{showJournal=!showJournal;Refresh();},9.5,Muted);
+        PaintTabs();
+        paintingBody=true;D.PushTransform(BodyOffset);
+        try{PaintBody();}finally{D.Pop();paintingBody=false;}
+    }
+
+    void PaintTabs()
+    {
+        foreach(var id in tabPulses.Keys.Where(id=>!Tabs.Items.Any(tab=>tab.Id==id&&tab.CompletedAt is not null)).ToArray())
+        {tabPulses[id].Drawing.BeginAnimation(DrawingGroup.OpacityProperty,null);tabPulses.Remove(id);}
+        int capacity=Math.Max(1,(int)((Width-130)/150));
+        int active=Tabs.Items.ToList().IndexOf(Tabs.Active);
+        if(active<tabStart)tabStart=active;
+        if(active>=tabStart+capacity)tabStart=active-capacity+1;
+        tabStart=Math.Clamp(tabStart,0,Math.Max(0,Tabs.Items.Count-capacity));
+        double width=Math.Min(190,(Width-130)/Math.Min(capacity,Tabs.Items.Count));
+        for(int i=0;i<Math.Min(capacity,Tabs.Items.Count-tabStart);i++)
+        {
+            var tab=Tabs.Items[tabStart+i];double x=24+i*width;
+            var theme=DesktopTheme.Current;
+            Box(x,38,width-6,28,Tint(tab==Tabs.Active?theme.Light:theme.Glass,tab==Tabs.Active?0x38:0x60),Tint(theme.Rim,tab==Tabs.Active?0x70:0x28),9);
+            if(tab.CompletedAt is {} completed)PaintTabCompletion(tab.Id,completed,x,width-6);
+            Text(tab.Radar.Busy||tab.CompletedAt is not null?"●":tab.Radar.Error.Length>0?"!":"·",x+9,44,9,tab.Radar.Busy?Wait:tab.CompletedAt is not null?"#73D79A":Muted);
+            Text(tab.Title,x+23,44,10,tab==Tabs.Active?Ink:Muted,width:width-58);
+            Hit("ShoppingTab:"+tab.Id,x,38,width-6,28,()=>Tabs.Select(tab.Id));
+            Button("ShoppingCloseTab:"+tab.Id,"×",x+width-31,41,22,22,()=>Tabs.Close(tab.Id),11,Muted);
+        }
+        if(Tabs.Items.Count>capacity)
+        {
+            Button("ShoppingTabPrevious","‹",Width-100,39,22,26,()=>Tabs.Select(Tabs.Items[Math.Max(0,active-1)].Id),12,Muted,enabled:active>0);
+            Button("ShoppingTabNext","›",Width-77,39,22,26,()=>Tabs.Select(Tabs.Items[Math.Min(Tabs.Items.Count-1,active+1)].Id),12,Muted,enabled:active<Tabs.Items.Count-1);
+        }
+        Button("ShoppingNewTab","+",Width-52,38,28,28,()=>Tabs.Add(),16,Ink);
+    }
+
+    static string Tint(string color,int alpha)=>$"#{alpha:X2}{color[^6..]}";
+    void PaintTabCompletion(Guid id,DateTimeOffset completed,double x,double width)
+    {
+        if(!tabPulses.TryGetValue(id,out var pulse)||pulse.At!=completed||pulse.Width!=width)
+        {
+            pulse.Drawing?.BeginAnimation(DrawingGroup.OpacityProperty,null);
+            var drawing=new DrawingGroup{Opacity=.08};
+            using(var draw=drawing.Open())draw.DrawRoundedRectangle(B("#73D79A"),null,new Rect(0,0,width,28),9,9);
+            double age=(DateTimeOffset.UtcNow-completed).TotalSeconds;
+            if(age<4.8&&displayed&&IsVisible&&!disposed)
+                drawing.BeginAnimation(DrawingGroup.OpacityProperty,new DoubleAnimation(.08,.3,TimeSpan.FromSeconds(1.2))
+                {AutoReverse=true,RepeatBehavior=new RepeatBehavior(2),BeginTime=TimeSpan.FromSeconds(-Math.Max(0,age)),FillBehavior=FillBehavior.Stop,
+                    EasingFunction=new SineEase{EasingMode=EasingMode.EaseInOut}});
+            tabPulses[id]=pulse=(completed,width,drawing);
+        }
+        D.PushTransform(new TranslateTransform(x,38));D.DrawDrawing(pulse.Drawing);D.Pop();
+    }
+    void StopTabAnimations()
+    {
+        foreach(var pulse in tabPulses.Values)pulse.Drawing.BeginAnimation(DrawingGroup.OpacityProperty,null);
+        tabPulses.Clear();
+    }
+
+    void PaintBody()
+    {
+        var radar=Radar;
         int pending=radar.Results.Count(row=>row.Fit==ProductFit.Unknown);
 
         double fieldWidth=Math.Max(160,Width-48-100);
@@ -59,7 +134,8 @@ internal sealed class ShoppingSurface : Surface,IDisposable
         bool empty=radar.Query.Length==0;
         Text(empty?"frigo max 800 €, no frost, 300 L":radar.Query,36,49,13,empty?Muted:Ink,width:fieldWidth-24);
         if(!radar.Busy)Hit("ShoppingEdit",24,38,fieldWidth,40,Edit);
-        Button("ShoppingSearch","Chercher",Width-24-88,38,88,40,Run,12,enabled:radar.Query.Length>0&&!radar.Busy);
+        if(radar.Busy)Button("ShoppingStop","Arrêter",Width-24-88,38,88,40,radar.Cancel,12);
+        else Button("ShoppingSearch","Chercher",Width-24-88,38,88,40,Run,12,enabled:radar.Query.Length>0);
 
         if(radar.Busy||showJournal)
         {
@@ -69,45 +145,55 @@ internal sealed class ShoppingSurface : Surface,IDisposable
         }
 
         double y=88;
+        bool hasSummary=radar.SummaryDetails.Length>0||radar.Error.Length>0;
+        if(hasSummary)
+        {
+            Button("ShoppingSummary","Détails",Width-108,y-1,84,28,ShowSummary,9.5,Muted);
+            summaryBounds=new Rect(24,y+TabHeight,Width-136,34);
+        }
         foreach(var line in (radar.Error.Length>0?radar.Error:radar.Status).Split('\n').Take(2))
         {
-            Text(line,24,y,11,radar.Error.Length>0?"#F4B7CA":Muted,width:Width-48);
+            Text(line,24,y,11,radar.Error.Length>0?"#F4B7CA":Muted,width:Width-(hasSummary?144:48));
             y+=16;
         }
         y+=6;
         var visibleResults=radar.Results.OrderBy(row=>row.Fit==ProductFit.Unknown?1:0).ToArray();
 
-        double watchHeight=radar.Watchlist.Count==0?0:Math.Min(radar.Watchlist.Count,2)*(WatchHeight+6)+18;
-        int groups=pending>0&&pending<visibleResults.Length?2:1;
-        double available=Math.Max(RowHeight,Height-y-watchHeight-12-groups*22);
-        int visible=Math.Max(1,(int)(available/RowHeight));
-        if(visibleResults.Length>visible)visible=Math.Max(1,(int)((available-32)/RowHeight));
-        int pages=Math.Max(1,(visibleResults.Length+visible-1)/visible);
-        page=Math.Clamp(page,0,pages-1);
-        var rows=visibleResults.Skip(page*visible).Take(visible).ToArray();
+        int watchRows=Math.Min(Station.Shopping.Watchlist.Count,Math.Clamp((int)((BodyHeight-300)/(WatchHeight+6)),0,2));
+        double watchHeight=watchRows==0?0:watchRows*(WatchHeight+6)+18;
+        int groups=visibleResults.Length==0?0:pending>0&&pending<visibleResults.Length?2:1;
+        var layouts=visibleResults.Select(MeasureResult).ToArray();
+        double total=layouts.Sum(layout=>layout.Height)+groups*22;
+        var viewport=new Rect(20,y,Width-40,Math.Max(1,BodyHeight-y-watchHeight-12));
+        maxScroll=Math.Max(0,total-viewport.Height);page=Math.Clamp(page,0,(int)Math.Ceiling(maxScroll));
 
-        if(rows.Length==0&&empty)
+        if(visibleResults.Length==0&&empty)
             Text("Décris la demande, le budget et les critères",24,y+14,14,Muted,width:Width-48);
 
-        bool? previousPending=null;
-        for(int i=0;i<rows.Length;i++)
+        bool? previousPending=null;y-=page;
+        D.PushClip(new RectangleGeometry(viewport));InteractionClip=new Rect(viewport.X,viewport.Y+TabHeight,viewport.Width,viewport.Height);
+        try
         {
-            bool isPending=rows[i].Fit==ProductFit.Unknown;
-            if(previousPending!=isPending)
+            for(int i=0;i<visibleResults.Length;i++)
             {
-                Text(isPending?"PISTES · À VÉRIFIER":"CHOIX",24,y,11,Muted,"GTAArtDeco");y+=22;
-                previousPending=isPending;
+                bool isPending=visibleResults[i].Fit==ProductFit.Unknown;
+                if(previousPending!=isPending)
+                {
+                    Text(isPending?"PISTES · À VÉRIFIER":"CHOIX",24,y,11,Muted,"GTAArtDeco");y+=22;
+                    previousPending=isPending;
+                }
+                if(y<viewport.Bottom&&y+layouts[i].Height>viewport.Top)Draw(visibleResults[i],layouts[i],y,i);
+                y+=layouts[i].Height;
             }
-            Draw(rows[i],y,page*visible+i);y+=RowHeight;
         }
-        if(pages>1)
+        finally{InteractionClip=null;D.Pop();}
+        if(maxScroll>0)
         {
-            double bar=Height-watchHeight-34;
-            Button("ShoppingPrevious","‹",Width-108,bar,26,26,()=>Page(-1),13,Muted,enabled:page>0);
-            Text($"{page+1} / {pages}",Width-72,bar+6,10,Muted,align:"center");
-            Button("ShoppingNext","›",Width-36,bar,26,26,()=>Page(1),13,Muted,enabled:page+1<pages);
+            double thumb=Math.Max(24,viewport.Height*viewport.Height/total);
+            Box(Width-12,viewport.Y,2,viewport.Height,Tint(DesktopTheme.Current.Rim,0x20),radius:1);
+            Box(Width-12,viewport.Y+(viewport.Height-thumb)*page/maxScroll,2,thumb,Tint(DesktopTheme.Current.Rim,0x80),radius:1);
         }
-        if(watchHeight>0)PaintWatch(Height-watchHeight+2);
+        if(watchHeight>0)PaintWatch(BodyHeight-watchHeight+2,watchRows);
         UpdateToolTip();
     }
 
@@ -128,7 +214,7 @@ internal sealed class ShoppingSurface : Surface,IDisposable
         }
         Text("JOURNAL",24,204,11,"#D8C8E3","GTAArtDeco");
         var progress=Radar.Progress;
-        int count=Math.Max(1,(int)((Height-248)/34));
+        int count=Math.Max(1,(int)((BodyHeight-248)/34));
         var recent=progress.TakeLast(count).ToArray();
         if(progress.Count>recent.Length)Text($"{recent.Length} / {progress.Count}",Width-24,206,9,Muted,align:"right");
         var start=Radar.SearchStartedAt;
@@ -154,6 +240,7 @@ internal sealed class ShoppingSurface : Surface,IDisposable
             return;
         }
         bool busy=Radar.Busy;
+        if(previousRadar!=Radar){previousRadar=Radar;wasBusy=busy;tipText=null;ToolTip=null;}
         if(busy)showJournal=false;
         else if(wasBusy&&(Radar.Error.Length>0||Radar.Results.Count==0))showJournal=true;
         wasBusy=busy;SyncLoading();Refresh();
@@ -161,6 +248,7 @@ internal sealed class ShoppingSurface : Surface,IDisposable
 
     void SyncLoading()
     {
+        if(disposed||!displayed||!IsVisible)StopTabAnimations();
         bool active=!disposed&&displayed&&IsVisible&&Radar.Busy;
         if(active)
         {
@@ -207,40 +295,52 @@ internal sealed class ShoppingSurface : Surface,IDisposable
     }
     void VisibilityChanged(object sender,DependencyPropertyChangedEventArgs e)=>SyncLoading();
     void OnUnloaded(object sender,RoutedEventArgs e)
-    {loadingTimer.Stop();loadingMotion.BeginAnimation(TranslateTransform.XProperty,null);}
+    {loadingTimer.Stop();loadingMotion.BeginAnimation(TranslateTransform.XProperty,null);StopTabAnimations();}
 
-    void Draw(RadarRow row,double y,int index)
+    sealed record ResultLayout(FormattedText Title,FormattedText Price,FormattedText Reason,FormattedText? Caveat,double Left,double ReasonTop,double Height);
+    ResultLayout MeasureResult(RadarRow row)
     {
+        double left=row.ImagePath.Length>0&&File.Exists(row.ImagePath)?90:32;
+        double titleWidth=Math.Max(100,Width-32-174-left);
+        string price=row.Price is null?"Prix à confirmer":ShoppingText.Money(row.Price);
+        var title=Paragraph(row.Title,13,Ink,titleWidth);
+        var priceText=Paragraph($"{price} · {row.Shop} · {row.Hit.Verdict.PriceLabel}",10.5,"#E4D3F0",titleWidth);
+        var reason=Paragraph(row.Reason,11,Ink,Width-64);
+        var caveat=row.Caveat.Length==0?null:Paragraph("Réserve : "+row.Caveat,10,Muted,Width-64);
+        double reasonTop=10+Math.Max(42,title.Height+4+priceText.Height)+9;
+        double height=reasonTop+reason.Height+(caveat is null?0:6+caveat.Height)+24;
+        return new(title,priceText,reason,caveat,left,reasonTop,Math.Ceiling(height));
+    }
+
+    void Draw(RadarRow row,ResultLayout layout,double y,int index)
+    {
+        row=row with{Watched=Station.Shopping.Watchlist.Any(item=>item.Product.Id==row.Product.Id)};
+        Box(20,y,Width-40,layout.Height-10,Tint(DesktopTheme.Current.Glass,0xB0),Tint(DesktopTheme.Current.Rim,0x24),12);
         bool hasImage=row.ImagePath.Length>0&&File.Exists(row.ImagePath);
-        double left=24;
         if(hasImage)
         {
-            Box(24,y+2,48,48,"#33140F1F","#26D9C7F0",10);
-            Image(row.ImagePath,26,y+4,44,44);
-            left=82;
+            Box(32,y+10,48,48,"#33140F1F","#26D9C7F0",10);
+            Image(row.ImagePath,34,y+12,44,44);
         }
-        double right=Width-24;
-        double textWidth=Math.Max(120,right-174-left);
-        Text(row.Title,left,y+8,13,Ink,width:textWidth);
-        string price=row.Price is null?"Prix à confirmer":ShoppingText.Money(row.Price);
-        Text($"{price} · {row.Shop} · {row.Hit.Verdict.PriceLabel}",left,y+29,10.5,"#E4D3F0",width:right-(row.CompliancePercent is null?48:174)-left);
-        Text(row.Reason,left,y+49,11,Ink,width:right-left-12);
-        if(row.Caveat.Length>0)Text("Réserve : "+row.Caveat,left,y+70,10,Muted,width:right-left-12);
+        double right=Width-32;
+        D.DrawText(layout.Title,new Point(layout.Left,y+10));
+        D.DrawText(layout.Price,new Point(layout.Left,y+14+layout.Title.Height));
+        D.DrawText(layout.Reason,new Point(32,y+layout.ReasonTop));
+        if(layout.Caveat is {} caveat)D.DrawText(caveat,new Point(32,y+layout.ReasonTop+layout.Reason.Height+6));
         Text(row.FitLabel,right-46,y+10,13,Color(row.Fit),"GTAArtDeco",align:"right");
         if(row.CompliancePercent is {} score)Text($"{score} % vérifiés",right-46,y+31,9.5,Muted,align:"right");
         // L'ouverture de l'offre est déclarée avant les boutons : le clic le plus précis
         // reste celui du bouton dessiné par-dessus.
-        Hit("ShoppingOpen:"+index,20,y,Width-64,RowHeight,()=>Radar.Open(row));
-        rowTargets.Add((new Rect(20,y,Width-64,RowHeight),row));
-        Button("ShoppingWatch:"+index,row.Watched?"★":"☆",right-38,y+8,30,30,()=>_=Radar.Watch(row),15,row.Watched?Buy:Ink,enabled:row.Watched||row.Price is not null);
-        if(index<Station.Shopping.Results.Count-1)Line(24,y+RowHeight-2,Width-24,y+RowHeight-2,"#1AD9C7F0");
+        Hit("ShoppingOpen:"+index,20,y,Width-40,layout.Height-10,()=>Radar.Open(row));
+        var bounds=new Rect(20,y+TabHeight,Width-40,layout.Height-10);if(InteractionClip is {} clip)bounds.Intersect(clip);
+        if(!bounds.IsEmpty)rowTargets.Add((bounds,row));
+        Button("ShoppingWatch:"+index,row.Watched?"★":"☆",right-38,y+8,30,30,()=>_=Station.Shopping.Watch(row,Radar.Query),15,row.Watched?Buy:Ink,enabled:row.Watched||row.Price is not null);
     }
 
-    void PaintWatch(double y)
+    void PaintWatch(double y,int shown)
     {
         var list=Station.Shopping.Watchlist;
         Text("SURVEILLÉS",24,y,11,"#D8C8E3","GTAArtDeco");
-        int shown=Math.Min(list.Count,2);
         for(int i=0;i<shown;i++)
         {
             var row=list[i];
@@ -256,7 +356,7 @@ internal sealed class ShoppingSurface : Surface,IDisposable
             if(row.Item.Watch.TargetPrice is {} target)detail+=$" · cible {ShoppingText.Money(target)}";
             Text(detail,left,line+20,10,Muted,width:Width-left-140);
             Hit("ShoppingOpenWatch:"+i,20,line,Width-60,WatchHeight-6,()=>Radar.Open(row));
-            Button("ShoppingUnwatch:"+i,"×",Width-24-30,line+4,30,26,()=>_=Radar.Unwatch(row.Product.Id),13,Muted);
+            Button("ShoppingUnwatch:"+i,"×",Width-24-30,line+4,30,26,()=>_=Station.Shopping.Unwatch(row.Product.Id),13,Muted);
         }
         if(list.Count>shown)Text($"+{list.Count-shown} autre{(list.Count-shown>1?"s":"")}",Width-24,y+2,10,Muted,align:"right");
     }
@@ -298,7 +398,7 @@ internal sealed class ShoppingSurface : Surface,IDisposable
     void UpdateToolTip()
     {
         var row=rowTargets.FirstOrDefault(target=>target.Bounds.Contains(Pointer)).Row;
-        var text=row is null?null:Details(row);
+        var text=row is not null?Details(row):summaryBounds.Contains(Pointer)?SummaryText():null;
         if(text==tipText)return;
         tipText=text;detailTip.Text=text??"";ToolTip=text is null?null:detailTip;
     }
@@ -307,9 +407,46 @@ internal sealed class ShoppingSurface : Surface,IDisposable
         tipText=null;ToolTip=null;base.OnMouseLeave(e);
     }
 
-    void Page(int delta){page+=delta;Refresh();}
+    void Page(int delta){page=Math.Clamp(page+delta*96,0,(int)Math.Ceiling(maxScroll));Refresh();}
     void Run()=>Run(Radar.Query);
     void Run(string request){page=0;_=Radar.SearchAsync(request);}
+
+    string SummaryText()=>Radar.SummaryDetails.Length>0?Radar.SummaryDetails:Radar.Error;
+    internal void ConfigureSearch()
+    {
+        var window=new Window{Title="Battlestation · Connexion Serper",Width=520,SizeToContent=SizeToContent.Height,ShowInTaskbar=false,Owner=Window.GetWindow(this)};
+        var content=new StackPanel();content.Children.Add(OverlayStyle.Text("Clé API Serper",18));
+        var input=new PasswordBox{FontSize=16,Padding=new Thickness(10,8,10,8),Margin=new Thickness(0,16,0,10),
+            Background=DockAppearance.ButtonFill,Foreground=B(Ink),BorderBrush=B(DockAppearance.ButtonRim)};
+        content.Children.Add(input);
+        var status=OverlayStyle.Text(Station.Serper.Error.Length>0?Station.Serper.Error:Station.Serper.HasKey?"Une clé est déjà enregistrée. Colle une nouvelle clé pour la remplacer.":"Copie la clé depuis Serper → API keys, puis colle-la ici.",12);
+        status.TextWrapping=TextWrapping.Wrap;content.Children.Add(status);
+        var note=OverlayStyle.Text("Conservée sur ce PC pour ton compte Windows. Aucun test API à l'enregistrement.",11);
+        note.TextWrapping=TextWrapping.Wrap;note.Margin=new Thickness(0,8,0,14);content.Children.Add(note);
+        var actions=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right};
+        var cancel=OverlayStyle.Button("Annuler",()=>window.Close());cancel.IsCancel=true;actions.Children.Add(cancel);
+        var save=OverlayStyle.Button("Enregistrer",()=>
+        {
+            if(Tabs.AnyBusy){status.Text="Arrête les recherches en cours avant de modifier la connexion.";return;}
+            try{Station.Serper.Save(input.Password);input.Clear();window.Close();Refresh();}
+            catch(Exception e) when(e is ArgumentException or IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException)
+            {status.Text=e is ArgumentException?e.Message:"La clé n'a pas pu être enregistrée sur ce PC.";}
+        });
+        save.IsEnabled=false;save.IsDefault=true;input.PasswordChanged+=(_,_)=>{using var secret=input.SecurePassword;save.IsEnabled=secret.Length>0;};
+        actions.Children.Add(save);content.Children.Add(actions);
+        window.Content=OverlayStyle.Frame(content);OverlayStyle.Apply(window);OverlayStyle.Place(window);
+        window.Loaded+=(_,_)=>input.Focus();window.ShowDialog();input.Clear();
+    }
+    void ShowSummary()
+    {
+        var text=OverlayStyle.Text(SummaryText(),13);text.TextWrapping=TextWrapping.Wrap;
+        var window=new Window{Title="Battlestation · Détails de la recherche",Width=600,SizeToContent=SizeToContent.Height,
+            ShowInTaskbar=false,Owner=Window.GetWindow(this)};
+        var content=new StackPanel();content.Children.Add(OverlayStyle.Text("Détails de la recherche",18));
+        content.Children.Add(new ScrollViewer{Content=text,MaxHeight=520,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,Margin=new Thickness(0,16,0,14)});
+        var close=OverlayStyle.Button("Fermer",()=>window.Close());close.IsCancel=true;close.HorizontalAlignment=HorizontalAlignment.Right;content.Children.Add(close);
+        window.Content=OverlayStyle.Frame(content);OverlayStyle.Apply(window);OverlayStyle.Place(window);window.ShowDialog();
+    }
 
     /// <summary>
     /// Le champ de saisie est une fenêtre ancrée : les blocs du bureau ne prennent
@@ -337,11 +474,43 @@ internal sealed class ShoppingSurface : Surface,IDisposable
         var content=new StackPanel();
         content.Children.Add(OverlayStyle.Text("Demande",18));
         content.Children.Add(input);
+        var levels=new ComboBox
+        {
+            ItemsSource=new[]{new KeyValuePair<string,string>("none","Sans réflexion"),new("low","Low"),new("high","High"),new("max","Max")},
+            DisplayMemberPath="Value",SelectedValuePath="Key",SelectedValue=Radar.ReasoningEffort,
+            MinWidth=160,Margin=new Thickness(12,0,0,0),IsEnabled=Radar.Settings.Provider=="deepseek",
+            Background=DockAppearance.ButtonFill,Foreground=B(Ink),BorderBrush=B(DockAppearance.ButtonRim)
+        };
+        levels.Template=(ControlTemplate)System.Windows.Markup.XamlReader.Parse("""
+            <ControlTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" TargetType="ComboBox">
+              <Grid>
+                <Border CornerRadius="9" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"/>
+                <ToggleButton Focusable="False" IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                  <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="Transparent"/></ControlTemplate></ToggleButton.Template>
+                </ToggleButton>
+                <ContentPresenter Margin="12,8,30,8" IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"/>
+                <TextBlock Text="⌄" Margin="0,0,12,0" HorizontalAlignment="Right" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                <Popup Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" IsOpen="{TemplateBinding IsDropDownOpen}" PopupAnimation="Fade">
+                  <Border MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" Background="#F0251C31" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="9" Padding="4">
+                    <ScrollViewer MaxHeight="220" CanContentScroll="True"><ItemsPresenter/></ScrollViewer>
+                  </Border>
+                </Popup>
+              </Grid>
+            </ControlTemplate>
+            """);
+        var optionStyle=new Style(typeof(ComboBoxItem));
+        optionStyle.Setters.Add(new Setter(Control.ForegroundProperty,B(Ink)));
+        optionStyle.Setters.Add(new Setter(Control.PaddingProperty,new Thickness(10,7,10,7)));
+        levels.ItemContainerStyle=optionStyle;
+        var reasoningRow=new DockPanel{Margin=new Thickness(0,0,0,12)};
+        var reasoningLabel=OverlayStyle.Text("Réflexion",13);reasoningLabel.VerticalAlignment=VerticalAlignment.Center;
+        DockPanel.SetDock(reasoningLabel,Dock.Left);reasoningRow.Children.Add(reasoningLabel);reasoningRow.Children.Add(levels);
+        content.Children.Add(reasoningRow);
         content.Children.Add(OverlayStyle.Text("Produit, budget et critères · aucun achat automatique",11,"#BCAACD"));
         content.Children.Add(actions);
         window.Content=OverlayStyle.Frame(content);OverlayStyle.Apply(window);window.Height=280;OverlayStyle.Place(window);
         window.Loaded+=(_,_)=>{input.Focus();input.SelectAll();};
-        if(window.ShowDialog()==true)Run(input.Text);
+        if(window.ShowDialog()==true){Radar.SetReasoningEffort(levels.SelectedValue as string??"max");Run(input.Text);}
         Refresh();
     }
 
@@ -363,8 +532,9 @@ internal sealed class ShoppingSurface : Surface,IDisposable
     {
         if(disposed)return;
         disposed=true;loadingTimer.Stop();loadingTimer.Tick-=LoadingTick;
+        StopTabAnimations();
         loadingMotion.BeginAnimation(TranslateTransform.XProperty,null);
-        Radar.Changed-=RadarChanged;IsVisibleChanged-=VisibilityChanged;Unloaded-=OnUnloaded;
+        Tabs.Changed-=RadarChanged;IsVisibleChanged-=VisibilityChanged;Unloaded-=OnUnloaded;
         rowTargets.Clear();tipText=null;ToolTip=null;
     }
 }

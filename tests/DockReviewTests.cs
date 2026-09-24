@@ -98,7 +98,7 @@ static class DockReviewTests
     static void ShoppingChecks(Station station,string output)
     {
         ShoppingRadarChecks.Run();
-        using var dock=new ShoppingSurface(station){Width=700,Height=520};
+        using var dock=new ShoppingSurface(station){Width=700,Height=560};
         Render(dock,Path.Combine(output,"shopping-empty.png"));
         Check(Has(dock,"ShoppingEdit"),"Le champ de demande est cliquable");
         Check(Has(dock,"ShoppingSearch")==false,"Sans demande, rien à chercher");
@@ -113,11 +113,12 @@ static class DockReviewTests
         Check(shoppingTexts.Any(text=>text.Contains("Historique insuffisant"))&&shoppingTexts.Contains("100 % vérifiés")&&shoppingTexts.Contains("33 % vérifiés")&&!shoppingTexts.Contains("35 %"),"Le pourcentage reflète les critères confirmés, indépendamment de la confiance du verdict prix");
         Check(!Has(dock,"ShoppingPending")&&Has(dock,"ShoppingOpen:2"),"La piste est directement visible sous les deux choix, sans bouton de bascule");
         Check(shoppingTexts.Any(text=>text.StartsWith("Réserve : ")),"La réserve principale reste visible dans le dock");
-        var details=ShoppingRadarChecks.HoverDetails(dock,new Point(100,150));
+        var details=ShoppingRadarChecks.HoverRow(dock,0);
         Check(details.Contains("Éléments relevés dans la fiche")&&details.Contains("La fiche indique 300 L et NoFrost.")&&details.Contains("Dimensions à confirmer")&&details.Contains("Prix · Prix bas observé"),"Le survol donne les preuves, réserves et motifs prix complets");
         Check(details.Contains("Critères demandés")&&details.Contains("300 L : confirmé")&&details.Contains("Autres offres observées"),"Le détail expose les contrôles de chaque critère et les offres alternatives");
         Check(ShoppingRadarChecks.HoverDetails(dock,new Point(5,5)).Length==0,"Quitter une offre efface son détail");
-        Check(ShoppingRadarChecks.HoverDetails(dock,new Point(100,380)).Contains("1/3 critères confirmés")&&ShoppingRadarChecks.HoverDetails(dock,new Point(100,380)).Contains("Volume et type de froid"),"La piste explique son pourcentage et ses critères inconnus au survol");
+        Check(ShoppingRadarChecks.HoverRow(dock,2).Contains("1/3 critères confirmés")&&ShoppingRadarChecks.HoverRow(dock,2).Contains("Volume et type de froid"),"La piste explique son pourcentage et ses critères inconnus au survol");
+        Check(Has(dock,"ShoppingSummary")&&ShoppingRadarChecks.HoverDetails(dock,new Point(80,132)).Contains("CRITÈRES DEMANDÉS"),"Le récapitulatif complet est disponible sans tronquer les critères");
         Check(Different(empty,Pixels(dock)),"Les offres remplacent l'état vide");
         Check(Has(dock,"ShoppingSearch"),"Une demande envoyée peut être relancée");
         Check(Has(dock,"ShoppingOpen:0")&&Has(dock,"ShoppingOpen:1"),"Chaque offre s'ouvre au clic");
@@ -142,7 +143,7 @@ static class DockReviewTests
         station.Shopping.SearchAsync(station.Shopping.Query).GetAwaiter().GetResult();
         Render(dock,Path.Combine(output,"shopping-pending-automatic.png"));
         Check(Has(dock,"ShoppingOpen:0")&&ShoppingRadarChecks.DrawnTexts(dock).Contains("PISTES · À VÉRIFIER"),"Une recherche sans choix confirmé affiche directement ses pistes dans le dock existant");
-        using var unavailable=new ShoppingSurface(station){Width=700,Height=520};
+        using var unavailable=new ShoppingSurface(station){Width=700,Height=560};
         Render(unavailable,Path.Combine(output,"shopping-analysis-unavailable.png"));
         Check(Has(unavailable,"ShoppingOpen:0")&&!Has(unavailable,"ShoppingPending"),"Les pistes sont visibles à la réouverture, sans bouton vers des choix vides");
         var unavailableTexts=ShoppingRadarChecks.DrawnTexts(unavailable);
@@ -150,6 +151,31 @@ static class DockReviewTests
         station.ShoppingEngine.AssessmentAvailable=true;
         ShoppingRadarChecks.Loading(station,(surface,name)=>Render(surface,Path.Combine(output,name)),surface=>Pixels(surface));
     }
+    static void ShoppingCardChecks(string root,string output)
+    {
+        var station=new Station{Root=root};using var tabs=station.ShoppingTabs;
+        station.ShoppingEngine.LongReason=string.Join(" ",Enumerable.Repeat("Les critères sont documentés sur la fiche et les détails de chaque fonction doivent rester entièrement lisibles.",6))+" Fin du résumé complet.";
+        station.ShoppingEngine.SourceNotice="www.example.fr refuse la lecture (403).";
+        station.Shopping.SearchAsync("Réfrigérateur avec de nombreux critères détaillés").GetAwaiter().GetResult();
+        using var dock=new ShoppingSurface(station){Width=700,Height=560};
+        string previous=DesktopTheme.Current.Id;
+        try
+        {
+            foreach(string theme in new[]{"vice-city","aurore","obsidienne"})
+            {
+                DesktopTheme.Select(theme,false);dock.Refresh();Render(dock,Path.Combine(output,$"shopping-cards-{theme}.png"));
+            }
+            Check(station.Shopping.Status.Contains("sources partielles")&&!station.Shopping.Status.Contains("403")&&station.Shopping.SummaryDetails.Contains("403"),"Les erreurs de source sont signalées brièvement et restent disponibles en détail");
+            var measure=typeof(ShoppingSurface).GetMethod("MeasureResult",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(dock,[station.Shopping.Results[0]])!;
+            var reason=(FormattedText)measure.GetType().GetProperty("Reason")!.GetValue(measure)!;
+            Check(reason.Height>80&&reason.Trimming==TextTrimming.None&&reason.Text.EndsWith("Fin du résumé complet."),"Les résumés longs gardent tout leur texte et agrandissent la fiche");
+            Private(dock,"Page",1000);dock.Refresh();Render(dock,Path.Combine(output,"shopping-cards-scrolled.png"));
+            Check(Has(dock,"ShoppingOpen:2")&&ShoppingRadarChecks.HoverRow(dock,2).Contains("1/3 critères confirmés"),"La liste défile jusqu'à la dernière piste sans perdre ses interactions");
+            Check(Hits(dock).EnumerateArray().Where(hit=>hit.GetProperty("name").GetString()!.StartsWith("ShoppingOpen:")).All(hit=>hit.GetProperty("y").GetDouble()>=166&&hit.GetProperty("y").GetDouble()+hit.GetProperty("height").GetDouble()<=dock.Height-12),"Les zones cliquables restent limitées au cadre visible après défilement");
+        }
+        finally{DesktopTheme.Select(previous,false);}
+    }
+
     [STAThread] static void Main(string[] args)
     {
         var app=new Application();
@@ -175,6 +201,9 @@ static class DockReviewTests
         var face=new Typeface(new FontFamily(new Uri("pack://application:,,,/"),"./Assets/Fonts/#GTAArtDeco Condensed"),FontStyles.Normal,FontWeights.Normal,FontStretches.Normal);
         Check(face.TryGetGlyphTypeface(out var font)&&font.FontUri.ToString().Contains("art-deco"),"Embedded Art Deco resolves without font fallback");
         ShoppingChecks(station,output);
+        ShoppingRadarChecks.ParallelSearches(new Station{Root=root},(surface,name)=>Render(surface,Path.Combine(output,name)));
+        ShoppingCardChecks(root,output);
+        ShoppingRadarChecks.SerperSettings(new Station{Root=root});
         foreach(int count in new[]{0,1,3})
         {
             station.Reminders=Enumerable.Range(0,count).Select(i=>new ReminderItem("Penser à faire une pause")).ToList();

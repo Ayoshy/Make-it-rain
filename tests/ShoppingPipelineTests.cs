@@ -71,6 +71,20 @@ internal static class ShoppingPipelineTests
         var before=DateTimeOffset.UtcNow;
         var first=service.SearchAsync(Request,CancellationToken.None);
         await source.Entered.Task;
+        var parallelSource=new ProgressSource();
+        using var parallel=new ShoppingService(store,[parallelSource],ShoppingSettings.Default,temp,http,
+            parser:new ShoppingSpecParser(),advisor:new ShoppingAdvisor(null));
+        parallel.SetReasoningEffort("high");
+        var concurrent=parallel.SearchAsync("Casque pour le bureau",CancellationToken.None);
+        await parallelSource.Entered.Task;
+        parallelSource.Report("Lecture du casque");
+        check(service.Busy&&parallel.Busy&&parallel.ReasoningEffort=="high"&&service.ReasoningEffort=="max"
+            &&!service.Progress.Any(step=>step.Message=="Lecture du casque"),"Deux moteurs sur la même base travaillent simultanément avec journaux et réflexions indépendants");
+        bool protectedLevel=false;
+        try{parallel.SetReasoningEffort("low");}catch(InvalidOperationException){protectedLevel=true;}
+        check(protectedLevel&&parallel.ReasoningEffort=="high","Le moteur refuse de changer le niveau pendant son appel");
+        parallelSource.Completion.SetResult([]);await concurrent;
+        check(service.Busy&&!parallel.Busy,"La fin d'une recherche ne libère pas le verrou d'une autre");
         check(service.Busy&&service.SearchStartedAt is {} started&&started>=before&&started<=DateTimeOffset.UtcNow,"Le début de recherche publie son horodatage pendant le travail en cours");
         source.Report("Connexion au moteur de recherche");
         check(service.Activity=="Connexion au moteur de recherche"&&service.Progress[^1].Message==service.Activity,"La progression fine de la source devient immédiatement l'activité visible");

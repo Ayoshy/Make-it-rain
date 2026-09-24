@@ -16,6 +16,7 @@
     <Compile Include="ShoppingPipelineTests.cs" />
     <Compile Include="ShoppingWebTests.cs" />
     <Compile Include="TavilySearchTests.cs" />
+    <Compile Include="SerperSearchTests.cs" />
     <Compile Include="ProductPageLinksTests.cs" />
     <Compile Include="ShoppingUpgradeTests.cs" />
     <ProjectReference Include="../src/Battlestation.Shopping/Battlestation.Shopping.csproj" />

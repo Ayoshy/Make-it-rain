@@ -4,12 +4,16 @@
 
 | Scène | Fond | Agencement |
 | --- | --- | --- |
-| Bureau | New York depuis une baie vitrée, palette Aurore | Grand Terminal et Projets à gauche, outils de travail autour ; Vidéo à droite avec les commandes du bureau. |
+| Bureau | New York depuis une baie vitrée, palette Aurore | Terminal et Projets à gauche, Bloc-notes et Atelier à côté ; Réseau compact 592 × 336, Vidéo à droite et commandes regroupées. Plus de 30 % du fond reste libre ; Achats reste ajoutable. |
 | Jeu | Deux illustrations Jason/Lucia, palette Vice City | Secondaire : Vidéo 1568 × 888 au-dessus du Terminal 1568 × 480 ; DualSense, LoL et Réseau dans la colonne de droite. Les blocs moins urgents restent sur le principal. |
 | Multimédia | Fjord au crépuscule, palette Obsidienne | Terminal, Projets et commandes audio à gauche ; Vidéo 1888 × 1128 à droite. |
 | Mono écran | Ambiance conservée | Terminal et Vidéo côte à côte, Projets dessous et commandes compactes. |
 
 Les modèles visent les deux dalles 2560 × 1440 de ce PC. Ces dimensions sont des choix initiaux, pas de nouveaux minimums. Chaque scène sauvegarde les gestes validés, blocs masqués, tailles, verre et réglages d'animation. Sauver sous conserve la scène d'origine ; Rétablir le modèle reprend son plan. Les blocs retirés restent ajoutables. Le contenu vidéo conserve son ratio.
+
+Le modèle Bureau intègre l'agencement aéré du 24 septembre : **Rétablir le modèle**
+retrouve ce plan, y compris les nouveaux docks. Charger une nouvelle version ne
+réinitialise pas les scènes personnelles ni les autres modèles.
 
 Débrancher le secondaire active Mono écran après stabilisation. Le rebranchement restitue la scène précédente avec ses modifications. Les scènes ne lancent pas d'application et ne modifient ni la sortie audio, ni le volume.
 

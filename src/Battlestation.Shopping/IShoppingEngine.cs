@@ -13,6 +13,8 @@ public interface IShoppingEngine : IDisposable
     IReadOnlyList<SourceReport> Sources{get;}
     IReadOnlyList<WatchedItem> Watchlist{get;}
     ShoppingSettings Settings{get;}
+    string ReasoningEffort=>"max";
+    void SetReasoningEffort(string effort){}
     event Action? Changed;
     event Action<ShoppingAlert>? Alert;
     Task<SearchOutcome> SearchAsync(string request,CancellationToken cancellation);

@@ -10,10 +10,13 @@ using System.Text.RegularExpressions;
 namespace Battlestation.Shopping;
 
 /// <summary>Découverte web générale : le modèle choisit des recherches et pages, les pages seules fournissent les offres.</summary>
-public sealed class WebShoppingSource(HttpClient http,PriceSourceOptions options,ILlmClient? planner=null):IPriceSource,IShoppingProgressSource
+public sealed class WebShoppingSource(HttpClient http,PriceSourceOptions options,ILlmClient? planner=null,IWebSearchClient? search=null,SemaphoreSlim? discoveryGate=null):IPriceSource,IShoppingProgressSource
 {
     const int MaxBytes=3*1024*1024;
+    const int MaxPageBytes=16*1024*1024;
     readonly SemaphoreSlim networkGate=new(1,1);
+    readonly SemaphoreSlim searchGate=discoveryGate??new(1,1);
+    readonly IWebSearchClient searchClient=search??new TavilySearchClient(http);
     readonly Dictionary<string,DateTimeOffset> lastRequest=new(StringComparer.OrdinalIgnoreCase);
     readonly ConcurrentDictionary<string,ProductDetails> details=new(StringComparer.Ordinal);
     public string Id=>"web";
@@ -278,8 +281,11 @@ public sealed class WebShoppingSource(HttpClient http,PriceSourceOptions options
 
     async Task<IReadOnlyList<SearchLink>> Search(string query,CancellationToken cancellation)
     {
+        await searchGate.WaitAsync(cancellation);
+        try
+        {
         Report($"Recherche web · {query}");
-        var file=Path.Combine(options.CacheDirectory,"tavily-search-"+Hash(query)+".json");
+        var file=Path.Combine(options.CacheDirectory,searchClient.Id+"-search-"+Hash(query)+".json");
         if(File.Exists(file)&&new FileInfo(file).Length<MaxBytes&&DateTimeOffset.UtcNow-File.GetLastWriteTimeUtc(file)<options.SearchFreshness)
         {
             try
@@ -298,20 +304,22 @@ public sealed class WebShoppingSource(HttpClient http,PriceSourceOptions options
         await networkGate.WaitAsync(cancellation);
         try
         {
-            const string host="api.tavily.com";
+            string host=searchClient.Id;
             if(lastRequest.TryGetValue(host,out var last)&&options.Interval-(DateTimeOffset.UtcNow-last) is var wait&&wait>TimeSpan.Zero)
                 await Task.Delay(wait,cancellation);
             lastRequest[host]=DateTimeOffset.UtcNow;
-            response=await new TavilySearchClient(http).SearchAsync(query,cancellation);
+            response=await searchClient.SearchAsync(query,cancellation);
         }
         finally{networkGate.Release();}
         var links=response.Where(link=>DiscoveryUrl(link.Url))
             .Select(link=>new SearchLink(new UriBuilder(link.Url){Fragment=""}.Uri.AbsoluteUri,link.Title,link.Snippet))
             .DistinctBy(link=>link.Url,StringComparer.Ordinal).Take(12).ToArray();
         Directory.CreateDirectory(options.CacheDirectory);
-        await File.WriteAllTextAsync(file,JsonSerializer.Serialize(links),cancellation);
-        Report($"{links.Length} liens trouvés · Tavily");
+        await WriteCache(file,JsonSerializer.Serialize(links),cancellation);
+        Report($"{links.Length} liens trouvés · {searchClient.Name}");
         return links;
+        }
+        finally{searchGate.Release();}
     }
 
     static bool DiscoveryUrl(string url)=>TryPublicUrl(url,out var uri)
@@ -351,7 +359,7 @@ public sealed class WebShoppingSource(HttpClient http,PriceSourceOptions options
     {
         if(!TryPublicUrl(url,out var uri))throw new PriceSourceUnavailableException("Adresse web privée ou non prise en charge.");
         var file=Path.Combine(options.CacheDirectory,"web-"+Hash(uri.AbsoluteUri)+".json");
-        if(File.Exists(file)&&new FileInfo(file).Length<=MaxBytes*2&&DateTimeOffset.UtcNow-File.GetLastWriteTimeUtc(file)<freshness)
+        if(File.Exists(file)&&new FileInfo(file).Length<=MaxPageBytes*2&&DateTimeOffset.UtcNow-File.GetLastWriteTimeUtc(file)<freshness)
         {
             try
             {
@@ -384,7 +392,7 @@ public sealed class WebShoppingSource(HttpClient http,PriceSourceOptions options
                     uri=next;continue;
                 }
                 if(!response.IsSuccessStatusCode)throw new PriceSourceUnavailableException($"{uri.Host} refuse la lecture ou est indisponible ({(int)response.StatusCode}).");
-                if(response.Content.Headers.ContentLength>MaxBytes)throw new PriceSourceUnavailableException($"Page trop volumineuse : {uri.Host}.");
+                if(response.Content.Headers.ContentLength>MaxPageBytes)throw new PriceSourceUnavailableException($"Page dépassant 16 Mo : {uri.Host}.");
                 var media=response.Content.Headers.ContentType?.MediaType;
                 if(media is not null&&!media.Contains("html",StringComparison.OrdinalIgnoreCase))throw new PriceSourceUnavailableException($"Page HTML indisponible : {uri.Host}.");
                 using var body=await response.Content.ReadAsStreamAsync(timeout.Token);
@@ -393,7 +401,7 @@ public sealed class WebShoppingSource(HttpClient http,PriceSourceOptions options
                 int count;
                 while((count=await body.ReadAsync(chunk,timeout.Token))>0)
                 {
-                    if(buffer.Length+count>MaxBytes)throw new PriceSourceUnavailableException($"Page trop volumineuse : {uri.Host}.");
+                    if(buffer.Length+count>MaxPageBytes)throw new PriceSourceUnavailableException($"Page dépassant 16 Mo : {uri.Host}.");
                     buffer.Write(chunk,0,count);
                 }
                 var encoding=Encoding.UTF8;
@@ -404,7 +412,7 @@ public sealed class WebShoppingSource(HttpClient http,PriceSourceOptions options
                     throw new PriceSourceUnavailableException($"{uri.Host} demande une vérification de navigateur.");
                 var page=new CachedPage(uri.AbsoluteUri,html);
                 Directory.CreateDirectory(options.CacheDirectory);
-                await File.WriteAllTextAsync(file,JsonSerializer.Serialize(page),cancellation);
+                await WriteCache(file,JsonSerializer.Serialize(page),cancellation);
                 return page;
             }
             throw new PriceSourceUnavailableException("Trop de redirections web.");
@@ -414,6 +422,14 @@ public sealed class WebShoppingSource(HttpClient http,PriceSourceOptions options
         catch(HttpRequestException e)
         {throw new PriceSourceUnavailableException($"{uri.Host} injoignable : {e.Message}");}
         finally{networkGate.Release();}
+    }
+
+    static async Task WriteCache(string file,string content,CancellationToken cancellation)
+    {
+        string temporary=file+"."+Guid.NewGuid().ToString("N")+".tmp";
+        try{await File.WriteAllTextAsync(temporary,content,cancellation);File.Move(temporary,file,true);}
+        catch(Exception e) when(e is IOException or UnauthorizedAccessException){} // Cache optionnel, partagé entre onglets.
+        finally{try{File.Delete(temporary);}catch(IOException){}catch(UnauthorizedAccessException){}}
     }
 
     static bool TryPublicUrl(string? text,out Uri uri)

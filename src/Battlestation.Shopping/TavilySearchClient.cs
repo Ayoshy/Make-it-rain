@@ -5,10 +5,18 @@ using System.Text.Json;
 namespace Battlestation.Shopping;
 
 public sealed record WebSearchResult(string Url,string Title,string Snippet);
+public interface IWebSearchClient
+{
+    string Id{get;}
+    string Name{get;}
+    Task<IReadOnlyList<WebSearchResult>> SearchAsync(string query,CancellationToken cancellation);
+}
 
 /// <summary>Recherche générale via l'accès gratuit sans clé officiellement proposé par Tavily.</summary>
-public sealed class TavilySearchClient(HttpClient http)
+public sealed class TavilySearchClient(HttpClient http):IWebSearchClient
 {
+    public string Id=>"tavily";
+    public string Name=>"Tavily";
     public const string Endpoint="https://api.tavily.com/search";
     const int MaxResults=8,MaxResponseBytes=2*1024*1024;
 

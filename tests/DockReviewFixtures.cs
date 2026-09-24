@@ -45,8 +45,14 @@ internal sealed class Station
     internal static readonly List<string> Opened=[];
     internal ShoppingFixtureEngine ShoppingEngine{get;}=new();
     internal ShoppingRadar Shopping{get;}
-    public Station()=>Shopping=new(ShoppingEngine,System.IO.Path.GetTempPath(),
-        System.Windows.Threading.Dispatcher.CurrentDispatcher,url=>Opened.Add(url));
+    internal ShoppingTabs ShoppingTabs{get;}
+    internal SerperKeyStore Serper{get;}=new(System.IO.Path.Combine(System.IO.Path.GetTempPath(),"Battlestation-Serper-fixture-"+Guid.NewGuid().ToString("N")));
+    internal List<ShoppingFixtureEngine> ExtraShoppingEngines{get;}=[];
+    public Station()
+    {
+        Shopping=new(ShoppingEngine,System.IO.Path.GetTempPath(),System.Windows.Threading.Dispatcher.CurrentDispatcher,url=>Opened.Add(url));
+        ShoppingTabs=new(Shopping,()=>{var engine=new ShoppingFixtureEngine();ExtraShoppingEngines.Add(engine);return new(engine,System.IO.Path.GetTempPath(),System.Windows.Threading.Dispatcher.CurrentDispatcher,url=>Opened.Add(url));});
+    }
 }
 
 /// <summary>Moteur d'achat simulé : trois offres fixes, une veille, aucune source réelle.</summary>
@@ -57,6 +63,10 @@ internal sealed class ShoppingFixtureEngine : IShoppingEngine
     static readonly Product Unchecked=new("fixture:3","fixture","https://exemple.fr/frigo-3","Réfrigérateur LG GBP 300 L blanc","LG","GBP","","Boutique",599m);
     readonly List<WatchedItem> watches=[];
     public bool AssessmentAvailable{get;set;}=true;
+    public string? LongReason{get;set;}
+    public string SourceNotice{get;set;}="";
+    public string ReasoningEffort{get;private set;}="max";
+    public void SetReasoningEffort(string effort)=>ReasoningEffort=effort;
     public bool Busy{get;private set;}
     public string Activity{get;private set;}="";
     public IReadOnlyList<ShoppingProgress> Progress{get;private set;}=[];
@@ -72,8 +82,9 @@ internal sealed class ShoppingFixtureEngine : IShoppingEngine
     {
         Busy=true;SearchStartedAt=DateTimeOffset.Now;Progress=[];
         PublishProgress("Étude de la demande");
-        if(SearchHold is {} hold)await hold.Task.ConfigureAwait(false);
-        Sources=[new("fixture","Boutique simulée",SourceState.Ok,3,"3 offres")];
+        try{if(SearchHold is {} hold)await hold.Task.WaitAsync(cancellation).ConfigureAwait(false);}
+        catch{Busy=false;Changed?.Invoke();throw;}
+        Sources=[new("fixture","Boutique simulée",SourceState.Ok,3,"3 offres"+(SourceNotice.Length>0?" · "+SourceNotice:""),Partial:SourceNotice.Length>0)];
         var spec=new ShoppingSpec("réfrigérateur",[],800m,["no frost","300 L","blanc"],[],request);
         if(SearchFailure.Length>0)
         {
@@ -85,7 +96,7 @@ internal sealed class ShoppingFixtureEngine : IShoppingEngine
         [
             new(Fridge,new PricePoint(Fridge.Id,DateTimeOffset.Now,349m,"EUR",true,"fixture"),
                 new Verdict(VerdictDecision.Acheter,.82,["349,00 € chez Boulanger · plancher 90 j 359,00 €","Dans le budget"],["https://exemple.fr/frigo-1"],356m,true),[Alternative()],3,3,
-                AssessmentAvailable?new(Fridge.Id,ProductFit.Recommended,"300 L, froid ventilé et finition blanche dans le budget.",["La fiche indique 300 L et NoFrost.","Finition blanche sur la fiche Boulanger."],["Dimensions à confirmer avant livraison."],
+                AssessmentAvailable?new(Fridge.Id,ProductFit.Recommended,LongReason??"300 L, froid ventilé et finition blanche dans le budget.",["La fiche indique 300 L et NoFrost.","Finition blanche sur la fiche Boulanger."],["Dimensions à confirmer avant livraison."],
                     [new("300 L",CriterionState.Confirmed,"La fiche indique 300 L et NoFrost."),new("no frost",CriterionState.Confirmed,"La fiche indique 300 L et NoFrost."),new("blanc",CriterionState.Confirmed,"Finition blanche sur la fiche Boulanger.")]):null),
             new(Top,new PricePoint(Top.Id,DateTimeOffset.Now,429m,"EUR",true,"fixture"),
                 new Verdict(VerdictDecision.Attendre,.35,["429,00 € chez Rue du Commerce · historique court (1 relevé)"],["https://exemple.fr/frigo-2"],386m),[],1,3,

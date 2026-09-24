@@ -16,6 +16,7 @@ try
     await ShoppingPipelineTests.Run(Check,temp);
     await ShoppingWebTests.Run(Check,temp);
     await TavilySearchTests.Run(Check);
+    await SerperSearchTests.Run(Check);
     ProductPageLinksTests.Run(Check);
     await ShoppingUpgradeTests.Run(Check,temp);
     await ShoppingRelevanceTests.Run(Check,temp);

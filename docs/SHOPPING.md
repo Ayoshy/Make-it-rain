@@ -14,10 +14,34 @@ navigateur.
 
 ## Utilisation
 
+**⚙ → Clé API Serper** ouvre un champ masqué. Copier la clé depuis le compte
+Serper, la coller puis choisir **Enregistrer**. Elle est chiffrée par Windows
+pour l'utilisateur courant dans `%LOCALAPPDATA%/Battlestation/serper-key.bin` ;
+elle n'est ni affichée ensuite, ni écrite en clair dans les réglages ou Git.
+L'enregistrement ne lance aucun appel API. Une clé enregistrée sélectionne Serper
+pour les recherches suivantes, sans redémarrage. Sans clé, Tavily sans compte
+reste sélectionné ; une erreur Serper ne déclenche pas de bascule automatique.
+
+La barre d'onglets conserve plusieurs recherches indépendantes. **+** ouvre une
+demande vide, un clic sur le titre retrouve ses résultats et son journal. Une
+pastille indique les recherches en cours, y compris dans les autres onglets.
+**Arrêter** annule uniquement la recherche sélectionnée ; fermer un onglet en
+cours l'annule aussi. Plusieurs recherches peuvent travailler simultanément.
+Les onglets, leurs résultats et leur niveau de réflexion restent en mémoire pour
+la session du bureau ; ils ne sont pas restaurés après redémarrage. La liste des
+articles surveillés et leur historique restent communs et enregistrés en SQLite,
+avec un seul traitement de veille en arrière-plan.
+
+Dans la fenêtre **Demande**, **Réflexion** propose **Sans réflexion**, **Low**,
+**High** et **Max** pour DeepSeek. Le niveau est propre à l'onglet, visible dans
+son en-tête et utilisé par la lecture de la demande, le parcours web et la
+comparaison finale. Il ne change pas un appel déjà lancé. Max reste présélectionné
+pour une nouvelle recherche ; le sélecteur est désactivé avec Ollama.
+
 Le bloc s'ajoute depuis **clic droit → Ajouter un bloc → Achats** ; il arrive
 masqué pour ne pas modifier les scènes existantes. Cliquer le champ de demande
 ouvre la saisie ancrée (le bureau ne prend pas le focus clavier), **Chercher**
-relance la dernière demande, la molette change de page, un clic sur une offre
+relance la dernière demande, la molette fait défiler les résultats, un clic sur une offre
 ouvre l'annonce et l'étoile met l'article en veille. Les formats d'écriture
 acceptés : `max 800 €`, `budget de 1 200 €`, `300 L`, `no frost`, `classe C`,
 une couleur, une marque ou une référence de modèle.
@@ -26,6 +50,9 @@ La saisie n'impose plus de limite de caractères. Les demandes longues défilent
 dans le champ et sont transmises intégralement à l'analyse ; le texte abrégé
 dans le dock n'est qu'un aperçu.
 
+Les fiches ont un fond sombre teinté par le thème et une hauteur adaptée à leur
+contenu : titre, prix, résumé et réserve passent sur plusieurs lignes, sans
+ellipse. La liste défile dans son cadre ; seules les zones visibles sont cliquables.
 Le survol d'une offre montre l'analyse complète, les citations de la fiche, les
 réserves et les motifs sur le prix. Une analyse indisponible reste indiquée comme
 telle. Les offres non vérifiées ne servent pas à compléter artificiellement une
@@ -44,8 +71,11 @@ Aucun prompt, réponse du modèle ou secret n'est écrit dans un journal.
 
 Une seule liste affiche d'abord les **Choix** dont les exigences ont été
 confirmées, puis les **Pistes · À vérifier**, sous un titre distinct. Aucun bouton
-ne sépare ces groupes ; un petit dock conserve la pagination de la liste entière.
+ne sépare ces groupes ; un petit dock fait défiler la liste entière.
 Les pistes restent visibles même lorsqu'aucun choix n'est confirmé.
+Le récapitulatif affiche les compteurs et signale les sources partielles. **Détails**
+ouvre la demande, les critères, le budget et les incidents de sources en texte
+complet et défilable ; le survol du récapitulatif donne aussi ces informations.
 Le pourcentage indique la part des critères obligatoires confirmés par l'analyse,
 budget compris lorsqu'il est demandé. Chaque critère a le même poids et une
 information inconnue reste non confirmée. Ce taux ne mesure ni la qualité ni la
@@ -117,9 +147,10 @@ Tout reste dans `%LOCALAPPDATA%\Battlestation` :
 `provider` utilise `deepseek` par défaut (`chat/completions`, clé lue dans
 `DEEPSEEK_API_KEY` de l'environnement utilisateur, jamais écrite dans le fichier
 de réglages ni dans Git). Flash extrait la demande en JSON, puis pilote la
-recherche et la comparaison. Tous ces appels activent `thinking.type=enabled`
-et `reasoning_effort=max`. Le budget de génération reste celui de l'API pour ce
-mode (128K par défaut au 22 septembre 2026), car il inclut la réflexion ; les
+recherche et la comparaison. Ces appels utilisent le niveau de réflexion choisi
+dans l'onglet : `none`, `low`, `high` ou `max`. Sans réflexion désactive aussi
+`thinking.type`. Le budget de génération reste celui de l'API pour le niveau
+choisi (128K par défaut en max au 22 septembre 2026), car il inclut la réflexion ; les
 anciens plafonds de 768/4 500 tokens étaient trop courts pour ce fonctionnement.
 Chaque appel DeepSeek expire après 15 minutes ; Ollama conserve ses 45 secondes.
 Seul le contenu final est exploité, sans conserver le texte de réflexion.
@@ -142,7 +173,12 @@ du compte.
 ## Recherche et lecture des offres
 
 L'API DeepSeek ne fournit pas elle-même le navigateur ou le moteur de recherche.
-Le dock interroge l'API de recherche générale Tavily puis lit les pages choisies.
+Le dock interroge Serper si sa clé est enregistrée, sinon Tavily, puis lit les
+pages choisies. Serper reçoit une recherche française via `/search` ; seuls les
+liens organiques sont utilisés ici. Les liens sont gardés 24 h, dans un cache
+séparé par fournisseur. Les recherches identiques entre onglets attendent la
+même porte d'entrée, puis relisent le cache pour éviter un second appel inutile.
+Les pages marchandes conservent leur fraîcheur distincte de six heures.
 L'accès **keyless** est officiellement proposé sans compte ni clé supplémentaire,
 gratuit mais soumis à des limites d'usage ; une limite est signalée explicitement,
 sans bascule payante ni nouvelle tentative en boucle. Aucune API par marchand
@@ -509,3 +545,110 @@ Build chargé/sélectionné : `battlestation-shopping-wait-01` (PID 3948), hôte
 sessions et réglages conservés. Le build remplacé `shopping-glass-01` est archivé
 sous `backups/retired-builds/2026-09-22/` après contrôle des processus, modules et
 références. Validation : `artifacts/validation/shopping-wait-20260922/`.
+
+### Recherches parallèles et niveau au choix, 22 septembre
+
+`ShoppingTabs` associe un radar, un moteur, un journal et une pagination à chaque
+onglet. Le magasin SQLite et les transports HTTP restent partagés ; les sources
+web et leur planificateur ont un état indépendant. Seul le moteur principal
+assure la veille. Les caches de pages et d'images utilisent des fichiers
+temporaires uniques pour éviter les collisions entre recherches simultanées.
+
+La réflexion sélectionnée dans la demande est transmise aux trois étapes du
+même onglet. L'annulation est propagée aux appels réseau et au moteur de cette
+recherche. Les réglages du fournisseur ne sont pas réécrits pour un changement
+de niveau. Le journal et les résultats des autres onglets restent disponibles.
+Les commandes internes `shopping-new`, `shopping-select:<id>`,
+`shopping-close:<id>` et `shopping-stop` complètent `shopping-inspect`, qui
+expose les onglets, leur niveau et `anyBusy` pour vérifier toutes les recherches
+avant une relance du bureau.
+
+309 contrôles Shopping et DockReview réussis : deux recherches simultanées sur
+le même magasin, journaux et niveaux distincts, arrêt/fermeture isolés, veille
+commune et navigation des onglets sur dock étroit. Le menu de réflexion a été
+ouvert et rendu avec les quatre niveaux ; les paramètres HTTP ont été contrôlés
+avec un transport simulé. Aucun appel API payant lancé par l'agent.
+
+Build chargé et sélectionné : `battlestation-shopping-tabs-02` (PID 17336).
+Création, sélection et fermeture d'un onglet vide vérifiées par les commandes du
+bureau ; ces commandes et les rendus WPF ne prouvent pas les clics physiques.
+Hôte terminal 2196 et sessions conservés. Les fichiers fournisseur/préférences
+sont inchangés ; layout/profiles ont changé pendant la vérification live et
+n'ont pas été rétablis depuis une sauvegarde. Une recherche utilisateur a été
+observée ensuite ; aucune seconde relance n'a été effectuée.
+Le build remplacé `shopping-wait-01` est archivé après contrôle des processus,
+modules, références et raccourcis. Changements locaux non commités.
+Preuves : `artifacts/validation/shopping-tabs-20260922/` et les rendus
+`artifacts/validation/dock-review/shopping-tabs-*.png`, `shopping-reasoning-options.png`.
+
+### Lecture Amazon et fiches lisibles, 22 septembre
+
+La fiche Amazon.fr remontée par la recherche a répondu HTTP 200 avec 3 224 999
+octets décompressés (3,08 Mio). Le rejet venait du plafond local de 3 Mio. La
+lecture HTML accepte désormais 16 Mio par page, y compris en transfert sans
+taille annoncée ; l'extrait destiné au modèle reste limité à 6 000 caractères.
+Le vrai HTML a été rejoué hors réseau dans le lecteur de production : lecture
+acceptée, référence L50s présente dans l'extrait. Cela prouve la lecture de cette
+fiche, pas la vérification automatique de tous ses prix ni l'accès à toutes les
+pages Amazon. Les refus HTTP et vérifications de navigateur restent respectés.
+
+Le récapitulatif est compact ; les critères complets et diagnostics de sources
+sont accessibles par Détails et au survol. Chaque fiche enveloppe ses textes
+sans ellipse, mesure sa hauteur et reçoit un fond sombre issu du thème. La liste
+défile à la molette, avec une barre de position ; les zones cliquables sont
+découpées au cadre visible. Les onglets reprennent les teintes du thème. Une fin
+de recherche laisse une pastille verte et déclenche deux respirations douces
+(4,8 secondes au total), composées par WPF. Une annulation ne déclenche pas ce
+signal et le masquage du dock libère les animations.
+
+311 contrôles Shopping et DockReview réussis : grande page et cache, texte long
+intégral, défilement/interactions, trois thèmes, état terminé et arrêt des
+animations. Rendus inspectés dans `artifacts/validation/dock-review/shopping-cards-*.png`
+et `shopping-completed-tab.png`. Tests API simulés ; aucun appel DeepSeek payant.
+Les clics physiques et la lisibilité sur le fond du bureau restent à apprécier
+à l'usage, distinctement de ces rendus isolés.
+
+Build chargé/sélectionné : `battlestation-shopping-cards-01` (PID 20332). Hôte
+terminal 2196, sessions et fichiers de réglages inchangés. Démarrage via le
+lanceur du repo ; ancien `shopping-tabs-02` archivé après contrôle des processus,
+modules et références. Changements locaux non commités. Preuves complémentaires :
+`artifacts/validation/shopping-amazon-20260922/`.
+
+### Connexion Serper, 22 septembre
+
+Ajout de Serper Search (`q`, `gl=fr`, `hl=fr`, dix résultats demandés, huit liens
+utilisés), avec la clé exclusivement dans l'en-tête `X-API-KEY` du fournisseur.
+Le transport de production ne suit pas les redirections. Le bouton ⚙ du dock
+ouvre une saisie PasswordBox ; DPAPI protège le fichier pour le compte Windows
+courant. Aucune clé n'est journalisée ni renvoyée par `shopping-inspect` : seules
+la présence d'une clé et la sélection du fournisseur y figurent. La modification
+de connexion est bloquée pendant les recherches. `shopping-settings` ouvre le
+même dialogue depuis les commandes internes, sans lancer de recherche.
+
+Les liens sont conservés 24 h. Une porte commune à tous les onglets vérifie le
+cache avant chaque appel : deux demandes identiques n'envoient pas deux requêtes
+simultanées. Annuler l'onglet qui attend ne coupe pas celui qui recherche déjà.
+Cette modification n'ajoute pas de bouton Réanalyser : il reste à implémenter.
+
+319 contrôles Shopping et DockReview réussis, dont paramètres/erreurs Serper,
+déduplication entre onglets, saisie masquée et relecture DPAPI avec une clé
+factice. Compilation réussie ; aucune requête Serper ou DeepSeek consommant du
+crédit n'a été lancée pour les tests. La clé réelle doit être enregistrée par
+l'utilisateur ; sa validité sera vérifiée lors de sa propre recherche.
+
+Build chargé et sélectionné : `battlestation-shopping-serper-01` (PID 19400), hôte
+terminal 2196, sessions et réglages existants conservés. La fenêtre de connexion
+a été ouverte pour la saisie utilisateur. Ancien `shopping-cards-01` archivé
+après vérification des processus, modules, références et raccourcis. Changements
+locaux non commités. Preuves : `artifacts/validation/shopping-serper-20260922/`
+et `artifacts/validation/dock-review/shopping-serper-settings.png`.
+
+### Intégration Git, 24 septembre
+
+Les changements locaux décrits ci-dessus sont repris dans les sources publiées :
+onglets indépendants, réflexion par recherche, arrêt isolé, cartes défilantes,
+récapitulatif détaillé et connexion Serper. Nouvelle vérification : 319 contrôles
+Shopping réussis et suite DockReview réussie, avec transports simulés et clé
+factice ; aucun appel payant. Compilation de `battlestation-bureau-model-01`
+réussie. Ces tests et rendus ne remplacent pas les clics ni une recherche réelle.
+Preuves : `artifacts/validation/shopping-git-20260924/`.

@@ -24,6 +24,7 @@ public sealed class ShoppingService : IShoppingEngine
     ShoppingSpecParser parser;
     ShoppingAdvisor advisor;
     ShoppingSettings settings;
+    readonly ShoppingReasoning reasoning;
     string activity="";
     volatile bool running;
     volatile bool busy;
@@ -41,14 +42,15 @@ public sealed class ShoppingService : IShoppingEngine
         IVerdictEngine? engine=null,
         PromoCalendar? calendar=null,
         ShoppingSpecParser? parser=null,
-        string ntfyEndpoint="https://ntfy.sh",ShoppingAdvisor? advisor=null)
+        string ntfyEndpoint="https://ntfy.sh",ShoppingAdvisor? advisor=null,ShoppingReasoning? reasoning=null)
     {
         this.store=store;this.sources=sources;this.settings=settings.Validate();
+        this.reasoning=reasoning??new();
         this.engine=engine??new VerdictEngine();
         this.calendar=calendar??PromoCalendar.Load(Path.Combine(dataDirectory,ShoppingSettingsStore.EventsFileName));
         this.http=http??Shared;
-        this.parser=parser??new ShoppingSpecParser(Llm(this.settings,this.http));
-        this.advisor=advisor??new ShoppingAdvisor(Llm(this.settings,this.http));
+        this.parser=parser??new ShoppingSpecParser(Llm(this.settings,this.http,this.reasoning));
+        this.advisor=advisor??new ShoppingAdvisor(Llm(this.settings,this.http,this.reasoning));
         eventPath=Path.Combine(dataDirectory,ShoppingSettingsStore.EventsFileName);
         settingsPath=Path.Combine(dataDirectory,ShoppingSettingsStore.FileName);
         this.ntfyEndpoint=ntfyEndpoint.TrimEnd('/');
@@ -65,9 +67,9 @@ public sealed class ShoppingService : IShoppingEngine
     }
 
     /// <summary>Deux appels distincts : lecture de la demande, puis comparaison des fiches.</summary>
-    static ILlmClient? Llm(ShoppingSettings settings,HttpClient http)=>settings.Provider switch
+    static ILlmClient? Llm(ShoppingSettings settings,HttpClient http,ShoppingReasoning reasoning)=>settings.Provider switch
     {
-        "deepseek"=>DeepSeekClient.Create(http,settings),
+        "deepseek"=>DeepSeekClient.Create(http,settings,reasoning),
         _=>new OllamaClient(http,settings.Endpoint,settings.Model)
     };
 
@@ -76,6 +78,11 @@ public sealed class ShoppingService : IShoppingEngine
     public IReadOnlyList<ShoppingProgress> Progress{get{lock(gate)return progress.ToArray();}}
     public DateTimeOffset? SearchStartedAt{get{lock(gate)return searchStartedAt;}}
     public ShoppingSettings Settings=>settings;
+    public string ReasoningEffort=>reasoning.Effort;
+    public void SetReasoningEffort(string effort)
+    {
+        lock(gate){if(busy)throw new InvalidOperationException("La réflexion ne se change pas pendant une recherche.");reasoning.Effort=effort;}
+    }
     public IReadOnlyList<SourceReport> Sources{get{lock(gate)return reports.ToArray();}}
     public IReadOnlyList<WatchedItem> Watchlist=>store.Watches().Select(item=>new WatchedItem(item.Watch,item.Product)).ToArray();
 
@@ -87,8 +94,8 @@ public sealed class ShoppingService : IShoppingEngine
         settings=validated;
         if(switched)
         {
-            parser=new ShoppingSpecParser(Llm(settings,http));
-            advisor=new ShoppingAdvisor(Llm(settings,http));
+            parser=new ShoppingSpecParser(Llm(settings,http,reasoning));
+            advisor=new ShoppingAdvisor(Llm(settings,http,reasoning));
         }
         ShoppingSettingsStore.Save(settingsPath,settings);
         Changed?.Invoke();
@@ -126,7 +133,7 @@ public sealed class ShoppingService : IShoppingEngine
                     var products=(await source.SearchAsync(spec,settings.MaxResults*3,cancellation))
                         .Where(product=>source.Id=="web"||ShoppingRelevance.Matches(product.Title,spec)).ToArray();
                     status.Add(new(source.Id,source.Name,products.Length==0?SourceState.Empty:SourceState.Ok,products.Length,
-                        (products.Length==0?"aucune offre":$"{products.Length} offres")+(source.Notice.Length>0?$" · {source.Notice}":"")));
+                        (products.Length==0?"aucune offre":$"{products.Length} offres")+(source.Notice.Length>0?$" · {source.Notice}":""),Partial:source.Notice.Length>0));
                     foreach(var product in products)found.Add(product);
                 }
                 catch(PriceSourceUnavailableException e)

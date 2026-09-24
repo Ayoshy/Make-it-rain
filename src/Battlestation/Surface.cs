@@ -37,6 +37,7 @@ internal abstract class Surface : FrameworkElement
         if(!value){hits.Clear();foreach(int slot in glassSlots)Native.BackgroundPanel(slot,0,0,0,0);}
     }
     protected Point Pointer=new(-1,-1);
+    protected Rect? InteractionClip;
     public double DesktopX {get;set;}
     public double DesktopY {get;set;}
     protected virtual double HitOffsetX=>0;
@@ -117,7 +118,24 @@ internal abstract class Surface : FrameworkElement
     }
     void Panel()=>Box(0,0,Width,Height,"#0A201133","#2AE7D3FF",DockAppearance.PanelRadius);
     protected void Header(string title,double y=18)=>Text(title,24,y,DockAppearance.HeaderPoints,Muted);
-    protected void Hit(string name,double x,double y,double w,double h,Action action)=>hits.Add((new(x+HitOffsetX,y+HitOffsetY,w,h),action,name));
+    protected void Hit(string name,double x,double y,double w,double h,Action action)
+    {
+        var rect=new Rect(x+HitOffsetX,y+HitOffsetY,w,h);
+        if(InteractionClip is {} clip)rect.Intersect(clip);
+        if(!rect.IsEmpty&&rect.Width>0&&rect.Height>0)hits.Add((rect,action,name));
+    }
+    protected FormattedText Paragraph(string text,double points,string color,double width)
+    {
+        width=Math.Max(1,width);double dpi=VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var key=(text,points,color,DockAppearance.TextFont,false,-width,dpi);
+        if(!textCache.TryGetValue(key,out var formatted))
+        {
+            formatted=new FormattedText(text,French,FlowDirection.LeftToRight,new Typeface(DockAppearance.UiFont,FontStyles.Normal,FontWeights.Normal,FontStretches.Normal),points*96/72,B(color),dpi)
+                {MaxTextWidth=width,MaxLineCount=int.MaxValue,Trimming=TextTrimming.None};
+            if(textCache.Count>=256)textCache.Clear();textCache[key]=formatted;
+        }
+        return formatted;
+    }
     protected void Button(string name,string label,double x,double y,double w,double h,Action action,double size=10,string color=Ink,bool enabled=true,double radius=DockAppearance.ButtonRadius,bool hitTest=true)
     {
         var rect=new Rect(x,y,w,h);bool hover=rect.Contains(Pointer)&&enabled&&hitTest;

@@ -42,12 +42,12 @@ public sealed class OllamaClient(HttpClient http,string endpoint,string model):I
 }
 
 /// <summary>Analyse de la demande avec DeepSeek, sans conserver la clé dans les réglages.</summary>
-public sealed class DeepSeekClient(HttpClient http,string apiKey,string model):ILlmClient
+public sealed class DeepSeekClient(HttpClient http,string apiKey,string model,ShoppingReasoning? reasoning=null):ILlmClient
 {
     public const string Endpoint="https://api.deepseek.com/chat/completions";
     public const string DefaultModel="deepseek-flash";
     public const string KeyVariable="DEEPSEEK_API_KEY";
-    public string Name=>$"DeepSeek · {model} · réflexion max";
+    public string Name=>$"DeepSeek · {model} · réflexion {reasoning?.Effort??"max"}";
 
     /// <summary>La clé vient de l'environnement utilisateur ; elle n'entre ni dans Git ni dans shopping.json.</summary>
     public static string? ApiKey()
@@ -58,19 +58,20 @@ public sealed class DeepSeekClient(HttpClient http,string apiKey,string model):I
     }
 
     /// <summary>Construit le client distant, ou rien si la clé est absente : l'appelant garde alors le parseur local.</summary>
-    public static ILlmClient? Create(HttpClient http,ShoppingSettings settings)
+    public static ILlmClient? Create(HttpClient http,ShoppingSettings settings,ShoppingReasoning? reasoning=null)
     {
         var key=ApiKey();
-        return key is null?null:new DeepSeekClient(http,key,settings.Validate().Model);
+        return key is null?null:new DeepSeekClient(http,key,settings.Validate().Model,reasoning);
     }
 
     public async Task<string> CompleteAsync(string system,string user,CancellationToken cancellation)
     {
+        string effort=reasoning?.Effort??"max";
         var payload=JsonSerializer.Serialize(new
         {
             model,
-            thinking=new{type="enabled"},
-            reasoning_effort="max",
+            thinking=new{type=effort=="none"?"disabled":"enabled"},
+            reasoning_effort=effort,
             // Le plafond par défaut du mode max inclut le raisonnement. L'ancien
             // plafond du petit JSON final pouvait couper avant la réponse.
             response_format=new{type="json_object"},

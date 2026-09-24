@@ -26,6 +26,13 @@ internal static class ShoppingRadarChecks
         return (dock.ToolTip as TextBlock)?.Text??"";
     }
 
+    internal static string HoverRow(ShoppingSurface dock,int index)
+    {
+        var hits=(IEnumerable)typeof(Surface).GetField("hits",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(dock)!;
+        var hit=hits.Cast<ITuple>().Single(item=>(string)item[2]! =="ShoppingOpen:"+index);
+        var rect=(Rect)hit[0]!;return HoverDetails(dock,new Point(rect.Left+10,rect.Top+Math.Min(12,rect.Height/2)));
+    }
+
     internal static void Loading(Station station,Action<Surface,string> render,Func<Surface,byte[]> pixels)
     {
         var engine=station.ShoppingEngine;
@@ -35,9 +42,9 @@ internal static class ShoppingRadarChecks
         engine.SeedProgress("Étude de la demande","Préparation des requêtes","Recherche web : réfrigérateur 300 L",
             "Résultats web reçus","Lecture : fabricant.example","Lecture : boutique.example","Fiches réunies","Comparaison DeepSeek");
         var app=Application.Current;var shutdownMode=app.ShutdownMode;app.ShutdownMode=ShutdownMode.OnExplicitShutdown;
-        using var dock=new ShoppingSurface(station){Width=700,Height=520};
+        using var dock=new ShoppingSurface(station){Width=700,Height=560};
         // Logical WPF visibility without exposing a window or taking focus on the desktop.
-        var window=new Window{Content=dock,Width=720,Height=560,Left=-10000,Top=-10000,Opacity=0,ShowActivated=false,ShowInTaskbar=false};
+        var window=new Window{Content=dock,Width=720,Height=600,Left=-10000,Top=-10000,Opacity=0,ShowActivated=false,ShowInTaskbar=false};
         var timer=(DispatcherTimer)typeof(ShoppingSurface).GetField("loadingTimer",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(dock)!;
         var motion=(TranslateTransform)typeof(ShoppingSurface).GetField("loadingMotion",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(dock)!;
         try
@@ -46,13 +53,13 @@ internal static class ShoppingRadarChecks
             render(dock,"shopping-loading.png");
             var text=DrawnTexts(dock);
             Check(text.Contains("RECHERCHE EN COURS")&&text.Contains("Comparaison DeepSeek")&&text.Contains("Lecture : boutique.example"),"Loading shows the active stage and recent real progress messages");
-            Check(text.Contains("Étude de la demande")&&!text.Contains("6 / 8"),"A 520 px dock shows all eight available stages instead of an arbitrary six");
+            Check(text.Contains("Étude de la demande")&&!text.Contains("6 / 8"),"A 560 px tabbed dock shows all eight available stages instead of an arbitrary six");
             engine.SeedProgress(Enumerable.Range(1,24).Select(i=>$"Étape {i:00} · Lecture des caractéristiques").ToArray());
-            dock.Height=1120;window.Height=1160;dock.Refresh();render(dock,"shopping-loading-tall.png");
+            dock.Height=1160;window.Height=1200;dock.Refresh();render(dock,"shopping-loading-tall.png");
             Check(DrawnTexts(dock).Contains("Étape 01 · Lecture des caractéristiques")&&DrawnTexts(dock).Contains("Étape 24 · Lecture des caractéristiques"),"A tall dock displays more than twelve journal stages");
-            dock.Height=420;window.Height=460;dock.Refresh();render(dock,"shopping-loading-compact.png");
+            dock.Height=460;window.Height=500;dock.Refresh();render(dock,"shopping-loading-compact.png");
             Check(DrawnTexts(dock).Contains("5 / 24"),"A compact dock keeps the latest lines with a bottom margin");
-            dock.Height=520;window.Height=560;dock.Refresh();
+            dock.Height=560;window.Height=600;dock.Refresh();
             Check(station.Shopping.Results.Count==3,"An active search preserves the previous candidates in memory");
             var before=pixels(dock);double previous=motion.X;
             WaitUntil(()=>Math.Abs(motion.X-previous)>30);
@@ -72,6 +79,13 @@ internal static class ShoppingRadarChecks
             window.Show();WaitUntil(()=>timer.IsEnabled);
             engine.SearchHold.SetResult();WaitUntil(()=>pending.IsCompleted&&!timer.IsEnabled);pending.GetAwaiter().GetResult();
             render(dock,"shopping-after-loading.png");
+            Check(station.ShoppingTabs.Active.CompletedAt is not null,"A finished search marks its tab complete");
+            var pulses=(IDictionary)typeof(ShoppingSurface).GetField("tabPulses",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(dock)!;
+            var pulse=(DrawingGroup)((ITuple)pulses.Values.Cast<object>().Single())[2]!;
+            Check(pulse.HasAnimatedProperties,"The visible completed tab starts a short compositor pulse");
+            double opacity=pulse.Opacity;WaitUntil(()=>Math.Abs(pulse.Opacity-opacity)>.01);
+            dock.SetDisplayed(false);Check(!pulse.HasAnimatedProperties,"A hidden dock releases completion animation clocks");
+            dock.SetDisplayed(true);dock.Refresh();render(dock,"shopping-completed-tab.png");
             Check(station.Shopping.Results.Count==3,"Completed loading restores the candidate view");
             Click(dock,"ShoppingJournal");render(dock,"shopping-journal.png");
             Check(DrawnTexts(dock).Contains("RECHERCHE TERMINÉE"),"The completed search journal remains available from its button");
@@ -109,7 +123,7 @@ internal static class ShoppingRadarChecks
         ((Action)hit[1]!)();
     }
 
-    internal static void Submit(ShoppingSurface dock,string request)
+    internal static void Submit(ShoppingSurface dock,string request,string effort="max")
     {
         var shutdownMode=Application.Current.ShutdownMode;
         Application.Current.ShutdownMode=ShutdownMode.OnExplicitShutdown;
@@ -119,6 +133,20 @@ internal static class ShoppingRadarChecks
             var content=(StackPanel)((Border)window.Content).Child;
             var input=content.Children.OfType<TextBox>().Single();
             input.Text=request;
+            var levels=content.Children.OfType<DockPanel>().Single().Children.OfType<ComboBox>().Single();
+            levels.SelectedValue=effort;
+            if(effort=="high")
+            {
+                levels.ApplyTemplate();levels.IsDropDownOpen=true;window.UpdateLayout();
+                var popup=(System.Windows.Controls.Primitives.Popup)levels.Template.FindName("PART_Popup",levels);
+                Check(popup.IsOpen&&levels.Items.Count==4,"The reasoning dropdown opens with all four levels");
+                var popupBody=(FrameworkElement)popup.Child;popupBody.UpdateLayout();
+                var bitmap=new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(popupBody.ActualWidth),(int)Math.Ceiling(popupBody.ActualHeight),96,96,PixelFormats.Pbgra32);
+                bitmap.Render(popupBody);
+                var png=new System.Windows.Media.Imaging.PngBitmapEncoder();png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                using(var file=File.Create("artifacts/validation/dock-review/shopping-reasoning-options.png"))png.Save(file);
+                levels.IsDropDownOpen=false;
+            }
             var actions=content.Children.OfType<StackPanel>().Single();
             var button=actions.Children.OfType<Button>().Single(item=>(string)item.Content=="Chercher");
             Check(button.IsEnabled,"Typing a request enables the modal search button");
@@ -126,6 +154,84 @@ internal static class ShoppingRadarChecks
         }));
         try{typeof(ShoppingSurface).GetMethod("Edit",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(dock,null);}
         finally{Application.Current.ShutdownMode=shutdownMode;}
+    }
+
+    internal static void ParallelSearches(Station station,Action<Surface,string> render)
+    {
+        using var tabs=station.ShoppingTabs;
+        using var dock=new ShoppingSurface(station){Width=700,Height=640};
+        var first=tabs.Active;
+        station.ShoppingEngine.SearchHold=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Submit(dock,"Réfrigérateur pour la cuisine","max");
+        WaitUntil(()=>first.Radar.Busy&&first.Radar.Progress.Count>0);
+        var second=tabs.Add();
+        var engine=station.ExtraShoppingEngines.Last();engine.SearchHold=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Submit(dock,"Aspirateur robot pour le salon","high");
+        WaitUntil(()=>engine.Busy&&second.Radar.Progress.Count>0);
+        Check(first.Radar.Busy&&second.Radar.Busy&&tabs.AnyBusy,"Two tabs execute concurrently without the global Busy guard");
+        Check(first.Radar.Query.StartsWith("Réfrigérateur")&&second.Radar.Query.StartsWith("Aspirateur"),"Each tab retains its own request");
+        Check(first.Radar.ReasoningEffort=="max"&&second.Radar.ReasoningEffort=="high","The modal reasoning selection is independent for each tab");
+        first.Radar.SetReasoningEffort("low");
+        Check(first.Radar.ReasoningEffort=="max","A running search keeps the reasoning level it started with");
+        station.ShoppingEngine.PublishProgress("Fiche du frigo");engine.PublishProgress("Fiche du robot");
+        Check(!first.Radar.Progress.Any(step=>step.Message=="Fiche du robot")&&!second.Radar.Progress.Any(step=>step.Message=="Fiche du frigo"),"Parallel progress does not cross between tabs");
+        render(dock,"shopping-tabs-running.png");
+        engine.SearchHold.SetResult();WaitUntil(()=>!second.Radar.Busy);
+        Check(first.Radar.Busy&&second.Radar.Results.Count==3,"One tab can finish while the other continues");
+        WaitUntil(()=>second.CompletedAt is not null);
+        dock.Refresh();render(dock,"shopping-tabs-results.png");
+        tabs.Select(first.Id);dock.Refresh();render(dock,"shopping-tabs-first.png");Click(dock,"ShoppingStop");
+        WaitUntil(()=>!first.Radar.Busy);
+        Check(first.Radar.Status=="Recherche arrêtée"&&second.Radar.Results.Count==3,"Stopping a tab cancels only its own search");
+        Check(first.CompletedAt is null,"Cancellation does not masquerade as a successful completion");
+        tabs.Select(second.Id);
+        station.Shopping.Watch(second.Radar.Results[0],second.Radar.Query).GetAwaiter().GetResult();
+        Check(station.Shopping.Watchlist.Single().Item.Watch.Request==second.Radar.Query,"Shared watches retain the request of the tab that added them");
+        tabs.Close(first.Id);Check(tabs.Active==second&&tabs.Items.Count==1,"Closing another tab preserves the selected results");
+        var third=tabs.Add();var thirdEngine=station.ExtraShoppingEngines.Last();
+        thirdEngine.SearchHold=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pending=third.Radar.SearchAsync("Troisième recherche");WaitUntil(()=>thirdEngine.Busy);
+        tabs.Close(third.Id);WaitUntil(()=>pending.IsCompleted);pending.GetAwaiter().GetResult();
+        Check(tabs.Active==second&&!tabs.AnyBusy,"Closing a running tab cancels it without leaving a background search");
+        for(int i=0;i<6;i++)tabs.Add();
+        dock.Width=440;dock.Refresh();render(dock,"shopping-tabs-overflow.png");
+        Click(dock,"ShoppingTabPrevious");
+        Check(tabs.Active!=tabs.Items[^1],"Overflow arrows can select tabs outside the visible strip");
+        foreach(var tab in tabs.Items.ToArray())tabs.Close(tab.Id);
+        Check(tabs.Items.Count==1&&tabs.Active.Radar.Query.Length==0,"Closing the last tab leaves one empty search");
+        Console.WriteLine("PASS: concurrent shopping tabs, modal reasoning, isolated stop/close and shared watches.");
+    }
+
+    internal static void SerperSettings(Station station)
+    {
+        using var tabs=station.ShoppingTabs;using var dock=new ShoppingSurface(station);
+        const string fake="fixture-serper-secret-not-real";
+        var app=Application.Current;var mode=app.ShutdownMode;app.ShutdownMode=ShutdownMode.OnExplicitShutdown;
+        var path=(string)typeof(SerperKeyStore).GetField("path",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(station.Serper)!;
+        try
+        {
+            app.Dispatcher.BeginInvoke(new Action(()=>
+            {
+                var window=app.Windows.Cast<Window>().Single(item=>item.Title=="Battlestation · Connexion Serper");
+                var content=(StackPanel)((Border)window.Content).Child;var field=content.Children.OfType<PasswordBox>().Single();
+                Check(field.Password.Length==0,"The API key field starts empty and masked");field.Password=fake;
+                var save=content.Children.OfType<StackPanel>().Single().Children.OfType<Button>().Single(button=>(string)button.Content=="Enregistrer");
+                Check(save.IsEnabled,"Pasting a key enables Save");
+                window.UpdateLayout();
+                var image=new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(window.ActualWidth),(int)Math.Ceiling(window.ActualHeight),96,96,PixelFormats.Pbgra32);
+                image.Render(window);var png=new System.Windows.Media.Imaging.PngBitmapEncoder();png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(image));
+                using(var file=File.Create("artifacts/validation/dock-review/shopping-serper-settings.png"))png.Save(file);
+                save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            }));
+            dock.ConfigureSearch();
+            Check(station.Serper.HasKey&&new SerperKeyStore(Path.GetDirectoryName(path)!).Read()==fake,"Saving persists the key for the same Windows user");
+            Check(!System.Text.Encoding.UTF8.GetString(File.ReadAllBytes(path)).Contains(fake),"The key file contains protected data, not plaintext");
+            Console.WriteLine("PASS: masked Serper key entry and Windows-protected persistence; no network.");
+        }
+        finally
+        {
+            app.ShutdownMode=mode;File.Delete(path);Directory.Delete(Path.GetDirectoryName(path)!);
+        }
     }
 
     internal static void WaitUntil(Func<bool> condition)

@@ -209,11 +209,18 @@ internal sealed partial class DesktopWorkspace : IDisposable
         if(command=="dualsense-inspect")return JsonSerializer.Serialize(((DualSenseSurface)surfaces["dualsense"]).Inspect());
         if(command=="bluetooth-inspect")return JsonSerializer.Serialize(((BluetoothSurface)surfaces["bluetooth"]).Inspect());
         if(command=="apps-inspect")return JsonSerializer.Serialize(((DockSurface)surfaces["apps"]).InspectActivity());
-        if(command=="shopping-inspect")return JsonSerializer.Serialize(new
+        if(command=="shopping-inspect")
         {
-            query=station.Shopping.Query,busy=station.Shopping.Busy,status=station.Shopping.Status,error=station.Shopping.Error,revision=station.Shopping.Revision,
-            startedAt=station.Shopping.SearchStartedAt,elapsedSeconds=Math.Round(station.Shopping.Elapsed.TotalSeconds,1),progress=station.Shopping.Progress,
-            results=station.Shopping.Results.Select(row=>new{title=row.Title,shop=row.Shop,price=row.Price,url=row.Url,watched=row.Watched,
+        var shopping=station.ShoppingTabs.Active.Radar;
+        return JsonSerializer.Serialize(new
+        {
+            activeTab=station.ShoppingTabs.Active.Id,anyBusy=station.ShoppingTabs.AnyBusy,
+            tabs=station.ShoppingTabs.Items.Select(tab=>new{id=tab.Id,title=tab.Title,busy=tab.Radar.Busy,status=tab.Radar.Status,reasoning=tab.Radar.ReasoningEffort}),
+            reasoning=shopping.ReasoningEffort,model=shopping.Settings.Model,
+            webSearch=station.Serper.HasKey?"Serper":"Tavily",webKeyConfigured=station.Serper.HasKey,
+            query=shopping.Query,busy=shopping.Busy,status=shopping.Status,error=shopping.Error,revision=shopping.Revision,
+            startedAt=shopping.SearchStartedAt,elapsedSeconds=Math.Round(shopping.Elapsed.TotalSeconds,1),progress=shopping.Progress,
+            results=shopping.Results.Select(row=>new{title=row.Title,shop=row.Shop,price=row.Price,url=row.Url,watched=station.Shopping.Watchlist.Any(item=>item.Product.Id==row.Product.Id),
                 verdict=row.Hit.Verdict.Label,decision=row.Hit.Verdict.Decision.ToString(),confidence=Math.Round(row.Hit.Verdict.Confidence,2),
                 target=row.Hit.Verdict.TargetPrice,criteria=row.Hit.CriteriaText,reasons=row.Hit.Verdict.Reasons,image=row.ImagePath,
                 fit=row.FitLabel,reason=row.Reason,priceStatus=row.Hit.Verdict.PriceLabel,
@@ -221,11 +228,21 @@ internal sealed partial class DesktopWorkspace : IDisposable
             watchlist=station.Shopping.Watchlist.Select(row=>new{title=row.Title,shop=row.Shop,price=row.Price,target=row.Item.Watch.TargetPrice,
                 nextCheck=row.Item.Watch.NextCheck,failures=row.Item.Watch.Failures,url=row.Product.Url})
         });
+        }
+        if(command=="shopping-new")return station.ShoppingTabs.Add().Id.ToString();
+        if(command=="shopping-settings")
+        {
+            if(station.ShoppingTabs.AnyBusy)return "Recherche en cours";
+            app.Dispatcher.BeginInvoke(()=>((ShoppingSurface)surfaces["shopping"]).ConfigureSearch());return "OK";
+        }
+        if(command.StartsWith("shopping-select:")){station.ShoppingTabs.Select(Guid.Parse(command[16..]));return "OK";}
+        if(command.StartsWith("shopping-close:")){station.ShoppingTabs.Close(Guid.Parse(command[15..]));return "OK";}
+        if(command=="shopping-stop"){station.ShoppingTabs.Active.Radar.Cancel();return "OK";}
         if(command.StartsWith("shopping-search:"))
         {
             var request=command[16..].Trim();
             if(request.Length==0)throw new ArgumentException("Demande vide");
-            _=station.Shopping.SearchAsync(request);
+            _=station.ShoppingTabs.Active.Radar.SearchAsync(request);
             return "OK";
         }
         if(command=="shopping-recheck"){_=station.Shopping.RecheckAsync();return "OK";}

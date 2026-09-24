@@ -36,6 +36,11 @@ public sealed record Product(
 /// <summary>Extrait de la fiche réellement consultée, utilisé uniquement pendant l'analyse.</summary>
 public sealed record ProductDetails(string Text,string SourceUrl);
 public sealed record ShoppingProgress(DateTimeOffset At,string Message);
+public sealed class ShoppingReasoning
+{
+    string effort="max";
+    public string Effort {get=>effort;set=>effort=value is "none" or "low" or "high" or "max"?value:"max";}
+}
 public sealed record ProductCandidate(Product Product,ProductDetails? Details);
 public enum ProductFit { Recommended, Possible, Unsuitable, Unknown }
 public enum CriterionState { Confirmed, Contradicted, Unknown }
@@ -125,7 +130,7 @@ public sealed record SearchOutcome(IReadOnlyList<ShoppingHit> Hits,IReadOnlyList
 
 public enum SourceState { Ok, Empty, Failed, Disabled }
 
-public sealed record SourceReport(string Source,string Name,SourceState State,int Count,string Detail);
+public sealed record SourceReport(string Source,string Name,SourceState State,int Count,string Detail,bool Partial=false);
 
 /// <summary>Erreur d'une boutique : elle est rapportée telle quelle, jamais remplacée par un prix inventé.</summary>
 public sealed class PriceSourceUnavailableException(string message):Exception(message);

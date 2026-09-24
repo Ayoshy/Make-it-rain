@@ -23,7 +23,12 @@ internal sealed class Station : IDisposable
     public DesktopLayout Layout {get;}
     /// <summary>Radar d'achat : recherche multi-boutiques, verdict et veille des prix.</summary>
     internal ShoppingRadar Shopping {get;}
+    internal ShoppingTabs ShoppingTabs {get;}
+    internal SerperKeyStore Serper {get;}
     readonly ShoppingStore shoppingStore;
+    readonly HttpClient shoppingHttp=new(){Timeout=Timeout.InfiniteTimeSpan};
+    readonly HttpClient shoppingWebHttp=WebShoppingSource.CreateHttpClient();
+    readonly SemaphoreSlim shoppingDiscoveryGate=new(1,1);
     internal ProjectSignals Projects {get;}
     internal MediaReserve Reserve {get;}
     internal event Action? ReserveRequested;
@@ -85,14 +90,22 @@ internal sealed class Station : IDisposable
         try{if(!File.Exists(shoppingFile))ShoppingSettingsStore.Save(shoppingFile,ShoppingSettings.Default);}
         catch(Exception e) when(e is IOException or UnauthorizedAccessException){}
         var shoppingSettings=ShoppingSettingsStore.Load(shoppingFile);
-        var http=new HttpClient{Timeout=Timeout.InfiniteTimeSpan};
-        var options=new PriceSourceOptions(Path.Combine(Data,"shopping-cache"));
-        List<IPriceSource> sources=shoppingSettings.Enabled
-            ?[new WebShoppingSource(WebShoppingSource.CreateHttpClient(),options,
-                    shoppingSettings.Provider=="deepseek"?DeepSeekClient.Create(http,shoppingSettings):new OllamaClient(http,shoppingSettings.Endpoint,shoppingSettings.Model)),
-              new RueDuCommerceSource(http,options),new BoulangerSource(http,options)]
-            :[];
-        Shopping=new ShoppingRadar(new ShoppingService(shoppingStore,sources,shoppingSettings,Data,http),Data,Dispatcher.CurrentDispatcher);
+        var http=shoppingHttp;
+        Serper=new SerperKeyStore(Data);
+        var searchClient=new ConfiguredWebSearchClient(shoppingWebHttp,Serper.Read);
+        var options=new PriceSourceOptions(Path.Combine(Data,"shopping-cache"),SearchCache:TimeSpan.FromHours(24));
+        ShoppingRadar CreateShopping(ShoppingSettings settings)
+        {
+            var reasoning=new ShoppingReasoning();
+            List<IPriceSource> sources=settings.Enabled
+                ?[new WebShoppingSource(shoppingWebHttp,options,
+                        settings.Provider=="deepseek"?DeepSeekClient.Create(http,settings,reasoning):new OllamaClient(http,settings.Endpoint,settings.Model),searchClient,shoppingDiscoveryGate),
+                  new RueDuCommerceSource(http,options),new BoulangerSource(http,options)]
+                :[];
+            return new ShoppingRadar(new ShoppingService(shoppingStore,sources,settings,Data,http,reasoning:reasoning),Data,Dispatcher.CurrentDispatcher);
+        }
+        Shopping=CreateShopping(shoppingSettings);
+        ShoppingTabs=new(Shopping,()=>CreateShopping(Shopping.Settings));
     }
     public string M(string metric)=>Backend.Read(metric);
     internal void ApplyAppearance(DesktopProfile profile)
@@ -159,5 +172,5 @@ internal sealed class Station : IDisposable
         if(coverBytes is not null&&bytes.AsSpan().SequenceEqual(coverBytes))return;
         try{using var stream=new MemoryStream(bytes);var image=new BitmapImage();image.BeginInit();image.CacheOption=BitmapCacheOption.OnLoad;image.StreamSource=stream;image.EndInit();image.Freeze();Cover=image;coverBytes=bytes;}catch{Cover=null;coverBytes=null;}
     }
-    public void Dispose(){Shopping.Dispose();shoppingStore.Dispose();Reserve.Dispose();Projects.Dispose();Terminal?.Dispose();Native.DeskStop();Backend.Dispose();}
+    public void Dispose(){ShoppingTabs.Dispose();shoppingHttp.Dispose();shoppingWebHttp.Dispose();shoppingStore.Dispose();Reserve.Dispose();Projects.Dispose();Terminal?.Dispose();Native.DeskStop();Backend.Dispose();}
 }

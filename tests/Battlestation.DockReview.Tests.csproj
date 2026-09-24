@@ -49,6 +49,8 @@
     <Compile Include="../src/Battlestation/BudsBattery.cs"/>
     <Compile Include="../src/Battlestation/ShoppingSurface.cs"/>
     <Compile Include="../src/Battlestation/ShoppingRadar.cs"/>
+    <Compile Include="../src/Battlestation/ShoppingTabs.cs"/>
+    <Compile Include="../src/Battlestation/SerperKeyStore.cs"/>
     <ProjectReference Include="../src/Battlestation.Shopping/Battlestation.Shopping.csproj"/>
     <Resource Include="../assets/Fonts/art-deco.ttf" Link="Assets/Fonts/art-deco.ttf"/>
   </ItemGroup>

@@ -30,6 +30,14 @@ internal static class ShoppingLlmTests
         catch(InvalidOperationException e){truncated=e.Message.Contains("limite de génération");}
         check(truncated,"Une génération tronquée est refusée même si son JSON semble complet");
         handler.FinishReason="stop";
+        var reasoning=new ShoppingReasoning();
+        var configurable=new DeepSeekClient(http,"fake-key-for-tests",defaults.Model,reasoning);
+        foreach(string level in new[]{"none","low","high","max"})
+        {
+            reasoning.Effort=level;await configurable.CompleteAsync("JSON","fixture",CancellationToken.None);
+            using var sent=JsonDocument.Parse(handler.Body);
+            check(sent.RootElement.GetProperty("reasoning_effort").GetString()==level&&sent.RootElement.GetProperty("thinking").GetProperty("type").GetString()==(level=="none"?"disabled":"enabled"),$"Le choix {level} atteint exactement les paramètres DeepSeek");
+        }
 
         const string robotRequest="Aspirateur robot pour mon appart flat 100m² avec un shiba qui perds ses poils seulement les jours en \"di\" et une femme avec des cheveux longs.";
         var robotLocal=ShoppingSpecParser.Deterministic(robotRequest);

@@ -36,6 +36,12 @@ internal static class ScenesTests
             profiles.Switch("Travail perso",layout,settings);var reset=profiles.ResetTemplate(layout,settings,11);
             Check(reset.TemplateId==origin&&reset.ThemeId=="obsidienne"&&layout["music"].Visible,"Rétablir le modèle utilise le modèle de la scène copiée");
             profiles.Switch("Bureau",layout,settings);Check(layout.Blocks.SequenceEqual(personnel),"Rétablir un modèle conserve Bureau");
+            layout.SetVisible("notes",false);layout.SetVisible("atelier",false);
+            profiles.ResetTemplate(layout,settings,11);
+            Check(layout["notes"].Visible&&layout["atelier"].Visible&&!layout["shopping"].Visible,"Rétablir Bureau reprend le nouvel agencement avec Bloc-notes et Atelier");
+            Check(layout["network"].Width<=640&&layout["network"].Height<=360,"Rétablir Bureau conserve un réseau compact");
+            Check(layout.Blocks.Where(b=>b.Visible).Sum(b=>b.Width*b.Height)<5120d*1440*.7,"Le modèle Bureau laisse plus de trente pour cent du fond libre");
+            Check(layout.Blocks.SequenceEqual(personnel),"La réinitialisation reprend exactement le modèle Bureau courant");
             string before=File.ReadAllText(Path.Combine(temp,"profiles.json"));var committed=layout.Blocks.ToArray();layout.SetVisible("clock",false);
             Check(File.ReadAllText(Path.Combine(temp,"profiles.json"))==before,"Un geste intermédiaire ne sauvegarde pas la scène");layout.Restore(committed);
             Check(layout.Blocks.SequenceEqual(personnel),"Annulation du geste restaure le plan enregistré");

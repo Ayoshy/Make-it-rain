@@ -51,9 +51,12 @@ internal sealed class ShoppingRadar : IDisposable
     IReadOnlyList<RadarRow> results=[];
     IReadOnlyList<WatchRow> watching=[];
     string query="",status="Aucune recherche",error="";
+    string summaryDetails="";
     DateTimeOffset? searchEndedAt;
     long revision;
     bool searching;
+    bool cancelled;
+    CancellationTokenSource? operation;
     volatile bool disposed;
 
     public event Action? Changed;
@@ -81,6 +84,7 @@ internal sealed class ShoppingRadar : IDisposable
         }
     }
     public string Error{get{lock(gate)return error;}}
+    public string SummaryDetails{get{lock(gate)return summaryDetails;}}
     public IReadOnlyList<ShoppingProgress> Progress=>engine.Progress;
     public DateTimeOffset? SearchStartedAt=>engine.SearchStartedAt;
     public TimeSpan Elapsed
@@ -94,20 +98,31 @@ internal sealed class ShoppingRadar : IDisposable
         }
     }
     public bool Busy{get{lock(gate)return searching||engine.Busy;}}
+    public bool Cancelled{get{lock(gate)return cancelled;}}
     public long Revision{get{lock(gate)return revision;}}
     public ShoppingSettings Settings=>engine.Settings;
+    public string ReasoningEffort=>engine.ReasoningEffort;
+    public void SetReasoningEffort(string effort)
+    {
+        if(Busy)return;
+        engine.SetReasoningEffort(effort);Notify();
+    }
 
     /// <summary>Une recherche : la demande part au moteur, les aperçus suivent en fond.</summary>
     public async Task SearchAsync(string request)
     {
         if(string.IsNullOrWhiteSpace(request))return;
         request=request.Trim();
+        CancellationTokenSource cancellation;
         lock(gate)
         {
             if(searching||disposed)return;
             searching=true;
+            cancelled=false;
+            operation=cancellation=new CancellationTokenSource();
             searchEndedAt=null;
             query=request;
+            summaryDetails="";
             error="";
             status="Recherche en cours…";
             revision++;
@@ -117,8 +132,13 @@ internal sealed class ShoppingRadar : IDisposable
         {
             // Même le début synchrone du moteur (cache, SQLite, analyse locale)
             // reste hors du fil WPF, ainsi que la lecture de la veille.
-            var outcome=await Task.Run(()=>engine.SearchAsync(request,CancellationToken.None)).ConfigureAwait(false);
+            var outcome=await Task.Run(()=>engine.SearchAsync(request,cancellation.Token)).ConfigureAwait(false);
+            cancellation.Token.ThrowIfCancellationRequested();
             await UpdateAsync(outcome:outcome).ConfigureAwait(false);
+        }
+        catch(OperationCanceledException) when(cancellation.IsCancellationRequested)
+        {
+            lock(gate){status="Recherche arrêtée";error="";cancelled=true;revision++;}
         }
         catch(Exception e) when(e is HttpRequestException or IOException or InvalidOperationException or TaskCanceledException or UnauthorizedAccessException or System.Data.Common.DbException)
         {
@@ -126,17 +146,35 @@ internal sealed class ShoppingRadar : IDisposable
         }
         finally
         {
-            lock(gate){searching=false;searchEndedAt=DateTimeOffset.Now;revision++;}
+            lock(gate){searching=false;operation=null;searchEndedAt=DateTimeOffset.Now;revision++;}
+            cancellation.Dispose();
             Notify();
         }
         _=Task.Run(LoadImages);
     }
 
+    public void Cancel()
+    {
+        CancellationTokenSource? current;lock(gate)current=operation;
+        try{current?.Cancel();}catch(ObjectDisposedException){}
+    }
+
     static string Describe(SearchOutcome outcome,int count)
     {
         var head=outcome.AnalysisNote.Length>0?outcome.AnalysisNote:count switch{0=>"Aucune offre",1=>"1 offre",_=>$"{count} offres"};
-        var criteria=outcome.Spec.Required.Count>0?$" · {string.Join(", ",outcome.Spec.Required)}":"";
-        return $"{head}{criteria}\n{string.Join(" · ",outcome.Sources.Select(report=>$"{report.Name} : {report.Detail}"))}";
+        int offers=outcome.Sources.Sum(report=>report.Count);
+        bool partial=outcome.Sources.Any(report=>report.Partial||report.State==SourceState.Failed);
+        return $"{head}\n{offers} offre{(offers>1?"s":"")} examinée{(offers>1?"s":"")}{(partial?" · sources partielles":"")}";
+    }
+
+    static string DescribeDetails(SearchOutcome outcome)
+    {
+        var lines=new List<string>{"DEMANDE",outcome.Request};
+        if(outcome.Spec.MaxPrice is {} price)lines.Add("\nBudget maximal : "+ShoppingText.Money(price));
+        if(outcome.Spec.Required.Count>0){lines.Add("\nCRITÈRES DEMANDÉS");lines.AddRange(outcome.Spec.Required.Select(value=>"• "+value));}
+        if(outcome.Spec.Optional.Count>0){lines.Add("\nPRÉFÉRENCES");lines.AddRange(outcome.Spec.Optional.Select(value=>"• "+value));}
+        lines.Add("\nSOURCES");lines.AddRange(outcome.Sources.Select(report=>$"• {report.Name} : {report.Detail}"));
+        return string.Join('\n',lines);
     }
 
     /// <summary>Recharge la veille enregistrée pour l'afficher dès l'ouverture du dock.</summary>
@@ -161,7 +199,7 @@ internal sealed class ShoppingRadar : IDisposable
                     results=outcome is null
                         ?results.Select(row=>row with{Watched=watched.Contains(row.Product.Id)}).ToArray()
                         :outcome.Hits.Select(hit=>new RadarRow(hit,ImageOf(hit.Product.Image),watched.Contains(hit.Product.Id))).ToArray();
-                    if(outcome is not null){error=outcome.Error;status=Describe(outcome,results.Count);}
+                    if(outcome is not null){error=outcome.Error;status=Describe(outcome,results.Count);summaryDetails=DescribeDetails(outcome);}
                     revision++;
                 }
             }
@@ -174,10 +212,10 @@ internal sealed class ShoppingRadar : IDisposable
     });
 
     /// <summary>Bascule la veille d'une offre : le moteur la revérifiera en fond.</summary>
-    public Task Watch(RadarRow row)
+    public Task Watch(RadarRow row,string? searchRequest=null)
     {
         if(row.Watched)return Unwatch(row.Product.Id);
-        var request=Query;
+        var request=searchRequest??Query;
         return UpdateAsync(()=>engine.Watch(row.Product,row.Hit.Verdict.TargetPrice??row.Price,request));
     }
 
@@ -236,13 +274,15 @@ internal sealed class ShoppingRadar : IDisposable
         Directory.CreateDirectory(imageDirectory);
         foreach(var (url,path) in wanted)
         {
+            if(disposed)return;
+            string temporary=path+"."+Guid.NewGuid().ToString("N")+".tmp";
             try
             {
                 var bytes=await Http.GetByteArrayAsync(url);
                 if(bytes.Length is >0 and <3*1024*1024)
                 {
-                    await File.WriteAllBytesAsync(path+".tmp",bytes);
-                    File.Move(path+".tmp",path,true);
+                    await File.WriteAllBytesAsync(temporary,bytes);
+                    File.Move(temporary,path,true);
                     lock(gate)revision++;
                     Notify();
                 }
@@ -251,6 +291,7 @@ internal sealed class ShoppingRadar : IDisposable
             {
                 // Un aperçu manquant ne remplace pas l'offre.
             }
+            finally{try{File.Delete(temporary);}catch(IOException){}catch(UnauthorizedAccessException){}}
         }
         lock(gate)revision++;
         Notify();
@@ -279,6 +320,7 @@ internal sealed class ShoppingRadar : IDisposable
     public void Dispose()
     {
         disposed=true;
+        Cancel();
         engine.Changed-=EngineChanged;
         engine.Alert-=OnAlert;
         engine.Dispose();
