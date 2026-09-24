@@ -45,7 +45,7 @@ internal sealed class TerminalTabs : Grid
     }
     Style CreateButtonStyle()
     {
-        var border=new FrameworkElementFactory(typeof(Border));border.Name="Glass";border.SetValue(Border.CornerRadiusProperty,new CornerRadius(DockAppearance.ButtonRadius));
+        var border=new FrameworkElementFactory(typeof(GlassHoverBorder));border.Name="Glass";border.SetValue(Border.CornerRadiusProperty,new CornerRadius(DockAppearance.ButtonRadius));
         border.SetValue(Border.BackgroundProperty,new TemplateBindingExtension(Control.BackgroundProperty));border.SetValue(Border.BorderBrushProperty,new TemplateBindingExtension(Control.BorderBrushProperty));border.SetValue(Border.BorderThicknessProperty,new TemplateBindingExtension(Control.BorderThicknessProperty));
         var content=new FrameworkElementFactory(typeof(ContentPresenter));content.SetValue(FrameworkElement.HorizontalAlignmentProperty,HorizontalAlignment.Center);content.SetValue(FrameworkElement.VerticalAlignmentProperty,VerticalAlignment.Center);border.AppendChild(content);
         var style=new Style(typeof(Button));style.Setters.Add(new Setter(Control.TemplateProperty,new ControlTemplate(typeof(Button)){VisualTree=border}));

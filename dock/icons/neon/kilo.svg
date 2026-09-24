@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 128 128">
+  <title>kilo — nacré</title>
+  <defs>
+    <linearGradient id="pearl" x1="0" y1="0" x2="0.85" y2="1">
+      <stop stop-color="#e2dce9"/><stop offset=".38" stop-color="#cbc3d6"/>
+      <stop offset=".76" stop-color="#b1acc7"/><stop offset="1" stop-color="#a0bfc9"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#efdfeb"/><stop offset="1" stop-color="#bad7dc"/>
+    </linearGradient>
+    <g id="mark"><path d="M4 3h4v7.2L15.2 3H21l-9 9 9 9h-5.8L8 13.8V21H4Z"/></g>
+  </defs>
+  <g transform="translate(22 22) scale(3.5)">
+    <use href="#mark" fill="url(#pearl)"/>
+    <use href="#mark" fill="none" stroke="url(#edge)" stroke-width=".1" opacity=".35"/>
+  </g>
+</svg>

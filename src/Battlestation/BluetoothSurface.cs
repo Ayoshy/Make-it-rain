@@ -87,6 +87,7 @@ internal sealed class BluetoothSurface : Surface,IDisposable
         for(int i=0;i<slots.Length;i++)
         {
             var rect=slots[i];var row=rows[i];bool hover=rect.Contains(Pointer),busy=changing&&changingTarget==i;
+            if(!changing&&!scanning&&stateCurrent)HoverGlass(rect,18);
             double x=rect.X+rect.Width/2,y=rect.Y+rect.Height/2;
             if(hover)D.DrawEllipse(B("#16DACDEC"),null,new Point(x,y+rect.Height*.3),rect.Width*.37,rect.Height*.065);
             double size=rect.Width*1.38*(hover?1.07:1);

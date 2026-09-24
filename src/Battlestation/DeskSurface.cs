@@ -25,7 +25,8 @@ internal sealed class DeskSurface : Surface
     readonly DeskWidget widget;
     int projectRow;
     Size cachedSize;
-    Rect ProjectPopup=>new(16,48,Width-32,Math.Min(124,Height-60));
+    bool ProjectMenuColumns=>Width>=680;
+    Rect ProjectPopup=>new(16,48,Width-32,Math.Min(ProjectMenuColumns?164:236,Height-60));
     public DeskSurface(Station station,DeskWidget kind):base(station,kind switch{DeskWidget.Clock=>0,DeskWidget.Weather=>1,DeskWidget.Music=>3,_=>4}){widget=kind;Width=720;Height=kind switch{DeskWidget.Clock=>164,DeskWidget.Weather=>112,DeskWidget.Music=>168,_=>293};}
     public void TickAudio(bool reactive=false,bool visible=true)
     {
@@ -73,6 +74,7 @@ internal sealed class DeskSurface : Surface
         // dock keeps exactly its former rendering.
         bool tall=Height>=190;
         double y=tall?18:(Height-112)/2;bool compact=Width<600;string rain=Native.Read("weatherRain");
+        HoverGlass(new Rect(16,y+14,56,62));
         Image(System.IO.Path.Combine(Station.Assets,"Desk/Icons",Native.Read("weatherIcon")+".png"),20,y+20,48,48);
         Hit("WeatherRefresh",16,y+14,56,62,()=>Native.DeskCommand("WeatherRefresh"));
         Text(Native.Read("weatherTemp"),80,y+18,32,font:DockAppearance.NumberFont);
@@ -307,6 +309,7 @@ internal sealed class DeskSurface : Surface
         if(double.IsFinite(ratio))D.DrawRectangle(progressBrush,null,new Rect(16,baseline,Math.Clamp(ratio,0,1)*(Width-32),2.2));
         D.DrawRoundedRectangle(null,rimPens[LevelIndex(bass,rimPens)],new Rect(.75,.75,Width-1.5,Height-1.5),DockAppearance.PanelRadius-1,DockAppearance.PanelRadius-1);
         D.Pop();
+        HoverGlass(new Rect(32,y+7,text,28),14);
         Text(Native.Read("source"),32,y+11,10,"#A99DBC",width:text);Hit("Source",32,y+7,text,28,()=>Native.DeskCommand("Source"));
         Button("MediaReserve","+",Width-62,y+9,38,29,Station.ShowReserve,13);
         Text(Native.Read("title"),32,y+33,16,width:text);
@@ -315,6 +318,7 @@ internal sealed class DeskSurface : Surface
         MediaButton("Previous","previous",Width-206,y+105,48,36,"canPrevious");
         MediaButton("Play",Native.Read("playing")=="1"?"pause":"play",Width-145,y+101,58,44,"canPlay");
         MediaButton("Next","next",Width-74,y+105,48,36,"canNext");
+        if(Native.Read("canSeek")=="1")HoverGlass(new Rect(16,baseline-6,Width-32,14),7);
         Hit("Seek",16,baseline-6,Width-32,14,()=>{if(Native.Read("canSeek")=="1")Native.DeskCommand("Seek:"+Math.Clamp((Pointer.X-16)/(Width-32),0,1).ToString(System.Globalization.CultureInfo.InvariantCulture));});
     }
     void MediaButton(string action,string icon,double x,double y,double w,double h,string capability)
@@ -328,15 +332,33 @@ internal sealed class DeskSurface : Surface
         if(!popup){projectBackdrop=null;projectFrost=null;ProjectCards();return;}
         ProjectGlass();
         var rect=ProjectPopup;
-        Text(ProjectName(Native.Read("selectedPath"),Native.Read("selectedProject")),32,rect.Y+12,15,"#F4EDF9",bold:true,width:Width-100);
+        // Clicking the glass outside the menu folds it without launching anything.
+        Hit("FoldProject",0,0,Width,Height,()=>popup=false);
+        Hit("ProjectMenu",rect.X,rect.Y,rect.Width,rect.Height,()=>{});
+        Text(ProjectName(Native.Read("selectedPath"),Native.Read("selectedProject")),32,rect.Y+12,DockAppearance.HeaderPoints,Ink,DockAppearance.HeaderFont,width:Width-112);
         string selected=Native.Read("selectedPath");var status=Station.Projects.Read(selected);
         Text(ProjectStatus(status),32,rect.Y+42,9.6,ProjectStatusColor(status),width:Width-98);
-        Button("CloseProject","×",Width-62,rect.Y+8,30,30,()=>popup=false);
-        double bw=(Width-100)/4;
-        Button("Explorer","Explorateur",32,rect.Y+72,bw,36,()=>{Native.DeskCommand("OpenSelected");popup=false;},11,color:"#F4EDF9");
-        Button("OpenCodex","Codex CLI (ChatGPT)",44+bw,rect.Y+72,bw,36,()=>{Station.Terminal?.OpenCodex(Native.Read("selectedPath"));popup=false;},11,color:"#F4EDF9");
-        Button("OpenCodexDs","Codex CLI (DS)",56+bw*2,rect.Y+72,bw,36,()=>{Station.OpenCodexDeepSeek(Native.Read("selectedPath"));popup=false;},11,color:"#F4EDF9");
-        Button("OpenKilo","Kilo CLI (DS)",68+bw*3,rect.Y+72,bw,36,()=>{Station.OpenKilo(Native.Read("selectedPath"));popup=false;},11,color:"#F4EDF9");
+        Button("CloseProject","⌃",Width-62,rect.Y+8,30,30,()=>popup=false);
+        int cols=ProjectMenuColumns?4:2,rows=4/cols;
+        double bw=(rect.Width-32-(cols-1)*10)/cols,bh=(rect.Height-82-(rows-1)*8)/rows;
+        ProjectAction(0,"Explorer","Explorateur","Fichiers","folder","#F0C38B",()=>Native.DeskCommand("OpenSelected"));
+        ProjectAction(1,"OpenCodex","Codex CLI","ChatGPT","codex","#D8BCF5",()=>Station.Terminal?.OpenCodex(Native.Read("selectedPath")));
+        ProjectAction(2,"OpenCodexDs","Codex CLI","DeepSeek","deepseek","#97CFFF",()=>Station.OpenCodexDeepSeek(Native.Read("selectedPath")));
+        ProjectAction(3,"OpenKilo","Kilo CLI","DeepSeek","kilo","#DFE8A3",()=>Station.OpenKilo(Native.Read("selectedPath")));
+        void ProjectAction(int index,string id,string title,string provider,string icon,string accent,Action launch)
+        {
+            double x=rect.X+16+(index%cols)*(bw+10),y=rect.Y+68+(index/cols)*(bh+8);
+            bool compact=bw<205||bh<65;
+            Button(id,"",x,y,bw,bh,()=>{launch();popup=false;},radius:16,accent:accent);
+            double size=compact?36:52,ix=x+8,iy=y+(bh-size)/2;
+            if(icon=="folder")Text("\uE8B7",ix+size/2,iy+size*.14,size*.48,accent,"Segoe Fluent Icons",align:"center");
+            else Image(System.IO.Path.Combine(Station.Root,"dock/icons/neon",icon+".png"),ix,iy,size,size);
+            double tx=ix+size+7,tw=bw-(tx-x)-10;
+            Text(title,tx,y+bh/2-20,compact?10:11,"#F4EDF9",bold:true,width:tw);
+            Text(provider,tx,y+bh/2+3,9,accent,width:tw);
+            // DeepSeek remains visible beside Kilo's harness mark as well.
+            if(icon=="kilo"&&bw>=225)Image(System.IO.Path.Combine(Station.Root,"dock/icons/neon/deepseek.png"),x+bw-34,y+bh/2-12,24,24);
+        }
     }
     int ProjectCount=>int.TryParse(Native.Read("projectCount"),out int count)?Math.Max(0,count):0;
     internal IEnumerable<string> VisibleProjects(){int cols=Math.Max(1,(int)((Width-36)/330)),rows=Math.Max(1,(int)((Height-60)/73));return Enumerable.Range(Math.Min(projectRow*cols,ProjectCount),Math.Max(0,Math.Min(cols*rows,ProjectCount-projectRow*cols))).Select(i=>Native.Read($"project:{i}:path")).Append(Native.Read("selectedPath")).Where(p=>p!="").ToArray();}
@@ -394,11 +416,7 @@ internal sealed class DeskSurface : Surface
         rim.GradientStops.Add(new GradientStop(DesktopTheme.Color("#16E4DAF8"),.4));
         rim.GradientStops.Add(new GradientStop(DesktopTheme.Color("#64B8E0F8"),1));
         D.DrawRoundedRectangle(null,new Pen(rim,1),rect,22,22);
-        if(rect.Contains(Pointer))
-        {
-            var light=new RadialGradientBrush(DesktopTheme.Color("#8CFFFAFF"),Colors.Transparent){MappingMode=BrushMappingMode.Absolute,Center=Pointer,GradientOrigin=Pointer,RadiusX=160,RadiusY=100};
-            D.DrawRoundedRectangle(null,new Pen(light,1.5),rect,22,22);
-        }
+        GlassReflection(rect,22);
     }
     // Heuristic badge: an open terminal tab carrying the project folder name.
     bool HasAgentTab(string path)

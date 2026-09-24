@@ -13,7 +13,7 @@ internal sealed class DesktopLayout
     public static Size Minimum(string id)=>id switch
     {
         "clock"=>new(360,144),"weather"=>new(360,112),"music"=>new(400,168),
-        "projects"=>new(360,240),"apps"=>new(240,112),"terminal"=>new(480,300),
+        "projects"=>new(360,240),"apps"=>new(144,112),"terminal"=>new(480,300),
         "countdown"=>new(400,360),"hardware"=>new(440,218),"usage"=>new(440,209),
         "network"=>new(440,280),"dualsense"=>new(480,380),"video"=>new(480,270),"audio"=>new(440,220),"bluetooth"=>new(128,128),"reminders"=>new(440,112),
         "montagne"=>new(560,340),"lol"=>new(440,180),"shopping"=>new(560,420),"notes"=>new(320,180),"atelier"=>new(440,280),_=>new(120,100)

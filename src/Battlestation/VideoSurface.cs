@@ -181,6 +181,7 @@ internal sealed class VideoSurface : Surface,IDisposable
             Hit("VideoStart",screen.X,screen.Y,screen.Width,screen.Height,StartMirror);
         }
         if(transportError!="")Text(transportError,w/2,screen.Bottom-25,9,Muted,align:"center");D.Pop();
+        GlassReflection(screen,16);
     }
     public void Dispose(){SetArmed(false);disposed=true;timer.Stop();browser.FrameAvailable-=BrowserFrame;capture.FrameAvailable-=BrowserFrame;Release();capture.Dispose();browser.Dispose();}
 }

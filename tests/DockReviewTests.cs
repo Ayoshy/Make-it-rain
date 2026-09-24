@@ -176,12 +176,103 @@ static class DockReviewTests
         finally{DesktopTheme.Select(previous,false);}
     }
 
+    sealed class GlassProbe(Station station):Surface(station)
+    {
+        internal bool Enabled=true,Frame;
+        internal double Offset;
+        protected override double HitOffsetY=>Offset;
+        internal void PointAt(double x,double y){Pointer=new(x,y);Refresh();}
+        protected override void Paint()
+        {
+            Header("CODEX METER");
+            D.PushTransform(new TranslateTransform(0,Offset));
+            Button("GlassAction","Actualiser",24,50,180,38,()=>{},enabled:Enabled);D.Pop();
+            if(Frame)GlassReflection(new Rect(1,1,Width-2,Height-2),23);
+        }
+    }
+    static void GlassChecks(Station station,string output)
+    {
+        var probe=new GlassProbe(station){Width=360,Height=240};
+        var idle=Pixels(probe);string hits=Hits(probe).GetRawText();
+        probe.PointAt(34,58);var hover=Pixels(probe);
+        Check(Different(idle,hover),"Enabled glass visibly reacts to the pointer");
+        Check(hits==Hits(probe).GetRawText(),"Hover leaves click targets unchanged");
+        probe.PointAt(194,78);Check(Different(hover,Pixels(probe)),"The reflection follows the pointer inside one control");
+        probe.Enabled=false;probe.PointAt(-1,-1);var disabled=Pixels(probe);
+        probe.PointAt(34,58);Check(!Different(disabled,Pixels(probe)),"A disabled control has no hover highlight");
+        probe.Enabled=true;probe.Offset=90;probe.PointAt(-1,-1);var translated=Pixels(probe);
+        probe.PointAt(34,58);Check(!Different(translated,Pixels(probe)),"A translated page does not react at its old location");
+        probe.PointAt(34,148);Check(Different(translated,Pixels(probe)),"A translated page reacts at its actual hit target");
+        probe.SetDisplayed(false);probe.SetDisplayed(true);Check(!Different(translated,Pixels(probe)),"Hiding a dock clears its hover without a timer");
+        probe.Offset=0;probe.Frame=true;
+        foreach(var theme in DesktopTheme.Definitions)
+        {
+            DesktopTheme.Select(theme.Id,false);probe.PointAt(34,58);Render(probe,Path.Combine(output,$"glass-hover-{theme.Id}.png"));
+        }
+        station.Reminders=[new("Penser à faire une pause")];
+        var nudge=new ReminderSurface(station){Width=440,Height=232};
+        typeof(Surface).GetField("Pointer",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(nudge,new Point(30,60));
+        Render(nudge,Path.Combine(output,"glass-nudge-hover.png"));
+        Console.WriteLine("PASS glass: visible moving reflection, disabled controls, unchanged targets, translated pages, cleared hidden hover and scene renders.");
+    }
+    static void AppLayoutChecks(Station station,string output)
+    {
+        station.Apps=new[]{"Steam","Brave","Discord","Stremio","League of Legends","Codex","Claude Code","Edge","Chrome","qBittorrent","battle.net","Spotify"}.Select(name=>new DockApp(name,Path.Combine(station.Root,"fixtures",name+".exe"))).ToList();
+        foreach(var size in new[]{new Size(144,1188),new Size(144,112),new Size(176,440),new Size(240,1188),new Size(1120,270),new Size(920,230),new Size(720,204),new Size(240,112),new Size(1120,116)})
+        {
+            var dock=new DockSurface(station){Width=size.Width,Height=size.Height};
+            Render(dock,Path.Combine(output,$"apps-layout-{size.Width}-{size.Height}.png"));
+            var targets=Hits(dock).EnumerateArray().ToArray();
+            var add=targets.Single(hit=>hit.GetProperty("name").GetString()=="ManageApps");
+            Check(add.GetProperty("width").GetDouble()==28&&add.GetProperty("height").GetDouble()==28,"The app editor keeps its full target");
+            var launches=targets.Where(hit=>hit.GetProperty("name").GetString()!.StartsWith("Launch:")).ToArray();
+            Check(launches.All(hit=>hit.GetProperty("y").GetDouble()>=44),"Icons leave the Applications heading clear");
+            if(size.Height>=1188)Check(launches.Length==12&&launches.All(hit=>Math.Abs(hit.GetProperty("x").GetDouble()+hit.GetProperty("width").GetDouble()/2-size.Width/2)<.01),"The tall column exposes and centres all 12 apps");
+            Rect Bounds(JsonElement hit)=>new(hit.GetProperty("x").GetDouble(),hit.GetProperty("y").GetDouble(),hit.GetProperty("width").GetDouble(),hit.GetProperty("height").GetDouble());
+            for(int i=0;i<targets.Length;i++)for(int j=i+1;j<targets.Length;j++)
+            {
+                var overlap=Rect.Intersect(Bounds(targets[i]),Bounds(targets[j]));
+                Check(overlap.IsEmpty||overlap.Width==0||overlap.Height==0,"App and editor targets never overlap");
+            }
+            if(size==new Size(144,112))
+            {
+                typeof(DockSurface).GetField("rowOffset",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(dock,11);
+                dock.Refresh();Render(dock,Path.Combine(output,"apps-layout-last-row.png"));
+                Check(Has(dock,"Launch:Spotify"),"The last app remains reachable in a short narrow dock");
+            }
+            dock.Dispose();
+        }
+        Console.WriteLine("PASS app layouts: narrow/tall/short/wide, heading space, centred column, no overlapping targets and last row reachable.");
+    }
     [STAThread] static void Main(string[] args)
     {
         var app=new Application();
         string root=Path.GetFullPath(args[0]),output=Path.Combine(root,"artifacts/validation/dock-review");
         Directory.CreateDirectory(output);
         var station=new Station{Root=root};
+        if(args.Contains("--apps-only")){AppLayoutChecks(station,output);return;}
+        if(args.Contains("--glass-only")){GlassChecks(station,output);return;}
+        if(args.Contains("--projects-only"))
+        {
+            Native.Values["projectCount"]="1";Native.Values["project:0:name"]="Battlestation";Native.Values["project:0:path"]=root;
+            Native.Values["selectedPath"]=root;Native.Values["selectedProject"]="Battlestation";
+            station.Projects.Remember(root,new ProjectSignal("main",3,0,0,DateTimeOffset.Now.AddMinutes(-13)));
+            foreach(var size in new[]{new Size(1270,344),new Size(720,293),new Size(360,240)})
+            {
+                var projects=new DeskSurface(station,DeskWidget.Projects){Width=size.Width,Height=size.Height};
+                typeof(DeskSurface).GetField("popup",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(projects,true);
+                Render(projects,Path.Combine(output,$"projects-menu-{size.Width}.png"));
+                Check(new[]{"Explorer","OpenCodex","OpenCodexDs","OpenKilo","CloseProject","FoldProject"}.All(name=>Has(projects,name)),"Every project launch and fold action remains reachable");
+                var buttons=Hits(projects).EnumerateArray().Where(h=>new[]{"Explorer","OpenCodex","OpenCodexDs","OpenKilo"}.Contains(h.GetProperty("name").GetString())).Select(h=>new Rect(h.GetProperty("x").GetDouble(),h.GetProperty("y").GetDouble(),h.GetProperty("width").GetDouble(),h.GetProperty("height").GetDouble())).ToArray();
+                for(int i=0;i<buttons.Length;i++)for(int j=i+1;j<buttons.Length;j++)Check(!buttons[i].IntersectsWith(buttons[j]),"Project action targets never overlap");
+                var actions=(System.Collections.IEnumerable)typeof(Surface).GetField("hits",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(projects)!;
+                foreach(var value in actions){var hit=((Rect Rect,Action Action,string Name))value;if(hit.Name=="FoldProject"){hit.Action();break;}}
+                projects.Refresh();Render(projects,Path.Combine(output,$"projects-folded-{size.Width}.png"));
+                Check(Has(projects,"Project0")&&!Has(projects,"OpenKilo"),"Folding restores the project cards without launching a CLI");
+            }
+            Console.WriteLine("PASS project menus: wide/default/minimum render, action bounds, no overlapping launches, fold restores cards. No live clicks or CLI launches.");
+            return;
+        }
         // Scene preview: a real window, so the pixel shader actually runs (a
         // RenderTargetBitmap ignores pixel shaders). Captured from outside.
         if(args.Contains("--water-preview"))

@@ -62,7 +62,7 @@ internal sealed class ShoppingSurface : Surface,IDisposable
         rowTargets.Clear();
         summaryBounds=Rect.Empty;
         var radar=Radar;
-        Text("ACHATS",24,12,14,"#D8C8E3","GTAArtDeco");
+        Header("ACHATS",12);
         Text($"{(radar.Settings.Provider=="deepseek"?"DeepSeek":"Ollama")} · {radar.ReasoningEffort}",108,16,9,Muted,width:Math.Max(1,Width-266));
         Button("ShoppingSettings","⚙",Width-146,7,28,25,ConfigureSearch,12,Muted,enabled:!Tabs.AnyBusy);
         if(!radar.Busy&&(radar.Progress.Count>0||radar.SearchStartedAt is not null))
@@ -87,6 +87,7 @@ internal sealed class ShoppingSurface : Surface,IDisposable
             var tab=Tabs.Items[tabStart+i];double x=24+i*width;
             var theme=DesktopTheme.Current;
             Box(x,38,width-6,28,Tint(tab==Tabs.Active?theme.Light:theme.Glass,tab==Tabs.Active?0x38:0x60),Tint(theme.Rim,tab==Tabs.Active?0x70:0x28),9);
+            HoverGlass(new Rect(x,38,width-6,28),9);
             if(tab.CompletedAt is {} completed)PaintTabCompletion(tab.Id,completed,x,width-6);
             Text(tab.Radar.Busy||tab.CompletedAt is not null?"●":tab.Radar.Error.Length>0?"!":"·",x+9,44,9,tab.Radar.Busy?Wait:tab.CompletedAt is not null?"#73D79A":Muted);
             Text(tab.Title,x+23,44,10,tab==Tabs.Active?Ink:Muted,width:width-58);
@@ -131,6 +132,7 @@ internal sealed class ShoppingSurface : Surface,IDisposable
 
         double fieldWidth=Math.Max(160,Width-48-100);
         Box(24,38,fieldWidth,40,"#5A140F1F","#3AD9C7F0",12);
+        if(!radar.Busy)HoverGlass(new Rect(24,38,fieldWidth,40),12);
         bool empty=radar.Query.Length==0;
         Text(empty?"frigo max 800 €, no frost, 300 L":radar.Query,36,49,13,empty?Muted:Ink,width:fieldWidth-24);
         if(!radar.Busy)Hit("ShoppingEdit",24,38,fieldWidth,40,Edit);
@@ -316,6 +318,7 @@ internal sealed class ShoppingSurface : Surface,IDisposable
     {
         row=row with{Watched=Station.Shopping.Watchlist.Any(item=>item.Product.Id==row.Product.Id)};
         Box(20,y,Width-40,layout.Height-10,Tint(DesktopTheme.Current.Glass,0xB0),Tint(DesktopTheme.Current.Rim,0x24),12);
+        HoverGlass(new Rect(20,y,Width-40,layout.Height-10),12);
         bool hasImage=row.ImagePath.Length>0&&File.Exists(row.ImagePath);
         if(hasImage)
         {
@@ -345,6 +348,7 @@ internal sealed class ShoppingSurface : Surface,IDisposable
         {
             var row=list[i];
             double line=y+18+i*(WatchHeight+6);
+            HoverGlass(new Rect(20,line,Width-60,WatchHeight-6),12);
             if(row.ImagePath.Length>0&&File.Exists(row.ImagePath))
             {
                 Box(24,line,34,34,"#33140F1F","#26D9C7F0",8);

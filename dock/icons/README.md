@@ -32,3 +32,8 @@ Les cinq premières icônes conservent leur rendu existant.
 Spotify utilise également la silhouette Simple Icons 13.21.0, récupérée le
 15 septembre 2026, et les mêmes générateurs nacré et Vice City.
 `python scripts/Build-RunningDockIcons.py spotify` produit uniquement sa variante active.
+
+Le menu Projets réutilise Codex et ajoute DeepSeek (Simple Icons v16,
+`https://cdn.jsdelivr.net/npm/simple-icons@16/icons/deepseek.svg`, récupéré le
+24 septembre 2026) et un monogramme K dessiné pour le lanceur Kilo, sans prétendre
+reproduire sa marque. Ils suivent le même générateur nacré et les palettes des scènes.

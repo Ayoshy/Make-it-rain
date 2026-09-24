@@ -82,8 +82,8 @@ internal sealed class DashboardSurface : Surface
         }
         body = new Rect(24, 46, Math.Max(1, w - 48), Math.Max(1, buttonY - 54));
         sliders.Clear();
-        var context = D; var pointer = Pointer;
-        drawingPage = true; Pointer = new Point(pointer.X - body.X, pointer.Y - body.Y);
+        var context = D;
+        drawingPage = true;
         pages.Render(body, (dc, page, canInteract) =>
         {
             D = dc; interactive = canInteract;
@@ -97,7 +97,7 @@ internal sealed class DashboardSurface : Surface
                 case 5: DeepSeek(); break;
             }
         });
-        D = context; Pointer = pointer; drawingPage = false;
+        D = context; drawingPage = false;
     }
     void Summary()
     {
@@ -177,6 +177,7 @@ internal sealed class DashboardSurface : Surface
         double min = Station.N(name == "fan" ? "fanMin" : "thermalMin"), max = Station.N(name == "fan" ? "fanMax" : "thermalMax");
         bool valid = double.IsFinite(min + max + value) && max > min;
         enabled &= valid;
+        if(enabled&&interactive)HoverGlass(new Rect(track.X-8,track.Y-8,track.Width+16,22),11);
         Box(track.X, track.Y, track.Width, track.Height, "#885C3570", radius: 3);
         double ratio = valid ? Math.Clamp((value - min) / (max - min), 0, 1) : 0;
         D.DrawEllipse(B(enabled ? "#E8D5FC" : Muted), null, new Point(track.X + ratio * track.Width, track.Y + 3), 7, 7);

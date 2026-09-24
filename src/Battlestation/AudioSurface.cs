@@ -65,6 +65,7 @@ internal sealed class AudioSurface : Surface,IDisposable
         double label=Math.Min(225,Width*.28),left=label+40,track=Width-left-146;
         Text(name,24,y,11,width:label);
         var bounds=new Rect(left,y-3,track,34);if(volume.HasValue)sliders.Add((bounds,key));
+        if(volume.HasValue)HoverGlass(bounds);
         Track(left,y+13,track,(volume??float.NaN)*100,muted?"#7E718E":"#DBBFED",4);
         if(volume.HasValue)
         {

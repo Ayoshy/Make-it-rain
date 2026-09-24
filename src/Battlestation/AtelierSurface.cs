@@ -69,7 +69,7 @@ internal sealed class AtelierSurface : Surface,IDisposable
     static string Size(long bytes)=>bytes>=1024L*1024*1024?$"{bytes/(1024d*1024*1024):0.0} Go":$"{bytes/(1024d*1024):0} Mo";
     protected override void Paint()
     {
-        Text("ATELIER",24,16,14,Ink,"GTAArtDeco",tracking:1.8);
+        Header("ATELIER");
         Button("AtelierDetails","Détails",Width-100,10,76,28,ShowDetails,8);
         D.PushClip(new RectangleGeometry(new Rect(1,1,Width-2,Height-2),23,23));
         D.PushOpacity(.65);D.DrawEllipse(artwork.Glow,null,new(55,82),114,96);D.Pop();D.Pop();

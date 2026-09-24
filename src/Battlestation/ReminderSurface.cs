@@ -12,7 +12,7 @@ internal sealed class ReminderSurface : Surface
 
     protected override void Paint()
     {
-        Text("NUDGE",24,12,14,"#D8C8E3","GTAArtDeco");
+        Header("NUDGE",12);
         // The number of visible reminders follows the dock height, like the audio rows.
         int count=Math.Max(1,(int)((Height-96)/RowHeight));
         int pages=Math.Max(1,(Station.Reminders.Count+count-1)/count);
@@ -22,6 +22,7 @@ internal sealed class ReminderSurface : Surface
         for(int i=0;i<rows.Length;i++)
         {
             double y=48+i*RowHeight;int index=page*count+i;
+            HoverGlass(new Rect(20,y,Width-84,38));
             Text(rows[i].Text,24,y+9,15,"#F4EAF5","GTAArtDeco",width:Width-104);
             // Edit the reminder directly; no separate edit button.
             Hit("ReminderEdit:"+index,20,y,Width-84,38,()=>Edit(index));

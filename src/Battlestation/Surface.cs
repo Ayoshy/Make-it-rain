@@ -33,7 +33,7 @@ internal abstract class Surface : FrameworkElement
     internal virtual void SetDisplayed(bool value)
     {
         displayed=value;
-        if(!value)BeginAnimation(ThemeBlendProperty,null);
+        if(!value){BeginAnimation(ThemeBlendProperty,null);Pointer=new(-1,-1);}
         if(!value){hits.Clear();foreach(int slot in glassSlots)Native.BackgroundPanel(slot,0,0,0,0);}
     }
     protected Point Pointer=new(-1,-1);
@@ -63,6 +63,7 @@ internal abstract class Surface : FrameworkElement
         // One frame for every dock; widgets supply only content and interactions.
         if(dockSlot>=0){if(DrawsPanel)Panel();Glass(dockSlot,0,0,Width,Height);}
         Paint();
+        if(dockSlot>=0)GlassReflection(new Rect(1,1,Math.Max(0,Width-2),Math.Max(0,Height-2)),DockAppearance.PanelRadius-1);
     }
     protected abstract void Paint();
     // A dock whose content is drawn by its own layer (the diorama water) keeps the
@@ -117,7 +118,7 @@ internal abstract class Surface : FrameworkElement
         D.PushOpacity(opacity);D.DrawImage(image,new Rect(x,y,w,h));D.Pop();
     }
     void Panel()=>Box(0,0,Width,Height,"#0A201133","#2AE7D3FF",DockAppearance.PanelRadius);
-    protected void Header(string title,double y=18)=>Text(title,24,y,DockAppearance.HeaderPoints,Muted);
+    protected void Header(string title,double y=16)=>Text(title,24,y,DockAppearance.HeaderPoints,Ink,DockAppearance.HeaderFont,tracking:DockAppearance.HeaderTracking);
     protected void Hit(string name,double x,double y,double w,double h,Action action)
     {
         var rect=new Rect(x+HitOffsetX,y+HitOffsetY,w,h);
@@ -136,11 +137,25 @@ internal abstract class Surface : FrameworkElement
         }
         return formatted;
     }
-    protected void Button(string name,string label,double x,double y,double w,double h,Action action,double size=10,string color=Ink,bool enabled=true,double radius=DockAppearance.ButtonRadius,bool hitTest=true)
+    protected void GlassReflection(Rect rect,double radius)
     {
-        var rect=new Rect(x,y,w,h);bool hover=rect.Contains(Pointer)&&enabled&&hitTest;
+        if(!rect.Contains(Pointer))return;
+        D.PushOpacity(.32);D.DrawRoundedRectangle(null,Stroke(Purple,1),rect,radius,radius);D.Pop();
+        DockAppearance.Reflection(D,rect,Pointer,radius);
+    }
+    protected void HoverGlass(Rect rect,double radius=DockAppearance.ButtonRadius,string accent=Purple)
+    {
+        var pointer=new Point(Pointer.X-HitOffsetX,Pointer.Y-HitOffsetY);
+        if(!rect.Contains(pointer)||InteractionClip is {} clip&&!clip.Contains(Pointer))return;
+        D.DrawRoundedRectangle(B("#14FFFFFF"),Stroke(accent,1),rect,radius,radius);
+        DockAppearance.Reflection(D,rect,pointer,radius);
+    }
+    protected void Button(string name,string label,double x,double y,double w,double h,Action action,double size=10,string color=Ink,bool enabled=true,double radius=DockAppearance.ButtonRadius,bool hitTest=true,string? accent=null)
+    {
+        var rect=new Rect(x,y,w,h);bool hover=rect.Contains(new Point(Pointer.X-HitOffsetX,Pointer.Y-HitOffsetY))&&enabled&&hitTest;
         var fill=hover?DockAppearance.ButtonHover:DockAppearance.ButtonFill;
         D.PushOpacity(enabled?1:.4);D.DrawRoundedRectangle(fill,Stroke(DockAppearance.ButtonRim,1),rect,Math.Min(radius,h/2),Math.Min(radius,h/2));
+        if(enabled&&hitTest)HoverGlass(rect,Math.Min(radius,h/2),accent??(color==Ink||color==Muted?Purple:color));
         Text(label,x+w/2,y+(h-size*96/72)/2-1,size,color,align:"center");D.Pop();
         if(enabled&&hitTest)Hit(name,x,y,w,h,action);
     }

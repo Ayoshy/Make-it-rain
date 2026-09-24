@@ -87,6 +87,7 @@ internal sealed class NotesSurface : Surface, IDisposable
         Header("BLOC-NOTES", 16);
         if (error is not null)
         {
+            HoverGlass(new System.Windows.Rect(150,10,Math.Max(0,Width-166),30));
             Text(error, Width - 22, 19, 9, "#FFC98F", align: "right");
             Hit("NotesRetry", 150, 10, Math.Max(0, Width - 166), 30,
                 () => { if (loaded) Save(); else _ = LoadAsync(); });

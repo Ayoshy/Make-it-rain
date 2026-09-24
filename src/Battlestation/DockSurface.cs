@@ -25,8 +25,13 @@ internal sealed class DockSurface : Surface
     AppActivitySnapshot? lastActivity;
     long nextPoll;
     bool pollRunning,disposed;
-    int Columns=>Math.Max(1,Math.Min(Math.Max(1,Station.Apps.Count),(int)((Width-80)/88)));
-    int VisibleRows=>Math.Max(1,(int)((Height-24)/88));
+    bool Column=>Width<256;
+    bool FooterAdd=>Column&&Height>=176;
+    double ContentHeight=>Height-44-(FooterAdd?48:8);
+    double RowPitch=>Math.Min(88,Math.Max(48,ContentHeight));
+    double TargetSize=>Math.Min(80,RowPitch);
+    int Columns=>Column?1:Math.Max(1,Math.Min(Math.Max(1,Station.Apps.Count),(int)((Width-32)/88)));
+    int VisibleRows=>Math.Max(1,(int)(ContentHeight/RowPitch));
     static string Genre(DockApp app)=>Regex.Replace(app.Name.ToLowerInvariant(),"[^a-z0-9]","") switch
     {
         "steam" or "leagueoflegends" or "battlenet" or "epicgames" or "goggalaxy"=>"JEUX",
@@ -42,9 +47,9 @@ internal sealed class DockSurface : Surface
         var groups=Station.Apps.Select((app,index)=>(app,index)).GroupBy(item=>Genre(item.app)).ToArray();
         double required=groups.Sum(group=>Math.Min(2,group.Count())*80+24)+Math.Max(0,groups.Length-1)*12;
         int rows=groups.Length==0?0:groups.Max(group=>(group.Count()+1)/2);
-        if(groups.Length>1&&Width-32>=required&&Height>=rows*80+70)
+        if(groups.Length>1&&Width-32>=required&&ContentHeight>=rows*80+38)
         {
-            var icons=new List<(int,Point)>();double x=16,top=(Height-(rows*80+38))/2;
+            var icons=new List<(int,Point)>();double x=16,top=44+(ContentHeight-(rows*80+38))/2;
             double extra=(Width-32-required)/groups.Length;
             foreach(var group in groups)
             {
@@ -55,9 +60,9 @@ internal sealed class DockSurface : Surface
             }
             return icons.ToArray();
         }
-        ClampRows();int cols=Columns;double pitch=(Width-80)/cols;
+        ClampRows();int cols=Columns;double pitch=(Width-32-(Column&&!FooterAdd?48:0))/cols;
         return Enumerable.Range(rowOffset*cols,Math.Max(0,Math.Min(Station.Apps.Count,(rowOffset+VisibleRows)*cols)-rowOffset*cols))
-            .Select(i=>(i,new Point(16+(i%cols)*pitch+pitch/2,56+(i/cols-rowOffset)*88))).ToArray();
+            .Select(i=>(i,new Point(16+(i%cols)*pitch+pitch/2,44+RowPitch/2+(i/cols-rowOffset)*RowPitch))).ToArray();
     }
     void ClampRows()=>rowOffset=Math.Clamp(rowOffset,0,Math.Max(0,(int)Math.Ceiling(Station.Apps.Count/(double)Columns)-VisibleRows));
     public DockSurface(Station s):base(s,2){Width=720;Height=DesktopLayout.DockHeight(s.Apps.Count);animation=new DispatcherTimer(TimeSpan.FromMilliseconds(16),DispatcherPriority.Render,(_,_)=>Animate(),Dispatcher);animation.Stop();Station.DockChanged+=AppsChanged;}
@@ -150,19 +155,22 @@ internal sealed class DockSurface : Surface
     protected override void OnPointer(MouseEventArgs e)
     {
         int next=-1;
-        foreach(var icon in IconLayout())if(new Rect(icon.Center.X-40,icon.Center.Y-40,80,80).Contains(Pointer))next=icon.Index;
+        foreach(var icon in IconLayout())if(new Rect(icon.Center.X-TargetSize/2,icon.Center.Y-TargetSize/2,TargetSize,TargetSize).Contains(Pointer))next=icon.Index;
         if(next!=hover){Retarget(hover,0);hover=next;Retarget(hover,1);UpdateToolTip();}
     }
     protected override void OnMouseLeave(MouseEventArgs e){Retarget(hover,0);hover=-1;ToolTip=null;base.OnMouseLeave(e);}
     protected override void Paint()
     {
+        if(Width<200)Text("APPLICATIONS",14,16,11,Ink,DockAppearance.HeaderFont,tracking:1);
+        else Header("APPLICATIONS");
         var layout=IconLayout(true);
         foreach(var iconPosition in layout)
         {
             int i=iconPosition.Index;var app=Station.Apps[i];double x=iconPosition.Center.X,y=iconPosition.Center.Y;
+            HoverGlass(new Rect(x-TargetSize/2,y-TargetSize/2,TargetSize,TargetSize),18);
             var key=Regex.Replace(app.Name.ToLowerInvariant(),"[^a-z0-9]","");var path=Path.Combine(Station.Root,"dock/icons/neon",key+".png");
             double p=Math.Clamp((DateTime.UtcNow-since[i]).TotalMilliseconds/160,0,1);
-            double size=72*(1+amount[i]/6-(press[i]?Math.Sin(p*Math.PI)*.065:0));y-=amount[i]*3;
+            double size=Math.Min(72,TargetSize*.9)*(1+amount[i]/6-(press[i]?Math.Sin(p*Math.PI)*.065:0));y-=amount[i]*3;
             var runningPath=Path.Combine(Station.Root,"dock/icons/running",key+".png");var running=ActivityAmount(app);
             var window=windowStates.GetValueOrDefault(app);var glow=running*WindowIntensity(window);
             if(File.Exists(path)){Image(path,x-size/2,y-size/2,size,size);if(glow>0&&File.Exists(runningPath))Image(runningPath,x-size/2,y-size/2,size,size,glow);}
@@ -171,10 +179,10 @@ internal sealed class DockSurface : Surface
             else Text(string.IsNullOrEmpty(app.Name)?"?":app.Name[..1],x,y-22,26,align:"center");
             if(running>0&&window==AppWindowState.Foreground)D.DrawRoundedRectangle(null,new Pen(B("#8CFFFAFF"),1.4),new Rect(x-size/2,y-size/2,size,size),18,18);
             if(running>0&&window==AppWindowState.Tray)D.DrawEllipse(B("#DAD2E7"),null,new Point(x+size*.34,y-size*.34),2.6,2.6);
-            int index=i;Hit("Launch:"+app.Name,x-40,iconPosition.Center.Y-40,80,80,()=>{Retarget(index,hover==index?1:0,true);Station.Launch(app);});
+            int index=i;Hit("Launch:"+app.Name,x-TargetSize/2,iconPosition.Center.Y-TargetSize/2,TargetSize,TargetSize,()=>{Retarget(index,hover==index?1:0,true);Station.Launch(app);});
         }
-        Button("ManageApps","+",Width-44,8,28,28,()=>OpenEditor(),14);
-        int total=(int)Math.Ceiling(Station.Apps.Count/(double)Columns);if(layout.Length<Station.Apps.Count&&total>VisibleRows){double track=Height-64;Box(Width-30,48,3,track,"#305C4868",radius:2);Box(Width-30,48+track*rowOffset/total,3,track*VisibleRows/total,"#A0DAC3E5",radius:2);}
+        Button("ManageApps","+",FooterAdd?Width/2-14:Width-44,FooterAdd?Height-40:Column?44:8,28,28,()=>OpenEditor(),14);
+        int total=(int)Math.Ceiling(Station.Apps.Count/(double)Columns);if(layout.Length<Station.Apps.Count&&total>VisibleRows){double track=ContentHeight;Box(Width-10,44,3,track,"#305C4868",radius:2);Box(Width-10,44+track*rowOffset/total,3,track*VisibleRows/total,"#A0DAC3E5",radius:2);}
     }
     protected override void OnMouseWheel(MouseWheelEventArgs e){rowOffset+=e.Delta>0?-1:1;ClampRows();Refresh();e.Handled=true;}
     internal void OpenEditor(Window? owner=null)

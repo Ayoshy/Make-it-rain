@@ -18,7 +18,9 @@ toucher au reste.
   ne lancent pas plusieurs instances. Une icône en cours précise aussi la fenêtre :
   néon vif et liseré clair au premier plan, néon actuel en arrière-plan, néon
   atténué quand la fenêtre est réduite, nacré avec un point discret pour une
-  application en zone de notification.
+  application en zone de notification. Le titre **APPLICATIONS** suit la police
+  Art déco commune. La colonne peut descendre à 144 px de large ; ses icônes
+  restent centrées et son bouton **+** se place en bas lorsqu'elle est haute.
 - Clic droit sur un bloc → **Réorganiser**. Glisser le bloc pour le déplacer,
   ou ses bords/coins pour le redimensionner. **Lier les docks**, dans la barre,
   active le redimensionnement partagé et la poussée des voisins. Cette liaison
@@ -63,6 +65,10 @@ toucher au reste.
   — palette et fond des deux écrans — vient de la scène et change avec elle.
   Les anciens hôtes terminal conservent leur habillage jusqu’à leur fermeture.
   Voir [les scènes et ambiances](docs/THEMES_SCENES.md).
+- Les titres de dock partagent la police Art déco d'Atelier. Au survol, un liseré
+  coloré souligne les commandes et un reflet lumineux suit la souris sur les
+  cadres liquid glass. Les contrôles désactivés ne s'illuminent pas ; aucun
+  minuteur d'animation supplémentaire. Voir [le style commun](docs/LIQUID_GLASS.md).
 - **Vidéo** : choisir YouTube, Twitch ou Stremio, puis cliquer **Activer le miroir**.
   Un clic sur l'image commande lecture/pause ; **■** arrête le miroir et **↗**
   revient au lecteur. Voir [l'intégration Brave et Stremio](docs/VIDEO.md).
@@ -151,10 +157,11 @@ toucher au reste.
   modifications, gris quand il est inconnu. Chaque carte affiche la branche, les
   fichiers modifiés, l'écart **↑avance / ↓retard** sur le suivi et l'âge du dernier
   commit ; un point néon signale qu'un onglet terminal porte le nom du dossier du
-  projet (indice, pas une preuve d'activité). Ouvrir un projet propose Explorateur,
-  Codex CLI (ChatGPT), Codex CLI (DS) et Kilo CLI (DS) ; les variantes (DS) utilisent
-  DeepSeek, et Kilo ouvre un nouvel onglet du terminal sur le projet sélectionné
-  et y démarre `kilo`.
+  projet (indice, pas une preuve d'activité). Cliquer une carte ouvre un menu sous verre
+  avec icônes nacrées : Explorateur, Codex CLI / ChatGPT, Codex CLI / DeepSeek et
+  Kilo CLI / DeepSeek. Il se replie par son chevron ou un clic hors du menu ; ses
+  quatre tuiles passent sur deux lignes dans un dock étroit. Kilo ouvre un nouvel
+  onglet du terminal sur le projet sélectionné et y démarre `kilo`.
 - **Ctrl+Espace** ouvre la palette : recherche d’applications et projets,
   flèches pour choisir, Entrée pour ouvrir, Échap pour revenir/fermer. Le préfixe
   **>** limite la recherche aux commandes. Un projet propose Explorateur, Codex CLI (ChatGPT),
