@@ -17,7 +17,7 @@ internal static class SingleScreenTests
         var dual=layout.Blocks.ToArray();var before=JsonSerializer.Deserialize<ProfileFile>(File.ReadAllText(profilePath))!;
         var mono=profiles.MatchDisplays(true,layout,settings);
         check(mono is not null&&profiles.Current==DesktopProfiles.Mono&&profiles.ReturnScene=="Bureau perso","Débranchement : scène mono et retour à la scène personnelle mémorisés");
-        check(layout.Blocks.Where(b=>b.Visible).Select(b=>b.Id).ToHashSet().SetEquals(["clock","apps","terminal","video","projects","music","audio","bluetooth"]),"Mono : les huit docks demandés");
+        check(layout.Blocks.Where(b=>b.Visible).Select(b=>b.Id).ToHashSet().SetEquals(["clock","apps","terminal","video","projects","music","audio","disks"]),"Mono : les huit docks demandés");
         check(layout.Blocks.Where(b=>b.Visible).All(b=>layout.Screens[0].Contains(b.Bounds)),"Tous les docks mono tiennent sur le principal");
         check(mono!.ThemeId==settings.ThemeId&&mono.Glass==settings.GlassOpacity,"Le premier passage mono conserve l’apparence choisie");
         check(profiles.MatchDisplays(true,layout,settings) is null&&profiles.ReturnScene=="Bureau perso","Notifications répétées : aucune seconde bascule ni perte du retour");

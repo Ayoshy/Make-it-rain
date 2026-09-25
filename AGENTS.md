@@ -1,24 +1,40 @@
 # Contrat du projet Battlestation
 
-## Application personnelle et périmètre
+## Périmètre
 
-Battlestation est une application personnelle pour Ayo, sur son PC Windows et
-ses périphériques. Elle n'est pas destinée à une utilisation ou distribution
-publique. Développer pour cet environnement et ses usages réels : pas de matrice
-de compatibilité, de généralisation à d'autres utilisateurs ou de mécanismes
-prévus pour des besoins hypothétiques. Ne pas développer ni tester les cas limites
-d'un produit public. Traiter les incidents rencontrés et les risques concrets pour
-ses données, ses sessions et son matériel ; le caractère personnel ne diminue pas
-l'exigence de rendu et de fluidité.
+Battlestation est l'application personnelle d'Ayo : un bureau Windows modulaire
+pour son PC (deux dalles 2560 × 1440, la gauche est l'écran principal et de jeu)
+et ses périphériques. Elle n'est ni destinée ni adaptée à une distribution
+publique : pas de matrice de compatibilité, pas de généralisation à d'autres
+utilisateurs, pas de mécanismes pour besoins hypothétiques. Le caractère
+personnel ne diminue pas l'exigence de rendu et de fluidité.
 
-Tout développement se fait ici. Préserver les projets Conrad Sensor, Codex Meter
-et le fond sous steamapps, y compris leurs états non committés.
-Lire README.md puis les documents utiles à la tâche. Vérifier Git, les worktrees,
-les changements présents et les processus concernés avant intervention.
-Les sources et l'état live décrivent l'implémentation actuelle ; les instructions
-utilisateur définissent le résultat attendu. Les comptes rendus datés, sauvegardes
-et captures sont des preuves historiques, pas des consignes de chantier actives.
-Marquer les anciennes consignes de coordination comme terminées lorsqu'elles le sont.
+Tout développement se fait dans ce dépôt. Lire README.md puis les documents
+utiles à la tâche. Les sources et l'état live décrivent l'implémentation ; les
+instructions d'Ayo définissent le résultat attendu ; les comptes rendus datés,
+sauvegardes et captures sont des preuves historiques, pas des consignes actives.
+
+## État du travail (25 septembre 2026)
+
+- `main` propre, poussée sur GitHub. Version conservée : `build/current.txt` →
+  `battlestation-wallpapers-fable-01`. Le chemin des processus identifie la
+  version réellement chargée ; les PID sont périssables, revérifier en début de
+  session.
+- 21 docks livrés, dont les récents Disques et Gmail. Le compteur Vice City
+  reste indépendant du monitoring et retirable ; sa date est un réglage
+  utilisateur, pas une assertion vérifiée. Journal, sessions de suivi et
+  minuteur sont retirés et ne reviennent pas.
+- Scènes : quatre modèles intégrés (Bureau, Jeu, Multimédia, Mono écran) au
+  format 7 de `profiles.json` (refonte du 25/09 : Disques/Terminal/Projets/Vidéo
+  dans chaque scène ; en Jeu, rien de lié au jeu sur l'écran principal).
+  Voir docs/THEMES_SCENES.md.
+- Chantiers ouverts : la revue du 25/09 (docs/REVIEW_2026-09-25.md) liste les
+  lots restants et les questions pour Ayo ; le lecteur ARAM Mayhem
+  (`handover.txt`, `tools/MayhemReader`, `build/mayhem-reader-*`) est un projet
+  concurrent actif à préserver.
+- Préserver aussi les projets Conrad Sensor, Codex Meter et le fond sous
+  steamapps, y compris leurs états non committés. Vérifier Git, worktrees,
+  changements présents et processus concernés avant intervention.
 
 ## Bureau, rendu et interactions
 
@@ -27,131 +43,112 @@ normales, avec widgets cliquables. Préserver Win+D, le focus et la disposition
 physique 2 × 2560 × 1440. Un export ou une fenêtre de comparaison ne valide pas
 le bureau réel.
 
-Chaque bloc peut être déplacé et redimensionné sur la grille, retiré puis réajouté
-dans un espace libre ; la disposition est sauvegardée. Réutiliser les composants
+Chaque bloc se déplace et se redimensionne sur la grille, se retire puis se
+réajoute ; la disposition est sauvegardée par scène. Réutiliser les composants
 et matériaux communs (`Surface`, `DockAppearance`, styles partagés) et conserver
 les interactions existantes. Tout réglage visuel doit agir de façon perceptible
-sur le composant affiché, pas seulement sur une valeur sauvegardée.
-Le rendu glass reste commun ; couleurs et ambiance évoluent avec les scènes,
-sans réimplémenter les docks ni créer un moteur générique par anticipation.
+sur le composant affiché, pas seulement sur une valeur sauvegardée. Le rendu
+glass reste commun ; couleurs et ambiance évoluent avec les scènes, sans
+réimplémenter les docks ni créer un moteur générique par anticipation.
 
-L'interface ne se décrit pas elle-même : libellés fonctionnels, données et aide
-nécessaire, sans slogans ni sous-titres décoratifs. Effets visibles et soignés,
-icônes nacrées et boutons liquid glass. Le compteur Vice City reste indépendant
-du monitoring et retirable après la sortie du jeu ; sa date est un réglage
-utilisateur conservé, pas une assertion vérifiée. Journal, sessions de suivi et
-minuteur restent supprimés.
+L'interface ne se décrit pas elle-même : libellés fonctionnels, sans slogans ni
+sous-titres décoratifs. Effets visibles et soignés, icônes nacrées, boutons
+liquid glass.
 
-La fluidité fait partie du résultat. Aucune opération lente sur le fil d'interface.
-Réutiliser les ressources de rendu et suspendre les animations et traitements
-devenus inutiles quand un dock est masqué, sans pénaliser l'écran encore visible.
+La fluidité fait partie du résultat. Aucune opération lente sur le fil
+d'interface. Réutiliser les ressources de rendu ; suspendre animations et
+traitements inutiles quand un dock est masqué, sans pénaliser l'écran visible.
 
 ## Sessions et données personnelles
 
-Le terminal utilise ConPTY et le contrôle de rendu natif de Windows Terminal.
-Son hôte .NET vit séparément. Le bureau peut être rechargé pendant une
-implémentation pour activer et vérifier les changements ; cela n'autorise jamais
-la fermeture des hôtes ou onglets actifs. Vérifier les chemins et rôles des
-processus, puis cibler seulement le bureau ; ne jamais tuer tous les processus
-`Battlestation.exe`. Retirer le bloc terminal masque ses sessions sans les fermer.
-Les anciens hôtes restent en place jusqu'à fermeture explicite par l'utilisateur ;
-une session déjà en cours ne se transfère pas vers ConPTY.
+Le terminal utilise ConPTY et le rendu natif de Windows Terminal ; son hôte
+.NET vit séparément. Recharger le bureau pendant une implémentation est permis ;
+fermer des hôtes ou onglets actifs ne l'est jamais. Vérifier chemins et rôles
+des processus, cibler seulement le bureau ; ne jamais tuer tous les
+`Battlestation.exe`. Retirer le bloc terminal masque ses sessions sans les
+fermer ; les anciens hôtes restent en place jusqu'à fermeture explicite par
+Ayo ; une session en cours ne se transfère pas vers ConPTY.
 
-Les réglages actifs sont dans `%LOCALAPPDATA%\Battlestation`. Préserver dispositions,
-profils personnels, applications et préférences ; les valeurs initiales du repo
-ne doivent pas les écraser. Une nouvelle fonctionnalité ou migration conserve les
-choix existants. Vérifier la sauvegarde et le retour à la disposition personnelle
-quand une modification touche aux profils.
+Les réglages actifs sont dans `%LOCALAPPDATA%\Battlestation`. Préserver
+dispositions, profils, applications et préférences ; les valeurs initiales du
+repo ne les écrasent pas. Une nouvelle fonctionnalité ou migration conserve les
+choix existants (et sauvegarde avant, cf. `scene-backups/`). Vérifier le retour
+à la disposition personnelle quand une modification touche aux profils.
 
 ## Méthode de travail et QA
 
-Respecter la portée demandée : une correction d'icône reste locale. Choisir une
-implémentation directe adaptée à cet usage personnel ; ne pas ajouter de couches,
+Respecter la portée demandée : une correction d'icône reste locale. Choisir
+l'implémentation directe adaptée à cet usage personnel ; pas de couches,
 dépendances ou options sans besoin concret. Préserver le travail concurrent.
-En cas de délégation, borner la tâche ; le principal relit le diff, vérifie les
-preuves et reste responsable de l'intégration. La délégation ne vaut pas validation.
+En cas de délégation, transmettre un contrat court et autonome (objectif,
+fichiers, contraintes, preuves attendues) ; le principal relit le diff, vérifie
+les preuves et reste responsable. La délégation ne vaut pas validation.
 
-Limiter le contexte transporté à ce qui sert la tâche. Chercher avec `rg` avant
-de lire les plages utiles ; éviter les fichiers entiers, inventaires et journaux
-volumineux lorsque quelques résultats suffisent. Borner les sorties d'outils,
-sans masquer les erreurs ni les preuves nécessaires. Réutiliser les lectures et
-validations encore valables ; les refaire si l'état concerné a changé.
-En cas de délégation autorisée, transmettre un contrat court et autonome
-(objectif, fichiers, contraintes, preuves attendues), sans recopier tout
-l'historique. Pour un nouveau sujet indépendant, privilégier une nouvelle
-conversation ; avant une transition, conserver un bref état des décisions,
-changements, validations et points ouverts utiles à la reprise.
-Évaluer l'efficacité par tâche terminée, avec qualité et reprises : distinguer
-entrée non cachée, entrée cachée et sortie, raisonnement inclus. Une réponse plus
-courte ou moins de tokens bruts ne prouve pas une économie de coût ou de quota.
+Limiter le contexte au nécessaire : chercher avec `rg` avant de lire les plages
+utiles ; éviter fichiers entiers, inventaires et journaux volumineux quand
+quelques résultats suffisent. Borner les sorties d'outils sans masquer erreurs
+ni preuves. Réutiliser les lectures et validations encore valables. Pour un
+sujet indépendant, préférer une nouvelle conversation avec un bref état des
+décisions et points ouverts.
 
-Vérifier les comportements touchés et les régressions plausibles sur ce PC.
-Pas de revalidation intégrale pour une modification locale, ni de tests exhaustifs
-de configurations étrangères à cet usage. Ajouter ou maintenir des tests utiles
-pour les comportements importants et incidents réels ; éviter les tests qui ne
-font que recopier l'implémentation. Distinguer tests de régression maintenus,
-outils temporaires et preuves avant tout nettoyage ; ne pas supprimer `tests/`
-en bloc au titre des fichiers temporaires.
+Vérifier les comportements touchés et les régressions plausibles sur ce PC,
+sans revalidation intégrale pour une modification locale ni tests de
+configurations étrangères à cet usage. Maintenir des tests utiles pour les
+comportements importants et incidents réels ; éviter ceux qui recopient
+l'implémentation. Ne pas supprimer `tests/` en bloc.
 
 Pour un changement d'interaction ou de rendu, vérifier sur le bureau les gestes
-concernés : clics, survol, déplacements, redimensionnements ou transitions.
-Les commandes internes et rendus WPF isolés ne remplacent pas les clics réels ni
-la fluidité perçue. Distinguer compilation, tests automatisés, rendu isolé, essai
-sur le bureau et confirmation utilisateur ; préciser ce qui reste non vérifié.
-Si un contrôle exige l'utilisateur, ne lui demander que l'observation manquante.
-Une confirmation déjà obtenue pour la même version et le même comportement suffit.
+concernés : clics, survol, déplacements, redimensionnements, transitions. Les
+commandes internes et rendus WPF isolés ne remplacent ni les clics réels ni la
+fluidité perçue. Distinguer compilation, tests automatisés, rendu isolé, essai
+sur le bureau et confirmation utilisateur ; dire ce qui reste non vérifié. Si
+un contrôle exige Ayo, ne demander que l'observation manquante ; une
+confirmation déjà obtenue pour la même version et le même comportement suffit.
 
-Pour les changements de rendu ou de sondes, mesurer les processus techniques
-concernés, helpers compris, dans des conditions comparables. Ne pas déduire un
-gain du nombre d'icônes ; ne pas imposer un benchmark aux changements sans impact
-sur les performances. Mettre à jour la documentation utile et rapporter l'état Git
-réel, la version chargée et les limites de validation. Ne pas transformer
-AGENTS.md en journal de livraison ou en roadmap des futurs docks.
+Pour les changements de rendu ou de sondes, mesurer les processus concernés,
+helpers compris, dans des conditions comparables ; ne pas déduire un gain du
+nombre d'icônes ni imposer un benchmark à un changement sans impact
+performance. Mettre à jour la documentation utile et rapporter l'état Git réel,
+la version chargée et les limites de validation. AGENTS.md n'est ni un journal
+de livraison ni une roadmap : sa section d'état reste courte et datée.
 
 ## Livraison et retrait des anciens builds
 
-Compiler chaque candidat dans un dossier distinct sous `build/`, sans écraser un
-build existant. Le script de build ne change pas `build/current.txt` ; `-NoActivate`
-reste accepté pour les commandes existantes. Charger explicitement le candidat
-pour les essais en préservant les sessions.
+Compiler chaque candidat dans un dossier distinct sous `build/`, sans écraser
+un build existant. Le script de build ne change pas `build/current.txt` ;
+`-NoActivate` reste accepté. Charger explicitement le candidat pour les essais
+en préservant les sessions. Une compilation réussie seule ne promeut rien.
 
-Après validation des comportements concernés et acceptation de la version,
-aligner `build/current.txt` sur le build livré et vérifier les cibles du raccourci
-et du démarrage Windows. Une compilation réussie seule ne promeut pas un build.
-Ne pas laisser le lanceur sur une ancienne version après livraison. Le pointeur
-désigne le prochain lancement ; le chemin des processus identifie la version
-chargée. Ne pas choisir un build par son nom ou sa date seuls.
+L'acceptation ou le rejet d'une version passe par le dock **Atelier** : lire
+son état, ne solliciter aucun verdict parallèle dans le chat, ne jamais
+fabriquer un verdict ni cliquer à la place d'Ayo. **Garder cette version** vaut
+acceptation et aligne lui-même le prochain lancement ; ne pas redemander une
+validation du même build. Une disposition ou un réglage ne nécessite pas
+d'essai Atelier. **Nettoyer les builds** est la demande explicite de
+suppression des builds inutilisés ; utiliser son contrôle des références, sans
+fermer de session.
 
-Le choix ou le rejet d'une version se fait désormais via le dock **Atelier**.
-Ne pas solliciter de décision d'acceptation ou de rejet en parallèle dans le chat ;
-lire l'état d'Atelier et n'y substituer aucun verdict de l'agent.
-Atelier sert aussi à conserver la version ouverte et à nettoyer les builds inutilisés.
-Le clic utilisateur **Garder cette version** vaut acceptation et aligne lui-même
-le prochain lancement ; ne pas demander une deuxième validation du même build.
-Une disposition ou un réglage ne nécessite pas d'essai Atelier. Ne pas fabriquer
-un verdict utilisateur ni cliquer à sa place pour déclarer un candidat accepté.
-Le bouton **Nettoyer les builds** est une demande explicite de suppression des
-builds inutilisés ; utiliser son contrôle des références, sans fermer de session.
-
-Retirer le build remplacé de `build/` : l'archiver sous
-`backups/retired-builds/<date>/` par défaut, ou le supprimer sur demande explicite.
-Avant déplacement ou suppression, vérifier les chemins absolus, processus,
-modules chargés et références persistantes, notamment le pont vidéo. Un build
-encore utilisé reste en place jusqu'à libération ; noter le report sans fermer
-les sessions. Le lanceur refuse les archives et ne choisit pas silencieusement
-un build par défaut si le pointeur manque. Aucun nettoyage de l'historique Git,
-des autres anciens builds ou des dossiers de référence sans demande explicite.
+Après livraison, aligner `build/current.txt`, vérifier raccourci et démarrage
+Windows, puis retirer le build remplacé : archive sous
+`backups/retired-builds/<date>/` par défaut, suppression sur demande explicite.
+Avant tout déplacement, vérifier chemins absolus, processus, modules chargés et
+références persistantes (dont le pont vidéo) ; un build encore utilisé reste en
+place. Le lanceur refuse les archives et ne choisit pas de build par défaut si
+le pointeur manque. Aucun nettoyage de l'historique Git, des autres builds ou
+des dossiers de référence sans demande explicite. Ne pas choisir un build par
+son nom ou sa date seuls.
 
 ## Confidentialité et matériel
 
-Ne jamais lire, copier ou afficher d'identifiants Codex. Les associations privées
-`conrad-connection.js`, `codex-connection.js` et `wallpaper-token.txt` restent hors
-des sources et de Git. Les caches d'usage ne conservent que des compteurs. Les
-sorties du terminal ne sont pas journalisées. Aucun appel consommant du crédit ;
-ne jamais envoyer automatiquement un prompt ou une image pour tester le terminal.
-Absence != zéro ; modèle inconnu != tarif de substitution.
+Ne jamais lire, copier ou afficher d'identifiants Codex. `conrad-connection.js`,
+`codex-connection.js` et `wallpaper-token.txt` restent hors des sources et de
+Git. Les caches d'usage ne conservent que des compteurs ; les sorties du
+terminal ne sont pas journalisées. Aucun appel consommant du crédit ; ne jamais
+envoyer automatiquement un prompt ou une image pour tester le terminal.
+Absence ≠ zéro ; modèle inconnu ≠ tarif de substitution.
 
-Avant de modifier les réglages GPU ou de fermer Conrad ou un helper GPU, relever
-les consignes GPU et l'état de Canicule. Pour tout essai matériel, relever puis
-restaurer et vérifier les seuls réglages concernés. Les tests de bornes ne
-remplacent pas l'essai sur le matériel concerné et sa restauration vérifiée.
+Avant de modifier les réglages GPU ou de fermer Conrad ou un helper GPU,
+relever les consignes GPU et l'état de Canicule. Pour tout essai matériel,
+relever puis restaurer et vérifier les seuls réglages concernés ; les tests de
+bornes ne remplacent pas l'essai sur le matériel réel et sa restauration
+vérifiée.

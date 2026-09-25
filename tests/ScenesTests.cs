@@ -53,7 +53,7 @@ internal static class ScenesTests
                 var redesigned=profiles.Switch(name,layout,settings);settings=Settings(settings,redesigned);
                 Check(layout.Blocks.All(block=>layout.Valid(block)),name+" : disposition valide sur les deux écrans");
                 Check(layout["network"].Visible==(redesigned.TemplateId is "Bureau" or "Jeu"),name+" : réseau selon le modèle");
-                foreach(string required in new[]{"terminal","projects","video"})Check(layout[required].Visible,name+" : "+required+" visible");
+                foreach(string required in new[]{"terminal","projects","video","disks"})Check(layout[required].Visible,name+" : "+required+" visible");
                 Check(layout["lol"].Visible==(redesigned.TemplateId=="Jeu"),name+" : LoL seulement en Jeu");
                 Check(layout["dualsense"].Visible==(redesigned.TemplateId =="Jeu"),name+" : DualSense en Jeu");
                 Check(layout.Blocks.Where(b=>b.Visible).All(b=>b.Width>=DesktopLayout.Minimum(b.Id).Width&&b.Height>=DesktopLayout.Minimum(b.Id).Height),name+" : tailles minimales respectées");
@@ -80,10 +80,10 @@ internal static class ScenesTests
                 var preset=DesktopProfiles.Preset(name,models);
                 Check(preset.Single(b=>b.Id=="lol").Visible==(name=="Jeu"),name+" ne montre LoL qu'en Jeu");
                 Check(preset.Single(b=>b.Id=="dualsense").Visible==(name =="Jeu"),name+" ne montre la DualSense qu'en Jeu");
-                foreach(string required in new[]{"terminal","projects","video"})Check(preset.Single(b=>b.Id==required).Visible,name+" réserve "+required);
+                foreach(string required in new[]{"terminal","projects","video","disks"})Check(preset.Single(b=>b.Id==required).Visible,name+" réserve "+required);
                 if(name=="Jeu"){
                     var secondary=preset.Where(b=>b.Visible&&b.X>=2560).Select(b=>b.Id).ToHashSet();
-                    Check(secondary.SetEquals(new[]{"video","terminal","network","lol","dualsense"}),"Jeu : les cinq docks utiles sur le secondaire, le reste sur le principal");
+                    Check(secondary.SetEquals(new[]{"video","audio","hardware","clock","music","countdown","dualsense","lol","network"}),"Jeu : les blocs utiles en partie sur le secondaire, rien de lié au jeu sur le principal");
                     Check(preset.Single(b=>b.Id=="video").Width>=1500&&preset.Single(b=>b.Id=="terminal").Width>=1500,"Jeu : vidéo et terminal restent larges");
                 }
             }

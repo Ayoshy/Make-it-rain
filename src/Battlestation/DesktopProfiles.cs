@@ -27,7 +27,7 @@ internal sealed class DesktopProfiles
         {
             if(File.Exists(file)&&JsonSerializer.Deserialize<ProfileFile>(File.ReadAllText(file)) is {} saved)
             {
-                migrationPending=saved.Version<3;NeedsRedesign=saved.Version<6;
+                migrationPending=saved.Version<3;NeedsRedesign=saved.Version<7;
                 profiles=(saved.Profiles??[]).Where(p=>!string.IsNullOrWhiteSpace(p.Key)&&p.Value?.Blocks is not null).ToDictionary(p=>p.Key,p=>saved.Version<2?p.Value with{ThemeId="vice-city",TemplateId=Presets.Contains(p.Key)?p.Key:"Personnel"}:p.Value);
                 if(Names.Contains(saved.Current)||profiles.ContainsKey(saved.Current))Current=saved.Current;
                 ReturnScene=saved.ReturnScene;
@@ -101,7 +101,7 @@ internal sealed class DesktopProfiles
         var next=new Dictionary<string,DesktopProfile>(profiles);next.Remove(name);Persist(Current,next);profiles=next;
     }
     void Persist(string current,Dictionary<string,DesktopProfile> next)=>Persist(current,next,ReturnScene);
-    void Persist(string current,Dictionary<string,DesktopProfile> next,string? returnScene)=>DesktopSettings.Write(path,JsonSerializer.Serialize(new ProfileFile(current,next,6,returnScene),new JsonSerializerOptions{WriteIndented=true}));
+    void Persist(string current,Dictionary<string,DesktopProfile> next,string? returnScene)=>DesktopSettings.Write(path,JsonSerializer.Serialize(new ProfileFile(current,next,7,returnScene),new JsonSerializerOptions{WriteIndented=true}));
     internal DesktopProfile RedesignAll(DesktopLayout layout,DesktopSettings settings,int apps)
     {
         var existing=new Dictionary<string,DesktopProfile>(profiles){[Current]=Snapshot(layout,settings)};
@@ -140,31 +140,34 @@ internal sealed class DesktopProfiles
     {
         (string Id,double X,double Y,double W,double H)[] cells=name switch
         {
+            // Refonte du 25 septembre : Disques, Terminal, Projets et Vidéo dans chaque
+            // scène ; en Jeu, le principal (écran de jeu) ne porte que des blocs sans
+            // rapport avec le jeu, les blocs utiles en partie vivent sur le secondaire.
             "Bureau"=>[
-                ("terminal",32,32,1280,944),("projects",32,1000,1280,344),
-                ("notes",1344,32,560,312),("reminders",1344,368,560,168),
-                ("atelier",1936,32,592,280),("usage",1936,496,592,224),
-                ("hardware",1936,744,592,224),("network",1936,992,592,336),
-                ("video",2592,32,1568,936),("apps",2592,992,1568,160),
-                ("clock",4448,32,640,160),("weather",4448,216,640,224),
-                ("music",4448,464,640,264),("audio",4448,752,640,264),("bluetooth",4448,1040,640,208)],
+                ("terminal",24,24,1280,948),("projects",24,996,1280,420),
+                ("notes",1328,24,560,324),("reminders",1328,372,560,132),
+                ("gmail",1328,528,560,444),("atelier",1328,996,560,420),
+                ("video",2584,24,1440,864),("apps",2584,912,1440,160),("network",2584,1096,592,320),
+                ("clock",4504,24,592,156),("weather",4504,204,592,204),
+                ("disks",4504,432,592,384),("hardware",4504,840,592,224),("usage",4504,1088,592,224)],
             "Jeu"=>[
-                ("video",2584,24,1568,888),("terminal",2584,936,1568,480),
-                ("dualsense",4176,24,920,600),("lol",4176,648,920,264),("network",4176,936,920,480),
-                ("apps",24,24,2512,160),("clock",24,208,616,176),("weather",664,208,616,176),
-                ("usage",24,408,616,280),("hardware",664,408,616,280),
-                ("audio",24,712,1256,280),("bluetooth",24,1016,616,400),("music",664,1016,616,400),
-                ("projects",1304,208,1232,560),("countdown",1304,792,1232,624)],
+                ("apps",24,24,2512,160),
+                ("terminal",24,208,1500,852),("projects",24,1084,1500,332),
+                ("disks",1548,208,988,428),("usage",1548,660,988,300),("bluetooth",1548,984,988,192),
+                ("video",2584,24,1560,876),("audio",2584,924,768,300),("hardware",3376,924,768,300),
+                ("clock",2584,1248,768,168),("music",3376,1248,768,168),
+                ("countdown",4168,24,928,396),("dualsense",4168,444,928,444),
+                ("lol",4168,912,928,192),("network",4168,1128,928,288)],
             "Multimédia"=>[
-                ("terminal",24,24,1320,1040),("projects",24,1088,1320,328),
-                ("music",1368,24,1168,608),("audio",1368,656,1168,472),("bluetooth",1368,1152,1168,264),
-                ("video",2584,24,1888,1128),("apps",2584,1176,1888,240),
-                ("clock",4496,24,600,200),("weather",4496,248,600,280)],
+                ("terminal",24,24,1500,1032),("projects",24,1080,1500,336),
+                ("music",1548,24,988,600),("audio",1548,648,988,432),("bluetooth",1548,1104,988,312),
+                ("video",2584,24,1896,1128),("apps",2584,1176,1896,160),
+                ("clock",4504,24,592,168),("weather",4504,216,592,240),("disks",4504,480,592,456)],
             Mono=>[
                 ("clock",24,24,512,160),("apps",560,24,1976,160),
-                ("terminal",24,208,1320,832),("projects",24,1064,1320,352),
-                ("video",1368,208,1168,752),("music",1368,984,704,184),
-                ("audio",1368,1192,704,224),("bluetooth",2096,984,440,432)],
+                ("terminal",24,208,1320,800),("projects",24,1032,1320,384),
+                ("video",1368,208,1168,656),("disks",1368,888,572,528),
+                ("audio",1964,888,572,252),("music",1964,1164,572,252)],
             _=>throw new ArgumentException("Scène inconnue.")
         };
         return original.Select(block=>{

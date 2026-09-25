@@ -29,25 +29,33 @@ extern "C" __declspec(dllexport) long ThemePreview(const wchar_t* resources,cons
 #ifndef THEME_BASELINE
 extern "C" __declspec(dllexport) int WallpaperRotationChecks(){
     using namespace NativeBackground;
-    wallpaperSeconds=0;
+    wallpaperSeconds=0;bureauSeconds=0;
     AdvanceWallpaper(299,true,true,true);if(WallpaperIndex()!=0||WallpaperBlend()!=1)return 1;
     AdvanceWallpaper(60,false,true,true);AdvanceWallpaper(60,true,false,true);AdvanceWallpaper(60,true,true,false);
     if(wallpaperSeconds!=299)return 2;
     AdvanceWallpaper(1,true,true,true);if(WallpaperIndex()!=1||WallpaperBlend()!=0)return 3;
     AdvanceWallpaper(1,true,true,true);if(WallpaperBlend()!=.5f)return 4;
     AdvanceWallpaper(1,true,true,true);if(WallpaperBlend()!=1)return 5;
-    AdvanceWallpaper(298,true,true,true);if(WallpaperIndex()!=0||WallpaperBlend()!=0)return 6;
-    wallpaperSeconds=0;return 0;
+    AdvanceWallpaper(298,true,true,true);if(WallpaperIndex()!=2||WallpaperBlend()!=0)return 6;
+    AdvanceWallpaper(300,true,true,true);if(WallpaperIndex()!=0||WallpaperBlend()!=0)return 7;
+    AdvanceWallpaper(301,true,true,true,2);
+    if(bureauSeconds!=301||wallpaperSeconds!=900||WallpaperIndex(bureauSeconds,2)!=1||WallpaperBlend(bureauSeconds)!=.5f)return 8;
+    AdvanceWallpaper(60,false,true,true,2);AdvanceWallpaper(60,true,false,true,2);AdvanceWallpaper(60,true,true,false,2);AdvanceWallpaper(60,true,true,true,1);
+    if(bureauSeconds!=301||wallpaperSeconds!=900)return 9;
+    AdvanceWallpaper(299,true,true,true,2);if(WallpaperIndex(bureauSeconds,2)!=0||WallpaperBlend(bureauSeconds)!=0)return 10;
+    wallpaperSeconds=0;bureauSeconds=0;return 0;
 }
 extern "C" __declspec(dllexport) int WallpaperPersistenceChecks(const wchar_t* directory){
     using namespace NativeBackground;
     auto file=std::filesystem::path(directory)/L"wallpaper-progress-test.txt";
-    wallpaperSeconds=301.25;if(!SaveWallpaperProgress(file))return 1;
+    wallpaperSeconds=301.25;bureauSeconds=487.5;if(!SaveWallpaperProgress(file))return 1;
     wallpaperSeconds=0;LoadWallpaperProgress(file);
-    if(wallpaperSeconds!=301.25||WallpaperIndex()!=1||WallpaperBlend()!=.625f)return 2;
+    if(wallpaperSeconds!=301.25||bureauSeconds!=487.5||WallpaperIndex()!=1||WallpaperBlend()!=.625f)return 2;
     AdvanceWallpaper(300,false,true,true);SaveWallpaperProgress(file);wallpaperSeconds=0;LoadWallpaperProgress(file);
     if(wallpaperSeconds!=301.25)return 3;
-    wallpaperSeconds=0;return 0;
+    {std::ofstream legacy(file);legacy<<"123.5";}
+    LoadWallpaperProgress(file);if(wallpaperSeconds!=123.5||bureauSeconds!=0)return 4;
+    wallpaperSeconds=0;bureauSeconds=0;return 0;
 }
 extern "C" __declspec(dllexport) long PhotoEffectsPreview(const wchar_t* resources,const wchar_t* output,int selected,int enabled,const unsigned int* colors,const float* panels){
     NativeBackground::testPhotoEffects=enabled!=0;
@@ -58,6 +66,11 @@ extern "C" __declspec(dllexport) long WallpaperPreview(const wchar_t* resources,
     NativeBackground::wallpaperSeconds=seconds;
     auto result=Preview(resources,output,0,15,colors,panels,1.f);
     NativeBackground::wallpaperSeconds=0;return result;
+}
+extern "C" __declspec(dllexport) long BureauWallpaperPreview(const wchar_t* resources,const wchar_t* output,double seconds,const unsigned int* colors,const float* panels){
+    NativeBackground::bureauSeconds=seconds;
+    auto result=Preview(resources,output,2,15,colors,panels,1.f);
+    NativeBackground::bureauSeconds=0;return result;
 }
 // Same frame on another monitor set: the canvas is the virtual desktop box, so
 // a laptop panel or an ultrawide must render at its own size without falling

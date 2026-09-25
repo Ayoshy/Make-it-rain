@@ -21,7 +21,7 @@ internal static class SceneMigrationTests
         profiles.RedesignAll(layout,settings,11);
         check(profiles.Current=="Multimédia"&&profiles.AllNames.SequenceEqual(new[]{"Bureau","Jeu","Multimédia",DesktopProfiles.Mono,"Copie utile"}),"Tri : quatre modèles, copie conservée, Try 1 et anciens modèles retirés");
         var migrated=JsonSerializer.Deserialize<ProfileFile>(File.ReadAllText(file))!;
-        check(migrated.Version==6&&migrated.Profiles["Copie utile"].Blocks.SequenceEqual(blocks)&&migrated.Profiles["Copie utile"].TemplateId=="Bureau","Format 6 : copie personnelle intacte, référence du modèle mise à jour");
+        check(migrated.Version==7&&migrated.Profiles["Copie utile"].Blocks.SequenceEqual(blocks)&&migrated.Profiles["Copie utile"].TemplateId=="Bureau","Format 7 : copie personnelle intacte, référence du modèle mise à jour");
         check(migrated.Profiles["Multimédia"] is{ThemeId:"obsidienne",Glass:.37,Animate:false,Intensity:.23},"L'ambiance change sans effacer les réglages de verre et animation");
         layout.SetVisible("weather",false);profiles.SaveCurrent(layout,settings);var edited=layout.Blocks.ToArray();
         var again=new DesktopProfiles(file);check(!again.NeedsRedesign,"La migration ne se répète pas");

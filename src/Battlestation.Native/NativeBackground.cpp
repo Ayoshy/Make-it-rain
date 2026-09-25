@@ -35,12 +35,14 @@ static std::wstring images;
 static int canvasWidth=5120,canvasHeight=1440,canvasLeft=0,canvasTop=0,seamX=2560;
 static double elapsed=0, easedX=0, easedY=0;
 static std::atomic<bool> wallpaperRotation=false;
-static double wallpaperSeconds=0;
-static void AdvanceWallpaper(double dt,bool visible,bool animated,bool game){
-    if(visible&&animated&&game)wallpaperSeconds+=dt;
+static double wallpaperSeconds=0,bureauSeconds=0;
+static void AdvanceWallpaper(double dt,bool visible,bool animated,bool enabled,int theme=0){
+    if(!visible||!animated||!enabled)return;
+    if(theme==0)wallpaperSeconds+=dt;
+    if(theme==2)bureauSeconds+=dt;
 }
-static int WallpaperIndex(){return int(wallpaperSeconds/300)%2;}
-static float WallpaperBlend(){return wallpaperSeconds<300?1.f:float(std::min(1.0,std::fmod(wallpaperSeconds,300.0)/2.0));}
+static int WallpaperIndex(double seconds=wallpaperSeconds,int count=3){return int(std::fmod(seconds/300,count));}
+static float WallpaperBlend(double seconds=wallpaperSeconds){return seconds<300?1.f:float(std::min(1.0,std::fmod(seconds,300.0)/2.0));}
 static std::mutex glassMutex;
 static D2D1_RECT_F glassRects[PanelSlots]={};
 static std::atomic<bool> glassDirty=true;
@@ -69,15 +71,17 @@ return std::filesystem::path(local)/L"Battlestation";
 static void LoadWallpaperProgress(const std::filesystem::path& file){
     double saved=0;std::ifstream input(file);
     if(input>>saved&&std::isfinite(saved)&&saved>=0)wallpaperSeconds=saved;
+    bureauSeconds=0;
+    if(input>>saved&&std::isfinite(saved)&&saved>=0)bureauSeconds=saved;
 }
 static bool SaveWallpaperProgress(const std::filesystem::path& file){
     auto pending=file;pending+=L".tmp";
-    {std::ofstream output(pending);output.precision(15);output<<wallpaperSeconds;output.close();if(!output)return false;}
+    {std::ofstream output(pending);output.precision(15);output<<wallpaperSeconds<<'\n'<<bureauSeconds;output.close();if(!output)return false;}
     return MoveFileExW(pending.c_str(),file.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)!=0;
 }
 struct Paint {
     ID2D1RenderTarget* target;
-    ComPtr<ID2D1Bitmap> art,alternateArt,posters[2],glows[3],bokeh[3],vignette;
+    ComPtr<ID2D1Bitmap> art,alternateArt,boulevard,bureauAlternate,posters[2],glows[3],bokeh[3],vignette;
     ComPtr<ID2D1SolidColorBrush> brush;
     ComPtr<ID2D1LinearGradientBrush> fade,posterFade;
     ComPtr<ID2D1Layer> layer,themeLayer,sceneLayer;
@@ -121,6 +125,8 @@ struct Paint {
         };
         load(L"jason-lucia.jpg",art);
         load(L"jason-lucia-03-painted.png",alternateArt);
+        load(L"vice-city-boulevard.png",boulevard);
+        load(L"manhattan-blue-hour.png",bureauAlternate);
         optional(L"obsidienne-photo.png",posters[0]);
         optional(L"aurore-photo.png",posters[1]);
         load(L"vignette.png",vignette);
@@ -175,9 +181,11 @@ struct Paint {
     D2D1_COLOR_F EdgeColor(float alpha){auto c=ThemeColor(5,alpha);c.r+=(1-palettes[0][5].r)*weights[0];c.g+=(.92f-palettes[0][5].g)*weights[0];c.b+=(1-palettes[0][5].b)*weights[0];return c;}
     void Fill(D2D1_RECT_F rect,D2D1_COLOR_F color){brush->SetColor(color);target->FillRectangle(rect,brush.Get());}
     void ViceCity(){auto rt=target;
-        auto selected=WallpaperIndex()==0?art.Get():alternateArt.Get();
-        auto previous=WallpaperIndex()==0?alternateArt.Get():art.Get();
-        float mix=WallpaperBlend();
+        int index=WallpaperIndex(),prior=(index+2)%3;
+        auto selected=index==0?art.Get():alternateArt.Get();
+        auto previous=prior==0?art.Get():alternateArt.Get();
+        float rotationMix=WallpaperBlend();
+        float mix=index==2||prior==2?1.f:rotationMix;
         Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),D2D1::ColorF(.09f,.055f,.14f));
         auto backdrop=[&](ID2D1Bitmap* bitmap,float alpha){auto size=bitmap->GetSize();rt->DrawBitmap(bitmap,D2D1::RectF(0,0,canvasWidth,canvasHeight),alpha,D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,D2D1::RectF(size.width*.75f,size.height*.38f,size.width,size.height*.51f));};
         if(mix<1)backdrop(previous,.5f);
@@ -189,6 +197,9 @@ struct Paint {
         if(mix<1)rt->DrawBitmap(previous,D2D1::RectF(-77+dx,-43+dy,2637+dx,1483+dy));
         rt->DrawBitmap(selected,D2D1::RectF(-77+dx,-43+dy,2637+dx,1483+dy),mix);rt->PopLayer();
         Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),D2D1::ColorF(.063f,.027f,.118f,.14f));
+        // The new panorama spans both screens; retain the original character framing.
+        float panoramaMix=index==2?rotationMix:(prior==2?1-rotationMix:0);
+        if(panoramaMix>0)Blit(boulevard,panoramaMix);
         rt->DrawBitmap(glows[1].Get(),D2D1::RectF(2450,-150,5350,1600),.18f);
         rt->DrawBitmap(glows[2].Get(),D2D1::RectF(200,-200,2800,1600),.09f);
         // Broad pearl light and thin ripples stay behind the glass.
@@ -250,7 +261,12 @@ struct Paint {
     // Photo effects follow the image, using two cached brushes rather than the GTA particles.
     void Poster(int theme,float weight){
         auto rt=target;Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),palettes[theme][0]);
-        Blit(posters[theme-1],weight);
+        int index=theme==2?WallpaperIndex(bureauSeconds,2):0;
+        float mix=theme==2?WallpaperBlend(bureauSeconds):1.f;
+        auto& selected=index==1?bureauAlternate:posters[theme-1];
+        auto& previous=index==1?posters[theme-1]:bureauAlternate;
+        if(mix<1)Blit(previous,weight);
+        Blit(selected,weight*mix);
         Fill(D2D1::RectF(0,0,canvasWidth,canvasHeight),Tint(theme,3,.06f*weight));
         auto size=posters[theme-1]->GetSize();float scale=std::max(canvasWidth/size.width,canvasHeight/size.height)*1.025f;
         float w=size.width*scale,h=size.height*scale;
@@ -265,6 +281,8 @@ struct Paint {
         if(testPhotoEffects){
 #endif
         if(theme==2){
+            // Fade the original facade effects out over the quieter blue-hour photo.
+            weight*=index==1?1-mix:mix;
             // Warm moving reflections on four curtain-wall facades, two restrained optical flares.
             const float xs[]={.146f,.438f,.761f,.934f},ys[]={.31f,.23f,.20f,.39f};
             for(int i=0;i<4;i++){
@@ -386,7 +404,7 @@ static DWORD WINAPI Run(void*){
     CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
     HWND window=nullptr;
     const auto progressFile=Output()/L"wallpaper-progress.txt";LoadWallpaperProgress(progressFile);
-    double savedProgress=wallpaperSeconds;ULONGLONG nextProgress=GetTickCount64()+5000;
+    double savedProgress=wallpaperSeconds,savedBureau=bureauSeconds;ULONGLONG nextProgress=GetTickCount64()+5000;
     const char* stage="register window class";
     try{
         WNDCLASSW cls{};cls.lpfnWndProc=Proc;cls.hInstance=GetModuleHandleW(nullptr);cls.lpszClassName=L"BattlestationBackground";RegisterClassW(&cls);
@@ -419,7 +437,7 @@ static DWORD WINAPI Run(void*){
                     if(testLoseTarget.exchange(false)){++testLosses;throw HRESULT(D2DERR_RECREATE_TARGET);}
 #endif
                     if(!paused)elapsed+=dt;
-                    AdvanceWallpaper(dt,monitors!=0,animateBackground.load(),wallpaperRotation.load()&&themeIndex==0);
+                    AdvanceWallpaper(dt,monitors!=0,animateBackground.load(),wallpaperRotation.load(),themeIndex);
                     POINT p;GetCursorPos(&p);double blend=1-std::exp(-dt*3);
                     easedX+=(((p.x-canvasLeft)/double(canvasWidth)*2-1)-easedX)*blend;easedY+=(((p.y-canvasTop)/double(canvasHeight)*2-1)-easedY)*blend;
                     auto began=std::chrono::steady_clock::now();paint->Draw(monitors);renderMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-began).count();++rendered;first=false;
@@ -430,15 +448,15 @@ static DWORD WINAPI Run(void*){
             }
             if(capture.exchange(false)){try{SaveFrame(factory.Get(),wic.Get());}catch(...){std::ofstream log(Output()/L"native-capture-error.txt");log<<"Capture failed; renderer remains running";}}
             if(GetTickCount64()>=nextState){nextState=GetTickCount64()+(paused?5000:1000);
-                std::ofstream state(Output()/L"native-renderer-state.json");state<<"{\"pid\":"<<GetCurrentProcessId()<<",\"paused\":"<<(paused?"true":"false")<<",\"elapsed\":"<<elapsed<<",\"hwnd\":"<<(uintptr_t)window<<",\"parent\":"<<(uintptr_t)parentWindow<<",\"width\":"<<canvasWidth<<",\"height\":"<<canvasHeight<<",\"renderedFrames\":"<<rendered<<",\"renderMilliseconds\":"<<renderMs<<",\"wallpaperSeconds\":"<<wallpaperSeconds<<",\"wallpaperIndex\":"<<WallpaperIndex()<<",\"wallpaperBlend\":"<<WallpaperBlend()<<",\"sceneAlpha\":"<<sceneAlpha.load()<<",\"panels\":[";
+                std::ofstream state(Output()/L"native-renderer-state.json");state<<"{\"pid\":"<<GetCurrentProcessId()<<",\"paused\":"<<(paused?"true":"false")<<",\"elapsed\":"<<elapsed<<",\"hwnd\":"<<(uintptr_t)window<<",\"parent\":"<<(uintptr_t)parentWindow<<",\"width\":"<<canvasWidth<<",\"height\":"<<canvasHeight<<",\"renderedFrames\":"<<rendered<<",\"renderMilliseconds\":"<<renderMs<<",\"wallpaperSeconds\":"<<wallpaperSeconds<<",\"wallpaperIndex\":"<<WallpaperIndex()<<",\"wallpaperBlend\":"<<WallpaperBlend()<<",\"bureauSeconds\":"<<bureauSeconds<<",\"bureauIndex\":"<<WallpaperIndex(bureauSeconds,2)<<",\"bureauBlend\":"<<WallpaperBlend(bureauSeconds)<<",\"sceneAlpha\":"<<sceneAlpha.load()<<",\"panels\":[";
                 std::lock_guard<std::mutex> lock(glassMutex);bool comma=false;
                 for(int i=0;i<PanelSlots;i++){auto r=glassRects[i];if(r.right<=r.left||r.bottom<=r.top)continue;if(comma)state<<",";comma=true;state<<"{\"slot\":"<<i<<",\"x\":"<<r.left<<",\"y\":"<<r.top<<",\"width\":"<<r.right-r.left<<",\"height\":"<<r.bottom-r.top<<"}";}state<<"]}";
             }
-            if(GetTickCount64()>=nextProgress){nextProgress=GetTickCount64()+5000;if(wallpaperSeconds-savedProgress>=1&&SaveWallpaperProgress(progressFile))savedProgress=wallpaperSeconds;}
+            if(GetTickCount64()>=nextProgress){nextProgress=GetTickCount64()+5000;if((wallpaperSeconds-savedProgress>=1||bureauSeconds-savedBureau>=1)&&SaveWallpaperProgress(progressFile)){savedProgress=wallpaperSeconds;savedBureau=bureauSeconds;}}
             HANDLE events[]={stopEvent,wakeEvent};WaitForMultipleObjects(2,events,FALSE,paused&&!transitioning?500:33);
         }
     }catch(HRESULT hr){std::ofstream log(Output()/L"native-renderer-error.txt");log<<stage<<": HRESULT "<<std::hex<<hr;}catch(...){std::ofstream log(Output()/L"native-renderer-error.txt");log<<stage<<": native renderer failed";}
-    if(wallpaperSeconds!=savedProgress)SaveWallpaperProgress(progressFile);
+    if(wallpaperSeconds!=savedProgress||bureauSeconds!=savedBureau)SaveWallpaperProgress(progressFile);
     if(window)DestroyWindow(window);UnregisterClassW(L"BattlestationBackground",GetModuleHandleW(nullptr));CoUninitialize();return 0;
 }
 void SetPalette(int index,const unsigned int* colors){if(index<0||index>2||!colors)return;for(int i=0;i<6;i++)palettes[index][i]=D2D1::ColorF(colors[i]);}

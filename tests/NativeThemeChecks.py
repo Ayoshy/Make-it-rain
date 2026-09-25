@@ -7,7 +7,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageStat
 root, output = map(Path, sys.argv[1:3])
 themes = json.loads((root / "src/Battlestation/Themes.json").read_text(encoding="utf-8"))
 colors = (ctypes.c_uint * 18)(*[int(theme[key][1:],16) for theme in themes for key in ("Base","Light","Secondary","Glass","Rim","Edge")])
-slots = 20
+slots = 23
 panels = (ctypes.c_float * (slots * 4))()
 if len(sys.argv)>3 and sys.argv[3]:
     blocks=json.loads(Path(sys.argv[3]).read_text(encoding="utf-8-sig"))
@@ -42,7 +42,7 @@ assert native_rotation.WallpaperPersistenceChecks(str(output))==0, "Wallpaper pr
 print("PASS wallpaper progress survives reload and pause")
 native_rotation.WallpaperPreview.argtypes=[ctypes.c_wchar_p,ctypes.c_wchar_p,ctypes.c_double,ctypes.POINTER(ctypes.c_uint),ctypes.POINTER(ctypes.c_float)]
 rotation_frames=[]
-for seconds in [299,300,301,302,600,602]:
+for seconds in [299,300,301,302,600,601,602,900,901,902]:
     folder=output/("wallpaper-"+str(seconds))
     assert native_rotation.WallpaperPreview(str(root/"assets/Images"),str(folder),seconds,colors,panels)==0
     rotation_frames.append(Image.open(folder/"Battlestation/native-background-frame.png").convert("RGB"))
@@ -50,8 +50,26 @@ assert ImageChops.difference(rotation_frames[0],rotation_frames[1]).getbbox() is
 assert ImageChops.difference(rotation_frames[1],rotation_frames[2]).getbbox(), "Mid-fade absent"
 assert ImageChops.difference(rotation_frames[2],rotation_frames[3]).getbbox(), "Second illustration absent"
 assert ImageChops.difference(rotation_frames[3],rotation_frames[4]).getbbox() is None, "Return fade jumps"
-assert ImageChops.difference(rotation_frames[0],rotation_frames[5]).getbbox() is None, "Cycle does not return to original"
+assert ImageChops.difference(rotation_frames[4],rotation_frames[5]).getbbox(), "Third image mid-fade absent"
+assert ImageChops.difference(rotation_frames[3],rotation_frames[6]).getbbox(), "Third illustration absent"
+assert ImageChops.difference(rotation_frames[6],rotation_frames[7]).getbbox() is None, "Third image return fade jumps"
+assert ImageChops.difference(rotation_frames[7],rotation_frames[8]).getbbox(), "Return mid-fade absent"
+assert ImageChops.difference(rotation_frames[0],rotation_frames[9]).getbbox() is None, "Cycle does not return to original"
 print("PASS wallpaper rotation: 300s, 2s fade, pause, full image cycle")
+
+native_rotation.BureauWallpaperPreview.argtypes=native_rotation.WallpaperPreview.argtypes
+bureau_frames=[]
+for seconds in [299,300,301,302,600,601,602]:
+    folder=output/("bureau-wallpaper-"+str(seconds))
+    assert native_rotation.BureauWallpaperPreview(str(root/"assets/Images"),str(folder),seconds,colors,panels)==0
+    bureau_frames.append(Image.open(folder/"Battlestation/native-background-frame.png").convert("RGB"))
+assert ImageChops.difference(bureau_frames[0],bureau_frames[1]).getbbox() is None, "Bureau fade jumps"
+assert ImageChops.difference(bureau_frames[1],bureau_frames[2]).getbbox(), "Bureau mid-fade absent"
+assert ImageChops.difference(bureau_frames[0],bureau_frames[3]).getbbox(), "Blue hour absent"
+assert ImageChops.difference(bureau_frames[3],bureau_frames[4]).getbbox() is None, "Bureau return fade jumps"
+assert ImageChops.difference(bureau_frames[4],bureau_frames[5]).getbbox(), "Bureau return mid-fade absent"
+assert ImageChops.difference(bureau_frames[0],bureau_frames[6]).getbbox() is None, "Bureau cycle incomplete"
+print("PASS independent Bureau rotation: full cycle, fades, pause, legacy persistence")
 
 native_rotation.PhotoEffectsPreview.argtypes=[ctypes.c_wchar_p,ctypes.c_wchar_p,ctypes.c_int,ctypes.c_int,ctypes.POINTER(ctypes.c_uint),ctypes.POINTER(ctypes.c_float)]
 for selected in [1,2]:

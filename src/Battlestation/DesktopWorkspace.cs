@@ -188,7 +188,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
             case GmailSurface gmail:gmail.SetActive(active);break;
         }
     }
-    void ApplyAll(){Native.BackgroundWallpaperRotation(profiles?.Current=="Jeu"?1:0);foreach(string id in surfaces.Keys)Apply(id,false);placement.Arrange();}
+    void ApplyAll(){Native.BackgroundWallpaperRotation(profiles?.Current is "Jeu" or "Bureau"?1:0);foreach(string id in surfaces.Keys)Apply(id,false);placement.Arrange();}
     void HideBlock(string id){ClearEditHistory();station.Layout.SetVisible(id,false);Apply(id);station.Layout.Save();UpdateEditGrids();if(id=="music")((DeskSurface)surfaces[id]).Audio.Stop();}
     void ShowBlock(string id){ClearEditHistory();if(station.Layout.SetVisible(id,true)){Apply(id);station.Layout.Save();UpdateEditGrids();}}
     void Reset(){ClearEditHistory();station.Layout.Reset(station.Apps.Count);ApplyAll();station.Layout.Save();UpdateEditGrids();}
