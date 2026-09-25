@@ -97,7 +97,11 @@ internal sealed class DiskVolumeIndex : IDisposable
     FileSystemWatcher? watcher;
     readonly string rootPath;
     readonly SemaphoreSlim scans;
-    volatile bool rescan=true;
+    // Un débordement du suivi ne relance pas aussitôt un scan complet : sur C:,
+    // la moindre compilation le provoque et un scan coûte un cœur pendant minutes.
+    const long DeltaMilliseconds=8000,AutomaticRescanMilliseconds=20*60*1000;
+    volatile bool rescan=true,manualRescan;
+    long lastFullScan,lastDelta;
     volatile bool scanning;
     volatile DiskNode? snapshot;
     volatile string status="";
@@ -115,7 +119,7 @@ internal sealed class DiskVolumeIndex : IDisposable
     public event Action? Changed;
     internal DiskVolumeIndex(string path,SemaphoreSlim scans){rootPath=path;this.scans=scans;_=Task.Run(Run);}
     internal void SetActive(bool value){if(value)visible.Set();else visible.Reset();}
-    internal void Rescan(){rescan=true;}
+    internal void Rescan(){manualRescan=true;rescan=true;}
     void Check(){stop.Token.ThrowIfCancellationRequested();visible.Wait(stop.Token);}
     void Notify()=>Changed?.Invoke();
     static bool Expected(Exception e)=>e is IOException or UnauthorizedAccessException or System.Security.SecurityException;
@@ -135,7 +139,7 @@ internal sealed class DiskVolumeIndex : IDisposable
         watcher?.Dispose();watcher=null;
         try
         {
-            watcher=new(path){IncludeSubdirectories=true,NotifyFilter=NotifyFilters.FileName|NotifyFilters.DirectoryName|NotifyFilters.Size|NotifyFilters.LastWrite,InternalBufferSize=32768};
+            watcher=new(path){IncludeSubdirectories=true,NotifyFilter=NotifyFilters.FileName|NotifyFilters.DirectoryName|NotifyFilters.Size|NotifyFilters.LastWrite,InternalBufferSize=65536};
             watcher.Created+=(_,e)=>Mark(e.FullPath);watcher.Deleted+=(_,e)=>Mark(e.FullPath);watcher.Changed+=(_,e)=>Mark(e.FullPath);
             watcher.Renamed+=(_,e)=>{Mark(e.OldFullPath);Mark(e.FullPath);};watcher.Error+=(_,_)=>rescan=true;watcher.EnableRaisingEvents=true;
         }
@@ -150,22 +154,25 @@ internal sealed class DiskVolumeIndex : IDisposable
             {
                 Check();
                 string target=rootPath;
-                if(rescan)
+                long now=Environment.TickCount64;
+                if(rescan&&(manualRescan||lastFullScan==0||now-lastFullScan>=AutomaticRescanMilliseconds))
                 {
                     await scans.WaitAsync(stop.Token);
                     try
                     {
-                        Check();rescan=false;scanning=true;scanned=0;status="Analyse en cours…";
+                        Check();rescan=manualRescan=false;scanning=true;scanned=0;status="Analyse en cours…";
                         Interlocked.Increment(ref fullScans);Notify();directories.Clear();
                         snapshot=Scan(target,true,true);Interlocked.Exchange(ref completedTicks,DateTimeOffset.UtcNow.Ticks);
                         status=watcher is null?"Suivi indisponible · actualisation manuelle":"";
                     }
-                    finally{scanning=false;scans.Release();}
+                    finally{scanning=false;lastFullScan=Environment.TickCount64;scans.Release();}
                     Notify();
                 }
-                else if(!dirty.IsEmpty)
+                else if(!dirty.IsEmpty&&now-lastDelta>=DeltaMilliseconds)
                 {
+                    lastDelta=now;
                     var pending=dirty.Keys.ToArray();foreach(string path in pending)dirty.TryRemove(path,out _);
+                    var changedDirectories=new HashSet<string>(pending,StringComparer.OrdinalIgnoreCase);
                     var refresh=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach(string changed in pending)
                     {
@@ -173,7 +180,13 @@ internal sealed class DiskVolumeIndex : IDisposable
                         while(path is not null&&path.StartsWith(target,StringComparison.OrdinalIgnoreCase))
                         {refresh.Add(path);if(string.Equals(path,target,StringComparison.OrdinalIgnoreCase))break;path=System.IO.Path.GetDirectoryName(path.TrimEnd('\\'));}
                     }
-                    foreach(string path in refresh.OrderByDescending(p=>p.Length)){Check();if(directories.ContainsKey(path)&&System.IO.Directory.Exists(path))Scan(path,false,false);}
+                    // Seuls les dossiers signalés sont relus ; leurs ancêtres se recalculent en mémoire.
+                    foreach(string path in refresh.OrderByDescending(p=>p.Length))
+                    {
+                        Check();if(!directories.ContainsKey(path))continue;
+                        if(!changedDirectories.Contains(path))Rebuild(path);
+                        else if(System.IO.Directory.Exists(path))Scan(path,false,false);
+                    }
                     if(directories.TryGetValue(target,out var root)){snapshot=root;Notify();}
                 }
                 await Task.Delay(2500,stop.Token);
@@ -219,6 +232,12 @@ internal sealed class DiskVolumeIndex : IDisposable
             foreach(var gone in previous.Children.Where(n=>n.Directory&&!retained.Contains(n.Path)))Forget(gone);
         }
         return directories[path]=Make(path,children,partial);
+    }
+    void Rebuild(string path)
+    {
+        var node=directories[path];
+        var children=node.Children.Select(child=>child.Directory&&directories.TryGetValue(child.Path,out var fresh)?fresh:child).ToList();
+        directories[path]=Make(path,children,node.Partial&&!node.Children.Any(child=>child.Partial));
     }
     static DiskNode Make(string path,List<DiskNode> children,bool partial)=>new(path,new DirectoryInfo(path).Name,children.Sum(c=>c.Bytes),true,partial||children.Any(c=>c.Partial),children.OrderByDescending(c=>c.Bytes).ThenBy(c=>c.Name,StringComparer.OrdinalIgnoreCase).ToArray());
     public void Dispose(){try{stop.Cancel();}catch(ObjectDisposedException){}}

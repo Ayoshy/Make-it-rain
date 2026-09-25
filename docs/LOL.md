@@ -76,7 +76,9 @@ avec les horodatages réels, comme le dock Réseau. Un retard d'affichage de 1,5
 permet de faire entrer les points déjà mesurés par la droite sans inventer de
 valeurs futures ; l'échelle verticale rejoint progressivement sa nouvelle cible.
 Seul un visuel enfant redessine le graphique entre relevés, sans redessiner le
-portrait et les textes à 30 Hz. Le masquage arrête les mises à jour.
+portrait et les textes à 30 Hz. Le masquage arrête les mises à jour. Hors partie,
+la boucle d'images est coupée : les relevés du bureau (toutes les 250 ms) suffisent
+et la relancent dès qu'une partie démarre.
 Les tests couvrent l'opacité constante, l'absence de saut à l'arrivée d'un relevé,
 le mouvement entre relevés, les bornes de la courbe et l'arrêt masqué.
 

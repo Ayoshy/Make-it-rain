@@ -29,21 +29,27 @@ internal sealed class DualSenseSurface : Surface,IDisposable
         if(args is not RenderingEventArgs frame||frame.RenderingTime==lastFrame)return;
         double elapsed=lastFrame==default?1/60d:(frame.RenderingTime-lastFrame).TotalSeconds;
         if(elapsed<1/60d-.0005)return;lastFrame=frame.RenderingTime;elapsed=Math.Min(.1,elapsed);seconds+=elapsed;
-        var next=Reader.Snapshot;var state=next.State;
+        var next=Reader.Snapshot;var state=next.State;bool moving=false;
         for(int i=0;i<levels.Length;i++){
             bool down=state.Connected==1&&state.Down(i);
             if(down&&(lastButtons&(1u<<i))==0)ripples[i]=1;
             levels[i]+=((down?1:0)-levels[i])*(1-Math.Exp(-elapsed*(down?36:12)));
             ripples[i]*=Math.Exp(-elapsed*4.8);
+            moving|=Math.Abs((down?1:0)-levels[i])>.001||ripples[i]>.001;
         }
         lastButtons=state.Buttons;
         touchTrail.Update(state,seconds,Station.Settings.DualSenseTouchTrail);
-        axes[0]+=(DualSenseState.Axis(state.LX)-axes[0])*(1-Math.Exp(-elapsed*32));
-        axes[1]+=(DualSenseState.Axis(state.LY)-axes[1])*(1-Math.Exp(-elapsed*32));
-        axes[2]+=(DualSenseState.Axis(state.RX)-axes[2])*(1-Math.Exp(-elapsed*32));
-        axes[3]+=(DualSenseState.Axis(state.RY)-axes[3])*(1-Math.Exp(-elapsed*32));
+        int[] sticks=[state.LX,state.LY,state.RX,state.RY];
+        for(int i=0;i<4;i++)
+        {
+            double target=DualSenseState.Axis(sticks[i]);
+            axes[i]+=(target-axes[i])*(1-Math.Exp(-elapsed*32));
+            moving|=Math.Abs(target-axes[i])>.001;
+        }
+        // Manette connectée mais immobile : plus de redessin à chaque image.
+        moving|=touchTrail.Points(0).Count>0||touchTrail.Points(1).Count>0;
         bool changed=!ReferenceEquals(next,displayedSnapshot);displayedSnapshot=next;
-        if(state.Connected==1||changed||levels.Any(v=>v>.001)||ripples.Any(v=>v>.001))Refresh();
+        if(changed||moving)Refresh();
     }
     internal void SetBluetoothBattery(int? value){if(bluetoothBattery==value)return;bluetoothBattery=value;Refresh();}
     protected override void Paint()

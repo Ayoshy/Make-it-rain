@@ -15,7 +15,7 @@ internal sealed class LolSurface : Surface,IDisposable
     readonly LolArtwork artwork;
     Task artworkLoad=Task.CompletedTask;
     LolSnapshot rendered=LolSnapshot.None;
-    bool active;
+    bool active,looping;
     TimeSpan lastFrame;
     double seconds,killPing,multiFlash,deathFlash,objectiveFlash,streakPing,respawnSpan,pulseFrame;
     int objectiveSide;
@@ -46,8 +46,8 @@ internal sealed class LolSurface : Surface,IDisposable
     {
         if(active==value)return;
         active=value;telemetry.SetActive(value);incomeChart.Active=value;lastFrame=default;
-        if(value){CompositionTarget.Rendering+=Frame;Poll();}
-        else{CompositionTarget.Rendering-=Frame;killPing=multiFlash=deathFlash=objectiveFlash=streakPing=0;}
+        if(value){Poll();if(rendered.State==LolState.Live)Loop(true);}
+        else{Loop(false);killPing=multiFlash=deathFlash=objectiveFlash=streakPing=0;}
     }
     // Called by the desktop timer: the worker fetches, the dock only repaints on a new reading.
     internal void Poll()
@@ -55,6 +55,13 @@ internal sealed class LolSurface : Surface,IDisposable
         var next=telemetry.Snapshot;
         if(next==rendered)return;
         Update(next);Refresh();
+        if(active&&next.State==LolState.Live)Loop(true);
+    }
+    // Hors partie, rien ne bouge : la boucle d'images ne tient pas WPF éveillé.
+    void Loop(bool on)
+    {
+        if(looping==on)return;looping=on;lastFrame=default;
+        if(on)CompositionTarget.Rendering+=Frame;else CompositionTarget.Rendering-=Frame;
     }
     // A reading arrives once a second; the effects fade on their own in between,
     // and a dock that shows nothing new does not repaint.
@@ -75,6 +82,7 @@ internal sealed class LolSurface : Surface,IDisposable
         killPing*=Math.Exp(-elapsed*2.4);multiFlash*=Math.Exp(-elapsed*.85);deathFlash*=Math.Exp(-elapsed*1.6);
         objectiveFlash*=Math.Exp(-elapsed*1.6);streakPing*=Math.Exp(-elapsed*2.2);
         bool effect=killPing>.01||multiFlash>.01||deathFlash>.01||objectiveFlash>.01||streakPing>.01;
+        if(rendered.State!=LolState.Live&&!effect)Loop(false);
         // An effect deserves every frame it lasts; a resting dock only needs the
         // breathing dot. Only the child chart redraws at 30 Hz between readings.
         bool breathing=rendered.State==LolState.Live&&seconds-pulseFrame>=.2;

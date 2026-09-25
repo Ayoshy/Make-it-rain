@@ -8,30 +8,49 @@ internal sealed class NetworkSurface : Surface,IDisposable
     internal NetworkSampler Sampler {get;}
     internal NetworkDetailClient Details {get;}=new();
     bool active,detailView;
-    double shownDown,shownUp;
-    TimeSpan lastFrame;
+    double shownDown,shownUp,fromDown,fromUp,targetDown,targetUp;
+    TimeSpan lastFrame,tweenStart;
+    bool animating;
     NetworkSnapshot? previous;
     NetworkDetailFrame? previousDetail;
     NetworkSettingsWindow? settingsWindow;
-    internal NetworkSurface(Station station):base(station,14){Width=720;Height=336;Sampler=new(Path.Combine(station.Data,"network.json"));}
+    internal NetworkSurface(Station station):base(station,14)
+    {
+        Width=720;Height=336;Sampler=new(Path.Combine(station.Data,"network.json"));
+        Sampler.Sampled+=()=>Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background,(Action)Wake);
+    }
     internal void SetActive(bool value)
     {
-        if(active==value)return;active=value;Sampler.SetActive(value);Details.SetActive(value);lastFrame=default;
-        if(value)CompositionTarget.Rendering+=Frame;else CompositionTarget.Rendering-=Frame;
+        if(active==value)return;active=value;Sampler.SetActive(value);Details.SetActive(value);
+        if(value)Wake();else Sleep();
     }
     internal void Poll(){if(active&&Details.Connected)Details.Poll();}
+    // Un relevé par seconde : la boucle d'images ne tourne que pendant la courte
+    // transition des débits, puis WPF peut cesser de rendre ce dock.
+    void Wake()
+    {
+        if(!active||animating)return;
+        animating=true;lastFrame=default;CompositionTarget.Rendering+=Frame;
+    }
+    void Sleep(){if(!animating)return;animating=false;CompositionTarget.Rendering-=Frame;}
     void Frame(object? sender,EventArgs args)
     {
         if(args is not RenderingEventArgs frame||frame.RenderingTime==lastFrame)return;
-        double dt=lastFrame==default?1/30d:(frame.RenderingTime-lastFrame).TotalSeconds;
-        if(dt<1/30d-.001)return;lastFrame=frame.RenderingTime;dt=Math.Min(.15,dt);
+        if(lastFrame!=default&&(frame.RenderingTime-lastFrame).TotalSeconds<1/30d-.001)return;
+        lastFrame=frame.RenderingTime;
         var snapshot=Sampler.Snapshot;var current=snapshot.History.LastOrDefault();
-        shownDown+=((current?.Received??0)-shownDown)*(1-Math.Exp(-dt*8));
-        shownUp+=((current?.Sent??0)-shownUp)*(1-Math.Exp(-dt*8));
+        if(!ReferenceEquals(previous,snapshot))
+        {
+            fromDown=shownDown;fromUp=shownUp;targetDown=current?.Received??0;targetUp=current?.Sent??0;tweenStart=frame.RenderingTime;
+        }
+        double t=Math.Clamp((frame.RenderingTime-tweenStart).TotalSeconds/.25,0,1),ease=1-Math.Pow(1-t,3);
+        shownDown=fromDown+(targetDown-fromDown)*ease;shownUp=fromUp+(targetUp-fromUp)*ease;
         if(detailView&&!Details.Starting&&!Details.Connected)detailView=false;
         bool changed=!ReferenceEquals(previous,snapshot)||!ReferenceEquals(previousDetail,Details.Frame);
         previous=snapshot;previousDetail=Details.Frame;
-        if(changed||!detailView&&snapshot.History.Any(s=>s.Received.HasValue))Refresh();
+        bool moving=t<1&&!detailView&&(fromDown!=targetDown||fromUp!=targetUp);
+        if(changed||moving)Refresh();
+        if(!moving)Sleep();
     }
     internal static string Rate(double? value)=>value is null?"—":value>=1_000_000?$"{value/1_000_000:0.0} Mo/s":value>=1000?$"{value/1000:0.0} Ko/s":$"{value:0} o/s";
     protected override void Paint()
@@ -103,5 +122,5 @@ internal sealed class NetworkSurface : Surface,IDisposable
         OverlayStyle.Reveal(settingsWindow,Station.Settings.AnimateBackground);
     }
     internal object Inspect()=>new{active,snapshot=Sampler.Snapshot,preferences=Sampler.Preferences,detail=Details.Frame,helperPid=Details.HelperPid,Details.Starting,detailView};
-    public void Dispose(){CompositionTarget.Rendering-=Frame;settingsWindow?.Close();Sampler.Dispose();Details.Dispose();}
+    public void Dispose(){Sleep();settingsWindow?.Close();Sampler.Dispose();Details.Dispose();}
 }

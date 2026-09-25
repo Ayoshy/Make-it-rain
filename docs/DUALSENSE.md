@@ -18,7 +18,7 @@ Désactiver **Traînée tactile** remet SDL en mode compatible pour la prochaine
 - Le dock masqué, occulté ou en réorganisation suspend lectures et animations.
 - Batterie SDL si disponible, sinon mesure Windows du lecteur Bluetooth déjà présent ; une absence reste « — ».
 - Images haute définition du châssis et des textures préparées sur un thread STA en arrière-plan, puis figées et partagées avec WPF. Les contrôles, halos et traînées restent animés.
-- Rendu plafonné à 60 Hz ; aucun réglage graphique ou matériel externe modifié.
+- Rendu plafonné à 60 Hz, seulement quand un bouton, un stick, le pavé ou une onde bouge : une manette connectée au repos ne redessine plus ; aucun réglage graphique ou matériel externe modifié.
 - Le retrait du dock et les scènes ne ferment aucun terminal.
 
 Le dock reste initialement masqué dans les dispositions personnelles. Le format de scènes 3 subdivise l’ancien grand compteur du modèle Jeu sauvegardé s’il n’est pas actif, avec la manette à gauche et le compteur à droite. Les autres docks restent intacts. Si Jeu est actif à la migration, l’ajout passe par le menu habituel.

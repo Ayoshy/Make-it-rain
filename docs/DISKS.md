@@ -46,11 +46,14 @@ L'heure affichée correspond à la fin du dernier scan complet, même si son ré
 est partiel ; les deltas ne changent pas cette date. Une nouvelle analyse complète
 n'est pas déclenchée parce que cette date est ancienne.
 
-Les notifications Windows sont regroupées toutes les 2,5 secondes. Seuls les
-dossiers concernés et leurs ancêtres sont réévalués ; leurs sous-arbres inchangés
-sont réutilisés. Ce suivi reste actif pour les volumes déjà analysés, même lorsque
-l'accueil ou un autre volume est affiché. Un débordement de notifications entraîne
-une nouvelle analyse du seul volume concerné ; le bouton ↻ la demande explicitement.
+Les notifications Windows sont regroupées toutes les 8 secondes. Seuls les
+dossiers signalés sont relus ; leurs ancêtres sont recalculés en mémoire et leurs
+sous-arbres inchangés réutilisés. Ce suivi reste actif pour les volumes déjà
+analysés, même lorsque l'accueil ou un autre volume est affiché. Un débordement de
+notifications (une compilation suffit sur C:) marque le volume en attente : sa
+nouvelle analyse complète attend au moins 20 minutes après la précédente, car un
+scan de C: occupe environ un cœur pendant plusieurs minutes. Le bouton ↻ la
+demande immédiatement.
 Le masquage suspend l'énumération, mais conserve les notifications pour la reprise.
 La liste et l'espace libre sont relus toutes les cinq secondes quand le dock est
 actif. Aucune promesse de délai maximal pendant une grosse copie ou l'analyse initiale.

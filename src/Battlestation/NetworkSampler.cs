@@ -26,14 +26,18 @@ internal sealed class NetworkSampler : IDisposable
     readonly Task worker;
     volatile bool active;
     NetworkPreferences preferences=new();
+    long listedAt;
     NetworkSnapshot snapshot=new("","Interface",[],null,"1.1.1.1","En veille",[]);
     internal NetworkPreferences Preferences=>Volatile.Read(ref preferences);
     internal NetworkSnapshot Snapshot=>Volatile.Read(ref snapshot);
+    // Déclenché hors du fil d'interface après chaque relevé.
+    internal event Action? Sampled;
     internal NetworkSampler(string file)
     {
         path=file;
         try{if(File.Exists(file))preferences=JsonSerializer.Deserialize<NetworkPreferences>(File.ReadAllText(file))?.Validate()??new();}
         catch(Exception e) when(e is JsonException or ArgumentException or IOException){}
+        NetworkChange.NetworkAddressChanged+=Relist;NetworkChange.NetworkAvailabilityChanged+=Relist;
         worker=Task.Run(Work);
     }
     internal void Configure(NetworkPreferences value){value=value.Validate();DesktopSettings.Write(path,JsonSerializer.Serialize(value));Volatile.Write(ref preferences,value);Signal();}
@@ -43,21 +47,27 @@ internal sealed class NetworkSampler : IDisposable
     static int Index(NetworkInterface nic){try{return nic.GetIPProperties().GetIPv4Properties()?.Index??nic.GetIPProperties().GetIPv6Properties()?.Index??0;}catch(NetworkInformationException){return 0;}}
     async Task Work()
     {
-        var history=new List<NetworkSample>(60);NetworkInterface[] interfaces=[];long previousAt=0;
+        var history=new List<NetworkSample>(60);(NetworkInterface Nic,int Index)[] interfaces=[];NetworkAdapterOption[] options=[];long previousAt=0;
         long previousReceived=0,previousSent=0;string previousId="";
+        // L'inventaire des cartes coûte plusieurs requêtes système par carte : il est
+        // relu sur changement réseau ou toutes les 30 s, les compteurs chaque seconde.
         try
         {
             while(!stop.IsCancellationRequested)
             {
-                if(!active){previousAt=0;history.Clear();await wake.WaitAsync(stop.Token);continue;}
+                if(!active){previousAt=0;history.Clear();Relist();await wake.WaitAsync(stop.Token);continue;}
                 long started=Stopwatch.GetTimestamp();var settings=Preferences;
-                interfaces=NetworkInterface.GetAllNetworkInterfaces().Where(Configured).ToArray();
-                var options=interfaces.Select(n=>new NetworkAdapterOption(n.Id,n.Name,n.OperationalStatus==OperationalStatus.Up)).ToArray();
+                if(Volatile.Read(ref listedAt) is var listed&&(listed==0||Environment.TickCount64-listed>30000))
+                {
+                    interfaces=NetworkInterface.GetAllNetworkInterfaces().Where(Configured).Select(n=>(n,Index(n))).ToArray();
+                    options=interfaces.Select(n=>new NetworkAdapterOption(n.Nic.Id,n.Nic.Name,n.Nic.OperationalStatus==OperationalStatus.Up)).ToArray();
+                    Volatile.Write(ref listedAt,Environment.TickCount64);
+                }
                 NetworkInterface? nic=null;double? received=null,sent=null,latency=null;string status="";
                 try
                 {
                     int route=settings.InterfaceId.Length==0?NetworkDefaultInterface():0;
-                    nic=interfaces.FirstOrDefault(n=>settings.InterfaceId.Length>0?n.Id==settings.InterfaceId:Index(n)==route);
+                    nic=interfaces.FirstOrDefault(n=>settings.InterfaceId.Length>0?n.Nic.Id==settings.InterfaceId:n.Index==route).Nic;
                     if(nic?.OperationalStatus!=OperationalStatus.Up)status="Interface indisponible";
                     else
                     {
@@ -78,11 +88,13 @@ internal sealed class NetworkSampler : IDisposable
                 if(nic is null||status.Length>0)previousAt=0;
                 history.Add(new(Environment.TickCount64,received,sent));if(history.Count>60)history.RemoveAt(0);
                 Volatile.Write(ref snapshot,new(nic?.Id??"",nic?.Name??"Interface",history.ToArray(),latency,settings.Target,status,options));
+                Sampled?.Invoke();
                 int delay=Math.Max(1,1000-(int)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
                 await wake.WaitAsync(delay,stop.Token);
             }
         }
         catch(OperationCanceledException){}
     }
-    public void Dispose(){stop.Cancel();Signal();}
+    void Relist(object? sender=null,EventArgs? e=null)=>Volatile.Write(ref listedAt,0);
+    public void Dispose(){NetworkChange.NetworkAddressChanged-=Relist;NetworkChange.NetworkAvailabilityChanged-=Relist;stop.Cancel();Signal();}
 }

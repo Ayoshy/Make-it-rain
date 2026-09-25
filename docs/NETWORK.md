@@ -13,7 +13,7 @@ une seule ligne. Les données et le détail par application remontent de 20 px,
 avec la même hauteur de bandeau commune que Disques. Les courbes bénéficient
 de la place récupérée ; le bouton inférieur conserve sa position.
 
-L’interface automatique suit la route Windows par défaut, avec la métrique de route et celle de l’interface. Le sélecteur permet de choisir une interface configurée explicitement. Les compteurs sont lus chaque seconde sur un worker ; l’affichage est interpolé. Une première mesure, une interface indisponible ou une absence de réponse ne deviennent pas des valeurs nulles fictives.
+L’interface automatique suit la route Windows par défaut, avec la métrique de route et celle de l’interface. Le sélecteur permet de choisir une interface configurée explicitement. Les compteurs sont lus chaque seconde sur un worker ; la liste des interfaces n’est relue que sur changement réseau Windows ou toutes les 30 secondes. Chaque relevé réveille le dock, qui interpole les débits pendant 0,25 s puis cesse de redessiner jusqu’au relevé suivant. Une première mesure, une interface indisponible ou une absence de réponse ne deviennent pas des valeurs nulles fictives.
 
 ## Détail par application
 

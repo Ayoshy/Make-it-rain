@@ -116,6 +116,11 @@ internal static class DisksTests
                     for(int i=0;i<20;i++){index.Select(root);index.Select(otherRoot);index.Select(null);}
                     await Task.Delay(3000);
                     Check(firstDisk.MetadataReads+secondDisk.MetadataReads==reads,"Vingt allers-retours sans aucune réénumération des fichiers");
+                    // Incident réel : sur C:, chaque débordement du suivi relançait un scan complet (un cœur pendant des minutes).
+                    var mark=typeof(DiskVolumeIndex).GetMethod("Mark",BindingFlags.NonPublic|BindingFlags.Instance)!;
+                    for(int i=0;i<4100;i++)mark.Invoke(firstDisk,[Path.Combine(root,"burst"+i,"file.tmp")]);
+                    await Task.Delay(3000);
+                    Check(firstDisk.FullScans==1&&firstDisk.Info.Pending,"Un débordement du suivi reporte le scan complet au lieu de le relancer aussitôt");
                     index.Select(root);index.Rescan();await Wait(()=>firstDisk.FullScans==2&&index.Status=="","Le bouton manuel peut toujours relancer un scan");
                     Check(secondDisk.FullScans==1,"La relance manuelle reste limitée au disque sélectionné");
                 }

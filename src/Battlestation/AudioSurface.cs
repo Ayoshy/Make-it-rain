@@ -13,16 +13,23 @@ internal sealed class AudioSurface : Surface,IDisposable
     float dragVolume;
     (Rect Bounds,string? Key) drag;
     readonly Dictionary<string,float> levels=[];
-    bool active;
+    bool active,animating;
     TimeSpan lastFrame;
     internal AudioSurface(Station station):base(station,10){Width=720;Height=264;Mixer.Poll();}
     int lastSnapshot;
-    internal void Poll(){if(!dragging)Mixer.Poll();var hash=new HashCode();hash.Add(Mixer.OutputName);hash.Add(Mixer.Volume);hash.Add(Mixer.Muted);hash.Add(Mixer.MicrophoneMuted);hash.Add(Mixer.Error);foreach(var row in Mixer.Apps)hash.Add(row);foreach(var output in Mixer.Outputs)hash.Add(output);int next=hash.ToHashCode();if(next!=lastSnapshot){lastSnapshot=next;Refresh();}}
+    internal void Poll(){if(!dragging)Mixer.Poll();var hash=new HashCode();hash.Add(Mixer.OutputName);hash.Add(Mixer.Volume);hash.Add(Mixer.Muted);hash.Add(Mixer.MicrophoneMuted);hash.Add(Mixer.Error);foreach(var row in Mixer.Apps)hash.Add(row);foreach(var output in Mixer.Outputs)hash.Add(output);int next=hash.ToHashCode();if(next!=lastSnapshot){lastSnapshot=next;Refresh();}if(active&&Mixer.Apps.Any(Sounding))Animating(true);}
+    static bool Sounding(AudioApp app)=>!app.Muted&&app.Peak>.0001f;
+    // Les vumètres ne tiennent la boucle d'images que tant qu'un son ou sa retombée se voit.
+    void Animating(bool on)
+    {
+        if(animating==on)return;animating=on;lastFrame=default;
+        if(on)CompositionTarget.Rendering+=Animate;else CompositionTarget.Rendering-=Animate;
+    }
     internal void SetActive(bool value)
     {
         Mixer.SetActive(value);if(active==value)return;active=value;
-        if(value){lastFrame=default;CompositionTarget.Rendering+=Animate;}
-        else{CompositionTarget.Rendering-=Animate;levels.Clear();}
+        if(value)Animating(true);
+        else{Animating(false);levels.Clear();}
     }
     void Animate(object? sender,EventArgs e)
     {
@@ -40,6 +47,7 @@ internal sealed class AudioSurface : Surface,IDisposable
         }
         foreach(string key in levels.Keys.Where(key=>!apps.Any(app=>app.Key==key)).ToArray()){levels.Remove(key);changed=true;}
         if(changed)Refresh();
+        else if(!apps.Any(Sounding))Animating(false);
     }
     protected override void Paint()
     {
