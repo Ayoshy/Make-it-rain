@@ -15,10 +15,18 @@ public sealed record ClaudeWindow(string Kind, string Label, double UsedPercent,
 /// <summary>Crédit d'appoint activé sur l'abonnement ; solde de crédits quand il est publié.</summary>
 public sealed record ClaudeSpend(string Currency, decimal Used, decimal Limit, decimal? Balance = null);
 
-public sealed record ClaudeAccount(DateTimeOffset FetchedAt, string? Plan, IReadOnlyList<ClaudeWindow> Windows, ClaudeSpend? Spend)
+/// <summary>
+/// Crédit libellé en dollars publié par l'API, avec sa date d'expiration. La clé
+/// technique est un nom de code instable : l'identification se fait sur les montants.
+/// </summary>
+public sealed record ClaudeCredit(string Key, decimal Remaining, decimal? Limit, double? UsedPercent, DateTimeOffset? ExpiresAt);
+
+public sealed record ClaudeAccount(DateTimeOffset FetchedAt, string? Plan, IReadOnlyList<ClaudeWindow> Windows, ClaudeSpend? Spend,
+    IReadOnlyList<ClaudeCredit>? Credits = null)
 {
     public ClaudeWindow? Primary => Windows.FirstOrDefault(window => window.Kind.Equals("session", StringComparison.OrdinalIgnoreCase))
         ?? Windows.FirstOrDefault();
+    public IReadOnlyList<ClaudeCredit> PublishedCredits => Credits ?? [];
 }
 
 public sealed record ClaudeState(ClaudeAccount? Snapshot, bool Refreshing, string? Error);
@@ -105,8 +113,38 @@ public static class ClaudeUsageReader
                 windows.Add(new("weekly_all", "7 jours", Clamp(seven), Reset(response.SevenDay.ResetsAt), "",
                     response.SevenDay.RemainingDollars, response.SevenDay.LimitDollars));
         }
-        return windows.Count == 0 ? null : new ClaudeAccount(fetchedAt, plan, windows, Spend(response));
+        return windows.Count == 0 ? null : new ClaudeAccount(fetchedAt, plan, windows, Spend(response), Credits(response));
     }
+
+    /// <summary>
+    /// Les fenêtres libellées en dollars arrivent sous des noms de code qui changent :
+    /// seuls les blocs publiant un montant restant sont repris comme crédits.
+    /// </summary>
+    static IReadOnlyList<ClaudeCredit> Credits(UsageResponse response)
+    {
+        var credits = new List<ClaudeCredit>();
+        foreach (var (key, value) in response.Buckets ?? [])
+        {
+            if (value.ValueKind != JsonValueKind.Object) continue;
+            var remaining = Money(value, "remaining_dollars");
+            if (remaining is not { } amount) continue;
+            credits.Add(new(key, amount, Money(value, "limit_dollars"), Percent(value), Reset(Text(value, "resets_at"))));
+        }
+        return credits;
+    }
+
+    static decimal? Money(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetDecimal(out var amount)
+            ? amount
+            : null;
+
+    static double? Percent(JsonElement element) =>
+        element.TryGetProperty("utilization", out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var percent)
+            ? Math.Clamp(percent, 0, 100)
+            : null;
+
+    static string? Text(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 
     static ClaudeSpend? Spend(UsageResponse response)
     {
@@ -162,6 +200,8 @@ public static class ClaudeUsageReader
         [JsonPropertyName("limits")] public List<LimitBlock>? Limits { get; init; }
         [JsonPropertyName("spend")] public SpendBlock? Spend { get; init; }
         [JsonPropertyName("extra_usage")] public ExtraUsageBlock? ExtraUsage { get; init; }
+        // Blocs à nom de code (crédits en dollars, essais) : repris sans les nommer.
+        [JsonExtensionData] public Dictionary<string, JsonElement>? Buckets { get; init; }
     }
 
     sealed class WindowBlock

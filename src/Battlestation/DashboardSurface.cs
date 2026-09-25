@@ -28,8 +28,8 @@ internal sealed partial class DashboardSurface : Surface
     {
         sensors = hardware; Width = 779; Height = hardware ? 218 : 209;
         pages = new DashboardTransition(Refresh); AddVisualChild(pages.Visual);
-        Unloaded += (_, _) => { CancelDrag(); pages.Settle(pages.Requested); };
-        IsVisibleChanged += (_, _) => { if (!IsVisible) { CancelDrag(); pages.Settle(pages.Requested); } else Refresh(); };
+        Unloaded += (_, _) => { CancelDrag(); pages.Settle(pages.Requested); SleepLiquids(true); };
+        IsVisibleChanged += (_, _) => { if (!IsVisible) { CancelDrag(); pages.Settle(pages.Requested); SleepLiquids(true); } else Refresh(); };
     }
     public void Toggle(int next)
     {
@@ -45,7 +45,7 @@ internal sealed partial class DashboardSurface : Surface
     internal void CloseDetails() { CancelDrag(); pages.Settle(0); Refresh(); }
     internal override void SetDisplayed(bool value)
     {
-        if (!value) { CancelDrag(); pages.Settle(pages.Requested); sliders.Clear(); }
+        if (!value) { CancelDrag(); pages.Settle(pages.Requested); sliders.Clear(); SleepLiquids(true); }
         pages.Visual.Opacity = value ? 1 : 0;
         base.SetDisplayed(value);
     }
@@ -214,7 +214,9 @@ internal sealed partial class DashboardSurface : Surface
     protected override void OnPointer(MouseEventArgs e)
     {
         if (drag is not null && e.LeftButton == MouseButtonState.Pressed) SetSlider(drag, e.GetPosition(this).X - body.X);
+        StirLiquids(e.GetPosition(this));
     }
+    protected override void OnMouseLeave(MouseEventArgs e) { StirLiquids(new Point(-1, -1)); base.OnMouseLeave(e); }
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
         if (drag is not null) { CancelDrag(); e.Handled = true; } else base.OnMouseLeftButtonUp(e);
@@ -233,12 +235,19 @@ internal sealed partial class DashboardSurface : Surface
             foreach (var item in line.Split('·'))
             {
                 var parts = item.Split(" / ");
-                if (parts.Length == 3) rows.Add((isCodex ? "Codex" : "gpt Reserve", parts[0].Trim(), parts[1].Trim(), parts[2].Trim(), isReserve));
+                if (parts.Length == 3)
+                {
+                    string reset = parts[2].Trim();
+                    rows.Add((isCodex ? "Codex" : "gpt Reserve", parts[0].Trim(), parts[1].Trim(),
+                        reset.StartsWith("Reset", StringComparison.OrdinalIgnoreCase) ? char.ToUpperInvariant(reset[0]) + reset[1..] : "Reset " + reset,
+                        isReserve));
+                }
             }
         }
         return rows;
     }
-    int QuotaCapacity => Math.Max(1, (int)((body.Height - 46) / 36));
+    int QuotaCapacity => Math.Max(1, (int)((body.Height - (AiRoomy ? 54 : 46)) / QuotaPitch));
+    const string ClaudeCreditLabel = "Crédit cloud";
     List<(string Name, string Remaining, string Duration, string Reset, bool IsReserve)> ClaudeQuotaRows()
     {
         var rows = new List<(string, string, string, string, bool)>();
@@ -247,8 +256,16 @@ internal sealed partial class DashboardSurface : Surface
         {
             string remaining = Station.M($"claudeWindow:{i}:remaining");
             if (remaining is "" or "—") continue;
-            rows.Add(("Claude", remaining, Station.M($"claudeWindow:{i}:name"), Station.M($"claudeWindow:{i}:reset"), false));
+            rows.Add(("Claude", remaining, Station.M($"claudeWindow:{i}:name"), Station.M($"claudeWindow:{i}:detail"), false));
         }
+        // Les crédits publiés en dollars se lisent après les fenêtres de quota.
+        if (int.TryParse(Station.M("claudeCreditCount"), out int credits))
+            for (int i = 0; i < credits; i++)
+            {
+                string remaining = Station.M($"claudeCredit:{i}:remaining");
+                if (remaining is "" or "—") continue;
+                rows.Add(("Claude", remaining, Station.M($"claudeCredit:{i}:name"), Station.M($"claudeCredit:{i}:detail"), false));
+            }
         return rows;
     }
     // Valeur du quota : ce que 100 % d'une fenêtre entre deux resets représente, et les fenêtres précédentes.

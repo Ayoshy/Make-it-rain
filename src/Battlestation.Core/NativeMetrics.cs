@@ -16,6 +16,25 @@ internal sealed partial class Backend
     static string Count(long? n) => UsageFormatter.CompactNumber(n, AppLanguage.French);
     static string Money(decimal? n) => UsageFormatter.Dollars(n, AppLanguage.French);
     static string Amount(decimal? n) => n is { } v ? v.ToString("#,##0.00", CultureInfo.GetCultureInfo("fr-FR")) : "—";
+    // Les fenêtres Claude et les crédits publiés en dollars restent lisibles sur une ligne.
+    static string ClaudeWeekly(ClaudeAccount? account)
+    {
+        var window = account?.Windows.FirstOrDefault(item => item.Kind.StartsWith("weekly", StringComparison.OrdinalIgnoreCase));
+        return window is null ? "" : "7 j " + Number(Math.Clamp(100 - window.UsedPercent, 0, 100), "%");
+    }
+    static string ClaudeCreditShort(ClaudeAccount? account) =>
+        account?.PublishedCredits.FirstOrDefault() is { } credit ? "crédit " + Money(credit.Remaining) : "";
+    static string ClaudeReset(ClaudeAccount? account)
+    {
+        if (account?.Primary is not { } primary) return "Reset indisponible";
+        // Un reset du jour n'a pas besoin de la date sur la carte.
+        var line = primary.ResetsAt is { } reset
+            ? "Reset " + reset.ToString(reset.Date == DateTimeOffset.Now.Date ? "HH:mm" : "dd/MM HH:mm")
+            : "Reset indisponible";
+        return line + (primary.RemainingDollars is { } credit ? " · " + Money(credit) + " restants" : "");
+    }
+    static string ClaudeResetLine(ClaudeAccount? account) =>
+        string.Join(" · ", new[] { ClaudeCreditShort(account), ClaudeReset(account) }.Where(part => part.Length > 0));
     public string Metric(string key)
     {
         if (key.StartsWith("ai:", StringComparison.Ordinal)) return aiUsage.Metric(key);
@@ -81,7 +100,27 @@ internal sealed partial class Backend
                 "remaining" => Number(Math.Clamp(100 - window.UsedPercent, 0, 100), "% restant"),
                 "reset" => (window.ResetsAt is { } reset ? reset.ToString("dd/MM HH:mm") : "indisponible")
                     + (window.RemainingDollars is { } remaining ? " · " + Money(remaining) + " restants" : ""),
+                "detail" => (window.ResetsAt is { } reset ? "Reset " + reset.ToString("dd/MM HH:mm") : "Reset indisponible")
+                    + (window.RemainingDollars is { } remaining ? " · " + Money(remaining) + " restants" : ""),
                 "severity" => window.Severity.Equals("normal", StringComparison.OrdinalIgnoreCase) ? "" : window.Severity,
+                _ => ""
+            };
+        }
+        if (key.StartsWith("claudeCredit:", StringComparison.Ordinal))
+        {
+            var parts = key.Split(':');
+            if (parts.Length != 3 || !int.TryParse(parts[1], out var index) || index < 0 ||
+                claudeAccount is null || index >= claudeAccount.PublishedCredits.Count) return "—";
+            var credit = claudeAccount.PublishedCredits[index];
+            var remainingPercent = credit.UsedPercent is { } used
+                ? 100 - used
+                : credit.Limit is { } limit && limit > 0 ? (double)(credit.Remaining / limit * 100m) : double.NaN;
+            return parts[2] switch
+            {
+                "name" => "Crédit cloud",
+                "remaining" => Number(double.IsFinite(remainingPercent) ? remainingPercent : null, "% restant"),
+                "detail" => Money(credit.Remaining)
+                    + (credit.ExpiresAt is { } expiry ? " · expire " + expiry.ToString("dd/MM HH:mm") : " · sans expiration"),
                 _ => ""
             };
         }
@@ -128,10 +167,11 @@ internal sealed partial class Backend
             "claudeWindowCount" => (claudeAccount?.Windows.Count ?? 0).ToString(CultureInfo.InvariantCulture),
             "claudeRemaining" => Number(claudeAccount?.Primary is { } primary ? Math.Clamp(100 - primary.UsedPercent, 0, 100) : null, "%"),
             "claudeWindowLabel" => claudeAccount?.Primary?.Label?.ToUpperInvariant() ?? "QUOTA",
-            "claudeReset" => claudeAccount?.Primary is { } primary
-                ? (primary.ResetsAt is { } reset ? "Reset " + reset.ToString("dd/MM HH:mm") : "Reset indisponible")
-                    + (primary.RemainingDollars is { } credit ? " · " + Money(credit) + " restants" : "")
-                : "Reset indisponible",
+            "claudeReset" => ClaudeReset(claudeAccount),
+            "claudeResetLine" => ClaudeResetLine(claudeAccount),
+            "claudeWeekly" => ClaudeWeekly(claudeAccount),
+            "claudeCredit" => ClaudeCreditShort(claudeAccount),
+            "claudeCreditCount" => claudeAccount?.PublishedCredits.Count.ToString(CultureInfo.InvariantCulture) ?? "0",
             "claudeSpend" => claudeAccount?.Spend is { } spend
                 ? (spend.Balance is { } creditBalance ? "Solde " + Money(creditBalance) + " · " : "")
                     + spend.Used.ToString("#,##0.00", French) + " / " + spend.Limit.ToString("#,##0.00", French) + " " + spend.Currency + " · crédit d'appoint"

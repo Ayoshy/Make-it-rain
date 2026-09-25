@@ -21,7 +21,7 @@ internal sealed class Station
     public string Root {get;set;}="";
     public string Error=>"";
     public string M(string key)=>Native.Read(key);
-    public double N(string key)=>double.TryParse(M(key),System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out double value)?value:double.NaN;
+    public double N(string key)=>double.TryParse(M(key).TrimEnd('%','°','W',' '),System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out double value)?value:double.NaN;
     public void Command(string command)=>throw new InvalidOperationException("No backend commands during render tests");
     public string Assets=>System.IO.Path.Combine(Root,"assets");
     public string Data=>System.IO.Path.Combine(Root,"artifacts/validation/network-fixture");

@@ -115,6 +115,18 @@ void ClaudeAccountReader()
     Check(dollars?.Spend is {Currency:"USD",Balance:12.50m,Used:5m,Limit:50m},"A published credit balance is kept with its own currency");
     var withoutMoney=ClaudeUsageReader.Parse("""{"limits":[{"kind":"session","percent":30,"limit_dollars":null,"remaining_dollars":null}]}""",now);
     Check(withoutMoney?.Primary is {RemainingDollars:null,LimitDollars:null},"An account billed in limits publishes no dollar amount");
+    // Le credit de session cloud arrive sous un nom de code instable : seuls les
+    // blocs publiant un montant restant sont repris, jamais le nom de code lui-meme.
+    var credit=ClaudeUsageReader.Parse("""
+    {"limits":[{"kind":"session","percent":11}],"iguana_necktie":{"utilization":0,"resets_at":"2026-11-05T07:59:00+00:00","limit_dollars":100,"used_dollars":0,"remaining_dollars":100},
+     "nimbus_quill":{"utilization":0}}
+    """,now);
+    Check(credit?.PublishedCredits is [{Key:"iguana_necktie",Remaining:100m,Limit:100m,UsedPercent:0}] ,
+        "A dollar credit is kept with its published amount");
+    Check(credit?.PublishedCredits[0].ExpiresAt==DateTimeOffset.Parse("2026-11-05T07:59:00+00:00").ToLocalTime(),
+        "A dollar credit keeps its expiry");
+    Check(credit?.Windows.Count==1,"A credit bucket is not a quota window");
+    Check(withoutMoney?.PublishedCredits.Count==0,"A block without an amount is not a credit");
     Check(ClaudeUsageReader.Parse("{}",now) is null,"A response without any quota is not invented");
     Check(ClaudeUsageReader.Parse("pas du json",now) is null,"An unreadable response is not a quota");
     Check(ClaudeUsageReader.Parse(payload,now)?.Spend?.Used==12.34m,"The extra usage credit survives without a plan");

@@ -29,6 +29,7 @@
     <Compile Include="../src/Battlestation/CountdownSurface.cs"/>
     <Compile Include="../src/Battlestation/DashboardSurface.cs"/>
     <Compile Include="../src/Battlestation/AiMeterSurface.cs"/>
+    <Compile Include="../src/Battlestation/QuotaLiquid.cs"/>
     <Compile Include="../src/Battlestation/DashboardTransition.cs"/>
     <Compile Include="../src/Battlestation/Spectrum.cs"/>
     <Compile Include="../src/Battlestation/AudioEnvelope.cs"/>
