@@ -48,7 +48,7 @@ Références : [événements TCP/IP et PID](https://learn.microsoft.com/en-us/wi
 
 Historique de mise en place : `build/battlestation-network-scenes-05` a introduit le sélecteur des cinq interfaces configurées de ce PC, sans les couches WFP/QoS dépourvues d’adresse, et l’arrêt du dessin des courbes pendant le détail. La refonte des scènes et sa coordination sont terminées ; voir [LoL](LOL.md).
 
-Le 21 septembre 2026, `build/battlestation-network-remanence-02` est chargé et sélectionné pour le démarrage. Ayo a confirmé la stabilité et le délai de quatre secondes sur le premier candidat ; le tri final réception + envoi décroissant a ensuite été vérifié par les tests et sur huit relevés réels. Les tests couvrent aussi la priorité du trafic montant et le maintien des zéros en bas. Voir [la revue et les limites de validation](REVIEW_2026-09-21.md).
+Le 21 septembre 2026, `build/battlestation-network-remanence-02` est chargé et sélectionné pour le démarrage. Ayo a confirmé la stabilité et le délai de quatre secondes sur le premier candidat ; le tri final réception + envoi décroissant a ensuite été vérifié par les tests et sur huit relevés réels. Les tests couvrent aussi la priorité du trafic montant et le maintien des zéros en bas. Voir [la revue et les limites de validation](history/REVIEW_2026-09-21.md).
 
 À la suite du retour sur le contraste, le candidat `build/battlestation-network-contrast-01` est chargé pour essai : les barres seules passent de 9 % à 44 % d’opacité, avec les couleurs de chaque thème conservées. Compilation et rendus WPF vérifiés ; appréciation du contraste sur le bureau en attente. Le démarrage conserve `network-remanence-02` jusqu’à cette validation, sans archivage de ce build accepté.
 
