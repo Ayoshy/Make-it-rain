@@ -27,6 +27,7 @@ internal sealed class NotesSurface : Surface, IDisposable
     internal NotesSurface(Station station) : base(station, 19)
     {
         Width = 480; Height = 320;
+        ToolTipService.SetIsEnabled(Editor,false);
         file = new NotesFile(Path.Combine(station.Data, "notes.txt"));
         saveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
         saveTimer.Tick += (_, _) => { saveTimer.Stop(); Save(); };

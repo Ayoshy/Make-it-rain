@@ -35,6 +35,12 @@ La migration ne se répète pas au lancement. Elle conserve les choix de verre, 
 
 Les trois palettes restent partagées par WPF et Direct2D. Les hôtes terminal préexistants restent ouverts et peuvent conserver leur habillage jusqu'à fermeture explicite par l'utilisateur. Aucun changement du projet Wallpaper Engine.
 
+Pendant une transition de scène, les couleurs WPF et images thématiques passent
+directement à leur état final lorsque les docks sont dissous. Le fondu de la
+scène reste actif ; l'aperçu des réglages garde son animation de couleur. Ce
+changement cible le [crash natif observé le 25 septembre](SCENE_CRASH_20260925.md)
+et reste à valider sur le bureau dans le candidat `scene-brush-01`.
+
 ## Vérification
 
 - `dotnet run --project tests/Battlestation.Scenes.Tests.csproj -c Release` : scènes, migration, sauvegarde, modèles, Mono écran et transitions. Un dossier de copies des trois fichiers personnels peut être passé après `--`.

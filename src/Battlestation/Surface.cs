@@ -26,7 +26,7 @@ internal abstract class Surface : FrameworkElement
     {
         previousImageTheme=DesktopTheme.PreviousId;
         BeginAnimation(ThemeBlendProperty,null);
-        if(displayed)BeginAnimation(ThemeBlendProperty,new DoubleAnimation(0,1,TimeSpan.FromMilliseconds(240)){FillBehavior=FillBehavior.Stop});
+        if(displayed&&DesktopTheme.LastChangeAnimated)BeginAnimation(ThemeBlendProperty,new DoubleAnimation(0,1,TimeSpan.FromMilliseconds(240)){FillBehavior=FillBehavior.Stop});
         InvalidateVisual();
     }
     internal long RenderCount {get;private set;}
@@ -49,7 +49,7 @@ internal abstract class Surface : FrameworkElement
     }
     protected static readonly CultureInfo French=CultureInfo.GetCultureInfo("fr-FR");
     protected const string Ink=DockAppearance.Ink,Muted=DockAppearance.Muted,Pink="#FF6FD3",Purple="#BE81FF";
-    public Surface(Station station,int dockSlot=-1){Station=station;DesktopTheme.Changed+=ThemeChanged;this.dockSlot=dockSlot;artDeco=new FontFamily(new Uri("pack://application:,,,/"),"./Assets/Fonts/#GTAArtDeco Condensed");SnapsToDevicePixels=true;FocusVisualStyle=null;TextOptions.SetTextFormattingMode(this,TextFormattingMode.Display);}
+    public Surface(Station station,int dockSlot=-1){Station=station;DesktopTheme.Changed+=ThemeChanged;this.dockSlot=dockSlot;artDeco=new FontFamily(new Uri("pack://application:,,,/"),"./Assets/Fonts/#GTAArtDeco Condensed");SnapsToDevicePixels=true;FocusVisualStyle=null;System.Windows.Controls.ToolTipService.SetIsEnabled(this,false);TextOptions.SetTextFormattingMode(this,TextFormattingMode.Display);}
     public void Refresh()=>InvalidateVisual();
     internal void UpdateGlassBounds()
     {

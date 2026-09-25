@@ -22,3 +22,5 @@ node_modules/
 /dock/icons/neon/*-preview.png
 # Blender auto-backups next to the source assets.
 *.blend1
+# Google OAuth client downloads; Gmail imports its own copy into the personal data.
+client_secret_*.json

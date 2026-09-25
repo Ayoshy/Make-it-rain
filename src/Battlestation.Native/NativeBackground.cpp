@@ -16,8 +16,8 @@
 using Microsoft::WRL::ComPtr;
 namespace NativeBackground {
 // Single source of truth for the glass panel slots: 0-14 are the historical
-// docks, 15-20 are room for the newer blocks. WPF only sends the slots it uses.
-static constexpr int PanelSlots=21;
+// docks, 15-22 are room for the newer blocks. WPF only sends the slots it uses.
+static constexpr int PanelSlots=23;
 static HANDLE thread=nullptr, stopEvent=nullptr,wakeEvent=nullptr;
 static std::atomic<bool> capture=false;
 static std::atomic<bool> canvasDirty=false;

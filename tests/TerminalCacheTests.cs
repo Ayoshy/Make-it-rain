@@ -33,6 +33,7 @@ static class TerminalCacheTests
             DisplayRule(root);
             DeepSeekHitRate();
             AccentPrecedence(root);
+            ClaudeTabStatus(root);
             RolloutSelection(root);
             ProcessBinding(root);
             TabRendering();
@@ -102,6 +103,55 @@ static class TerminalCacheTests
         Check(decorated.CacheHint == TerminalCacheHint.Expiring, "le niveau de teinte accompagne le badge");
         var plain = preferences.Decorate(new TerminalTabInfo(Guid.NewGuid(), "PowerShell 2", false), new ConsoleTitleInfo(2, "PowerShell 2", false));
         Check(plain.Badge is null && plain.CacheHint == TerminalCacheHint.None, "un onglet sans activite Codex reste sans badge");
+    }
+
+    // 4. Sessions Claude Code : titre et etat publies par le CLI.
+    static void ClaudeTabStatus(string root)
+    {
+        var titled = TerminalTitle.Parse("✳ Video mirror dock performance", false, false, true);
+        Equal("Video mirror dock performance", titled.Title, "le marqueur Claude quitte le titre");
+        Check(titled.Activity == TerminalActivity.Unknown, "l'asterisque de Claude n'affirme pas un travail en cours");
+        var working = TerminalTitle.Parse("⠐ Review the diff", false, false, true);
+        Equal("Review the diff", working.Title, "une frame d'attente quitte le titre");
+        Check(working.Activity == TerminalActivity.Working, "une frame d'attente prouve un travail en cours");
+        Equal("Claude Code", TerminalTitle.Parse("✳ Claude Code", false, false, true).Title, "un titre sans nom de session reste lisible");
+        Check(TerminalTitle.Parse("Battlestation | Working | fil", true).Activity == TerminalActivity.Working, "le lecteur Codex garde son propre format");
+
+        static string Record(string status, string extra = "")
+            => "{\"pid\":42,\"name\":\"battlestation-da\",\"status\":\"" + status + "\"" + extra + "}";
+        var idle = ClaudeSessions.Parse(Record("idle"));
+        Equal("battlestation-da", idle?.Name, "le nom de session Claude est repris");
+        Check(idle?.Activity == TerminalActivity.Ready, "une session Claude au repos est prete");
+        Check(ClaudeSessions.Parse(Record("busy"))?.Activity == TerminalActivity.Working, "une session occupee travaille");
+        var waiting = ClaudeSessions.Parse(Record("waiting", ",\"waitingFor\":\"dialog open\""));
+        Check(waiting?.Activity == TerminalActivity.Attention, "une attente demande l'attention");
+        Equal("Attente : dialog open", waiting?.Detail, "l'attente en cours alimente l'infobulle");
+        Check(ClaudeSessions.Parse(Record("paused"))?.Activity == TerminalActivity.Unknown, "un statut inconnu n'est pas devine");
+        Check(ClaudeSessions.Parse("{pas du json") is null, "un registre illisible ne casse pas l'onglet");
+
+        var directory = Path.Combine(root, "claude-sessions");
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(Path.Combine(directory, "42.json"), Record("busy"), new UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(directory, "43.json"), new string('x', ClaudeSessions.MaximumRecordBytes + 1), new UTF8Encoding(false));
+        var records = ClaudeSessions.Read([42, 43, 44], directory);
+        Check(records.ContainsKey(42) && records[42].Activity == TerminalActivity.Working, "le registre du processus est lu");
+        Check(!records.ContainsKey(43) && !records.ContainsKey(44), "un fichier hors bornes ou absent est ignore");
+        Equal(0, ClaudeSessions.Read([], directory).Count, "aucun processus Claude : aucune lecture");
+
+        var preferences = new TerminalTabPreferences(Path.Combine(root, "terminal-tabs.json"));
+        var metadata = new ConsoleTitleInfo(9, "✳ Video mirror dock performance", false, Claude: true, ClaudePid: 42);
+        var decorated = preferences.Decorate(new TerminalTabInfo(Guid.NewGuid(), "PowerShell 3", true), metadata, default, records[42]);
+        Equal("Video mirror dock performance", decorated.Title, "le titre Claude remplace le titre du shell");
+        Check(decorated.Activity == TerminalActivity.Working, "l'icone d'onglet suit l'etat Claude");
+        var orphan = preferences.Decorate(new TerminalTabInfo(Guid.NewGuid(), "PowerShell 3", true), metadata);
+        Equal("Video mirror dock performance", orphan.Title, "sans registre, le titre Claude reste affiche");
+        Check(orphan.Activity == TerminalActivity.Unknown, "sans registre, aucun etat n'est invente");
+        var renamed = preferences.Decorate(new TerminalTabInfo(Guid.NewGuid(), "PowerShell 3", true),
+            new ConsoleTitleInfo(9, "✳ Autre tache", false, Claude: true, ClaudePid: 42), default, records[42]);
+        Equal("Autre tache", renamed.Title, "chaque session Claude porte son propre titre");
+        var named = preferences.Decorate(new TerminalTabInfo(Guid.NewGuid(), "PowerShell 3", true),
+            new ConsoleTitleInfo(9, "", false, Claude: true, ClaudePid: 42), default, records[42]);
+        Equal("battlestation-da", named.Title, "sans titre de console, le registre nomme l'onglet");
     }
 
     static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-09-22T12:00:00Z");

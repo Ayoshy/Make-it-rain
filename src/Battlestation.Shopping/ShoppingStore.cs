@@ -208,12 +208,6 @@ public sealed class ShoppingStore : IDisposable
         return command;
     }
 
-    void Execute(string sql)
-    {
-        using var command=database.CreateCommand();
-        command.CommandText=sql;
-        command.ExecuteNonQuery();
-    }
 
     public void Dispose()
     {

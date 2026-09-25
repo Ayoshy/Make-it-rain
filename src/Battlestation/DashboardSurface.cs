@@ -4,12 +4,12 @@ using System.Windows.Media;
 using System.Text.RegularExpressions;
 
 namespace Battlestation;
-internal sealed class DashboardSurface : Surface
+internal sealed partial class DashboardSurface : Surface
 {
     const double PowerChartMaximum = 200;
     readonly bool sensors;
     readonly DashboardTransition pages;
-    int modelOffset, quotaOffset;
+    int modelOffset, quotaOffset, weekOffset;
     bool drawingPage, interactive, manual, draftDirty;
     double fan = double.NaN, thermal = double.NaN;
     readonly Queue<(double Fan, double Power)> coolingHistory = [];
@@ -33,7 +33,8 @@ internal sealed class DashboardSurface : Surface
     }
     public void Toggle(int next)
     {
-        if (sensors ? next is not (1 or 2) : next is not (3 or 4 or 5)) return;
+        if (sensors ? next is not (1 or 2) : next is not (3 or 4 or 5 or 6)) return;
+        if (!sensors && next == 5) { costFamily = "deepseek"; next = 4; }
         CancelDrag(); sliders.Clear();
         if (next == 2 && pages.Requested != 2 && !draftDirty)
         {
@@ -55,8 +56,13 @@ internal sealed class DashboardSurface : Surface
     protected override void Paint()
     {
         double w = ActualWidth, h = ActualHeight, buttonY = h - 44, buttonW = (w - (sensors ? 72 : 84)) / (sensors ? 3 : 4);
-        Header(sensors ? "CONRAD SENSOR" : "CODEX METER");
-        Text(Station.M(sensors ? "sensorStatus" : pages.Requested == 5 ? "deepseekStatus" : "codexStatus"), w - 24, 18, 8, align: "right", width: Math.Max(80, w - 235));
+        Header(sensors ? "CONRAD SENSOR" : "AI METER");
+        string status = sensors ? Station.M("sensorStatus")
+            : pages.Requested == 4 ? Station.M("aiStatus")
+            : pages.Requested == 3 ? (claudeQuota ? Station.M("claudeStatus") : Station.M("codexStatus"))
+            : pages.Requested == 6 ? Station.M("codexStatus")
+            : "COMPTES";
+        Text(status, w - 24, 18, 8, align: "right", width: Math.Max(80, w - 235));
         if (sensors)
         {
             Nav("Cores", "6 CŒURS", 24, 1);
@@ -65,15 +71,15 @@ internal sealed class DashboardSurface : Surface
         }
         else
         {
-            Nav("DeepSeek", "DEEPSEEK", 24, 5);
+            Nav("Summary", "SYNTHÈSE", 24, 0);
             Nav("Quotas", "QUOTAS", 36 + buttonW, 3);
-            Nav("Models", "MODÈLES", 48 + 2 * buttonW, 4);
-            Button("Refresh", "ACTUALISER ↻", 60 + 3 * buttonW, buttonY, buttonW, 32, () => Station.Command("Refresh"), 8, Ink);
+            Nav("Models", "COÛTS", 48 + 2 * buttonW, 4);
+            Button("Refresh", w < 620 ? "MAJ ↻" : "ACTUALISER ↻", 60 + 3 * buttonW, buttonY, buttonW, 32, () => Station.Command("Refresh"), 8, Ink);
         }
         void Nav(string name, string label, double x, int page)
         {
-            if (pages.Requested == page) Box(x, buttonY, buttonW, 32, "#26DBC5ED", "#72E7D5FA", DockAppearance.ButtonRadius);
-            Button(name, label, x, buttonY, buttonW, 32, () => Toggle(page), 8, Ink);
+            if (pages.Requested == page || !sensors && page == 3 && pages.Requested == 6) Box(x, buttonY, buttonW, 32, "#26DBC5ED", "#72E7D5FA", DockAppearance.ButtonRadius);
+            Button(name, label, x, buttonY, buttonW, 32, () => { if (sensors) Toggle(page); else OpenAiPage(page); }, 8, Ink);
         }
         if (!draftDirty && Station.M("controlAvailable") == "1")
         {
@@ -92,9 +98,9 @@ internal sealed class DashboardSurface : Surface
                 case 0: Summary(); break;
                 case 1: Cores(); break;
                 case 2: Cooling(); break;
-                case 3: Quotas(); break;
-                case 4: Models(); break;
-                case 5: DeepSeek(); break;
+                case 3: AiQuotas(); break;
+                case 4: AiCosts(); break;
+                case 6: Week(); break;
             }
         });
         D = context; drawingPage = false;
@@ -124,13 +130,7 @@ internal sealed class DashboardSurface : Surface
         }
         else
         {
-            double right = w * .55;
-            Text(Station.M("quotaLabel"), 0, 0, 9);
-            Text(Station.M("remaining"), 0, 19, 30, Purple, DockAppearance.NumberFont);
-            Track(0, 76, right - 24, Station.N("remaining"), Purple);
-            Text(Station.M("reset"), 0, 86, 7.5, width: right - 20);
-            Text("TOKENS DU JOUR", right, 1, 8); Text(Station.M("today"), right, 19, 17, font: DockAppearance.NumberFont);
-            Text("TOKENS CUMULÉS", right, 58, 8); Text(Station.M("total"), right, 75, 17, font: DockAppearance.NumberFont);
+            AiSummary();
         }
     }
     void Cores()
@@ -238,72 +238,68 @@ internal sealed class DashboardSurface : Surface
         }
         return rows;
     }
-    int QuotaCapacity => Math.Max(1, (int)((body.Height - 18) / 48));
-    int ModelCapacity => Math.Max(1, (int)((body.Height - 60) / 29));
-    int ModelCount => double.IsFinite(Station.N("modelsCount")) ? Math.Max(0, (int)Station.N("modelsCount")) : 0;
-    void Quotas()
+    int QuotaCapacity => Math.Max(1, (int)((body.Height - 46) / 36));
+    List<(string Name, string Remaining, string Duration, string Reset, bool IsReserve)> ClaudeQuotaRows()
     {
-        double w = body.Width; var rows = QuotaRows(); int count = QuotaCapacity;
-        quotaOffset = Math.Clamp(quotaOffset, 0, Math.Max(0, rows.Count - count));
-        if (rows.Count == 0) Text("Quotas indisponibles", 0, 5, 10);
-        for (int i = 0; i < count && quotaOffset + i < rows.Count; i++)
+        var rows = new List<(string, string, string, string, bool)>();
+        if (!int.TryParse(Station.M("claudeWindowCount"), out int count)) return rows;
+        for (int i = 0; i < count; i++)
         {
-            var row = rows[quotaOffset + i]; double y = i * 48;
-            const string reserveFill = "#2F3569C0", reserveStroke = "#8A8FD1CC", reserveInk = "#D9DEFF", reserveBar = "#AEB8F4";
-            string fill = row.IsReserve ? reserveFill : "#12804DAE";
-            string stroke = row.IsReserve ? reserveStroke : "#37B77DDF";
-            string ink = row.IsReserve ? reserveInk : Purple;
-            string bar = row.IsReserve ? reserveBar : Purple;
-            Box(0, y, w - 8, 43, fill, stroke, 9);
-            Text(row.Name, 10, y + 3, 9, bold: true, width: w * .45);
-            Text(row.Duration.ToUpperInvariant(), w - 87, y + 6, 7.5, align: "right");
-            var match = Regex.Match(row.Remaining, @"(\d+)%");
-            double percent = match.Success ? double.Parse(match.Groups[1].Value) : double.NaN;
-            Text(match.Success ? percent + "%" : "N/D", w - 18, y + 1, 17, ink, DockAppearance.NumberFont, "right");
-            Text("Reset  " + row.Reset, 10, y + 23, 7.5, width: w - 30);
-            Track(10, y + 40, w - 38, percent, bar, 2);
+            string remaining = Station.M($"claudeWindow:{i}:remaining");
+            if (remaining is "" or "—") continue;
+            rows.Add(("Claude", remaining, Station.M($"claudeWindow:{i}:name"), Station.M($"claudeWindow:{i}:reset"), false));
         }
-        Text(Station.M("credits"), 0, body.Height - 15, 7.5, Muted, width: w - 10);
-        ScrollMark(rows.Count, count, quotaOffset, 0, count * 48 - 5);
+        return rows;
     }
-    void DeepSeek()
+    // Valeur du quota : ce que 100 % d'une fenêtre entre deux resets représente, et les fenêtres précédentes.
+    void Week()
     {
-        double w = body.Width, right = w * .58;
-        string currency = Station.M("deepseekCurrency"), error = Station.M("deepseekError");
-        Text("SOLDE API" + (currency is "" or "—" ? "" : " · " + currency), 0, 0, 9);
-        Text(Station.M("deepseekTotal"), 0, 19, 30, "#96E7B2", DockAppearance.NumberFont);
-        string state = Station.M("deepseekAvailable") switch { "1" => "Compte actif", "0" => "Solde épuisé", _ => "" };
-        Text(error != "" ? error : state, 0, 86, 7.5, error != "" ? "#FF95C1" : Muted, width: right - 20);
-        Text("RECHARGÉ", right, 1, 8); Text(Station.M("deepseekToppedUp"), right, 19, 17, font: DockAppearance.NumberFont);
-        Text("OFFERT", right, 58, 8); Text(Station.M("deepseekGranted"), right, 75, 17, font: DockAppearance.NumberFont);
-    }
-    void Models()
-    {
-        double w = body.Width; int count = ModelCapacity, total = ModelCount;
-        modelOffset = Math.Clamp(modelOffset, 0, Math.Max(0, total - count));
-        Text(Station.M("total") + " tokens", 0, 0, 10.5, font: DockAppearance.NumberFont);
-        Text("≈ " + Station.M("totalCost") + " API", w - 8, 0, 10.5, "#96E7B2", DockAppearance.NumberFont, "right");
-        bool wide = w >= 550;
-        Text("MODÈLE", 8, 25, 7, Muted, bold: true);
-        if (wide) Text("EFFORT", w * .54, 25, 7, Muted, align: "center", bold: true);
-        Text("TOKENS", w * .77, 25, 7, Muted, align: "right", bold: true);
-        Text("ESTIMÉ", w - 18, 25, 7, Muted, align: "right", bold: true);
-        if (total == 0) Text("Modèles indisponibles", 8, 44, 9);
-        for (int i = 0; i < count && modelOffset + i < total; i++)
+        double w = body.Width, h = body.Height, listX = Math.Max(210, w * .46), listW = Math.Max(120, w - listX - 6);
+        string used = Station.M("weekUsed"), state = Station.M("weekValueState"), delta = Station.M("weekDelta"), cost = Station.M("weekValueCost");
+        Text(Station.M("weekTitle"), 0, 0, 9, bold: true, width: listX - 12);
+        Text(Station.M("weekReset") + (used is "" or "—" ? "" : "  ·  " + used + " utilisé"), w, 1, 7.5, Muted, align: "right", width: Math.Max(80, w - listX));
+        Text("100 % ≈", 0, 20, 8, Muted, bold: true);
+        Text(Station.M("weekValue"), 0, 32, 30, Purple, DockAppearance.NumberFont);
+        double cursor = 70;
+        if (cost is not "" and not "—") { Text("≈ " + cost + " API", 0, cursor, 9, "#96E7B2"); cursor += 16; }
+        Text(state != "" ? state : "aucun relevé pour l'instant", 0, cursor, 7.5, Muted, width: listX - 16);
+        cursor += 14;
+        if (delta is not "" and not "—" && h >= 125) { Text(delta, 0, cursor, 8, "#96E7B2"); cursor += 14; }
+        string since = Station.M("weekSince");
+        if (since != "" && h >= 150) Text(since, 0, cursor, 7, Muted, width: listX - 16);
+        int models = CountOf("weekModelCount");
+        if (models > 0 && h >= 190)
         {
-            double y = 42 + i * 29;
-            Box(0, y, w - 8, 27, i % 2 == 0 ? "#18B483D8" : "#08B483D8", radius: 6);
-            var pieces = Station.M($"model:{modelOffset + i}:name").Split("  ");
-            string name = pieces[0] == "unknown" ? "Modèle inconnu" : pieces[0];
-            string effort = pieces.Length > 1 && pieces[1] != "unspecified" ? pieces[1].ToUpperInvariant() : "";
-            Text(wide || effort == "" ? name : name + " · " + effort, 8, y + 5, 8.5, bold: true, width: w * .46 - 12);
-            if (wide) Text(effort, w * .54, y + 7, 7, "#C79FE2", align: "center");
-            Text(Station.M($"model:{modelOffset + i}:tokens"), w * .77, y + 4, 10, font: DockAppearance.NumberFont, align: "right");
-            Text(Station.M($"model:{modelOffset + i}:cost"), w - 18, y + 4, 10, "#96E7B2", DockAppearance.NumberFont, "right");
+            Text("100 % PAR MODÈLE", 0, 132, 7, Muted, bold: true);
+            for (int i = 0; i < models && i < 3 && 142 + i * 13 < h - 12; i++)
+            {
+                Text(Station.M($"weekModel:{i}:name"), 0, 142 + i * 13, 8, bold: true, width: listX - 90);
+                Text(Station.M($"weekModel:{i}:ratio"), listX - 16, 142 + i * 13, 8.5, Purple, DockAppearance.NumberFont, "right");
+            }
         }
-        Text("Estimation locale partielle · pas une facture", 0, body.Height - 14, 7, Muted, width: w - 12);
-        ScrollMark(total, count, modelOffset, 42, count * 29 - 2);
+        // Liste des fenêtres : 100 % en tokens et en prix API, de la plus récente à la plus ancienne.
+        Text("FENÊTRES · 100 % ≈", listX, 20, 7, Muted, bold: true);
+        Text("tokens · $ API · évolution", w, 20, 7, Muted, align: "right");
+        int total = CountOf("weekWindowCount");
+        int capacity = WeekCapacity;
+        weekOffset = Math.Clamp(weekOffset, 0, Math.Max(0, total - capacity));
+        if (total == 0) Text("aucune fenêtre mesurée pour l'instant", listX, 44, 9, Muted, width: w - listX);
+        for (int i = 0; i < capacity && weekOffset + i < total; i++)
+        {
+            string index = (weekOffset + i).ToString();
+            double y = 34 + i * 26;
+            bool current = Station.M($"weekWindow:{index}:current") == "1";
+            if (current) Box(listX - 8, y - 2, listW + 2, 24, "#16B483D8", radius: 7);
+            Text(Station.M($"weekWindow:{index}:period"), listX, y + 3, 8, current ? "#B9E7D5FA" : Ink, bold: true, width: listW * .48);
+            Text(Station.M($"weekWindow:{index}:value"), w - 72, y + 2, 10.5, Purple, DockAppearance.NumberFont, "right");
+            Text(Station.M($"weekWindow:{index}:cost"), w, y + 4, 8, "#96E7B2", align: "right");
+            Text(Station.M($"weekWindow:{index}:delta"), w, y + 15, 7.5, Muted, align: "right");
+        }
+        ScrollMark(total, capacity, weekOffset, 34, capacity * 26 - 4);
+        if (h >= 125) Text("Valeur théorique · pas une facture", 0, h - 13, 7, Muted, width: listX - 16);
     }
+    int CountOf(string key) => double.IsFinite(Station.N(key)) ? Math.Max(0, (int)Station.N(key)) : 0;
+    int WeekCapacity => Math.Max(1, (int)((body.Height - 32) / 26));
     void ScrollMark(int total, int visible, int offset, double y, double height)
     {
         if (total <= visible) return;
@@ -351,8 +347,9 @@ internal sealed class DashboardSurface : Surface
     internal bool ScrollPage(int delta)
     {
         if (pages.Running) return false;
-        if (pages.Current == 4) modelOffset = Math.Clamp(modelOffset + delta, 0, Math.Max(0, ModelCount - ModelCapacity));
+        if (pages.Current == 4) modelOffset = Math.Clamp(modelOffset + delta, 0, Math.Max(0, CostCount - CostCapacity));
         else if (pages.Current == 3) quotaOffset = Math.Clamp(quotaOffset + delta, 0, Math.Max(0, QuotaRows().Count - QuotaCapacity));
+        else if (pages.Current == 6) weekOffset = Math.Clamp(weekOffset + delta, 0, Math.Max(0, CountOf("weekWindowCount") - WeekCapacity));
         else return false;
         Refresh(); return true;
     }

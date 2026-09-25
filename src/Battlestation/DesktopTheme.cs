@@ -15,6 +15,7 @@ internal static class DesktopTheme
     internal static readonly ThemeDefinition[] Definitions=JsonSerializer.Deserialize<ThemeDefinition[]>(new StreamReader(Assembly.GetExecutingAssembly().GetManifestResourceStream("Battlestation.Themes.json")!).ReadToEnd())!;
     internal static ThemeDefinition Current {get;private set;}=Definitions[0];
     internal static string PreviousId {get;private set;}="vice-city";
+    internal static bool LastChangeAnimated {get;private set;}
     internal static event Action? Changed;
     static readonly Dictionary<string,Swatch> swatches=new(StringComparer.OrdinalIgnoreCase);
     internal static Color Color(string original)=>(Color)ColorConverter.ConvertFromString(Current.Colors.GetValueOrDefault(original.ToUpperInvariant(),original));
@@ -36,7 +37,8 @@ internal static class DesktopTheme
     }
     internal static void Select(string id,bool animate=true)
     {
-        var next=Definitions.Single(d=>d.Id==id);if(next==Current)return;
+        var next=Definitions.Single(d=>d.Id==id);if(next==Current&&animate)return;
+        LastChangeAnimated=animate;
         PreviousId=Current.Id;Current=next;
         foreach(var (original,swatch) in swatches)swatch.Set(Color(original),animate);
         Changed?.Invoke();

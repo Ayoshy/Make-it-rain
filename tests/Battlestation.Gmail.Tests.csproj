@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Google.Apis.Auth" Version="1.76.0" />
+    <Compile Include="GmailTests.cs" />
+    <Compile Include="../src/Battlestation/GmailClient.cs" />
+    <Compile Include="../src/Battlestation/GmailSurface.cs" />
+    <Compile Include="../src/Battlestation/Surface.cs" />
+    <Compile Include="../src/Battlestation/DesktopTheme.cs" />
+    <Compile Include="../src/Battlestation/DockAppearance.cs" />
+    <EmbeddedResource Include="../src/Battlestation/Themes.json" LogicalName="Battlestation.Themes.json" />
+    <Resource Include="../assets/Fonts/art-deco.ttf" Link="Assets/Fonts/art-deco.ttf" />
+  </ItemGroup>
+</Project>

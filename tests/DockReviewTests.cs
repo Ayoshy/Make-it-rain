@@ -6,7 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Battlestation;
 
-static class DockReviewTests
+static partial class DockReviewTests
 {
     static void Check(bool value,string message){if(!value)throw new Exception(message);}
     static JsonElement Hits(Surface surface)=>JsonSerializer.SerializeToElement(surface.InspectHits());
@@ -56,6 +56,24 @@ static class DockReviewTests
         return count==0?0:sum/count;
     }
     static float[] MusicPeaks(Surface surface)=>(float[])typeof(DeskSurface).GetField("peaks",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(surface)!;
+    // Nombre de pixels qui changent dans une zone : sert à prouver qu'un dessin atteint bien la bonne colonne.
+    static int Diff(byte[] first,byte[] second,Size size,Rect area)
+    {
+        int count=0;
+        int x0=Math.Max(0,(int)area.X),y0=Math.Max(0,(int)area.Y),x1=Math.Min((int)size.Width,(int)area.Right),y1=Math.Min((int)size.Height,(int)area.Bottom);
+        for(int y=y0;y<y1;y++)for(int x=x0;x<x1;x++)
+        {
+            int index=(y*(int)size.Width+x)*4;
+            if(first[index]!=second[index]||first[index+1]!=second[index+1]||first[index+2]!=second[index+2])count++;
+        }
+        return count;
+    }
+    static void Invoke(Surface surface,string name)
+    {
+        var actions=(System.Collections.IEnumerable)typeof(Surface).GetField("hits",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(surface)!;
+        foreach(var value in actions){var hit=((Rect Rect,Action Action,string Name))value;if(hit.Name==name){hit.Action();return;}}
+        throw new Exception("Missing target "+name);
+    }
     // Feeds the same smoothing the audio tick publishes, without any capture device.
     static void FeedMusic(DeskSurface surface,float[] values)
     {
@@ -233,12 +251,196 @@ static class DockReviewTests
         }
         Console.WriteLine("PASS app layouts: narrow/tall/short/wide, heading space, centred column, no overlapping targets and last row reachable.");
     }
+    static void LolChecks(Station station,string output)
+    {
+        foreach(double[] values in new double[][]{[0,30,2,0,10,10],[4,4,4],[0,2,9,30]})
+        {
+            var curve=LolSurface.IncomePath(values,new Rect(0,0,120,100),30,false);
+            var bounds=curve.Bounds;
+            Check(curve.IsFrozen&&bounds.Top>=-.001&&bounds.Bottom<=100.001,"Rounded income curve never invents a negative gain or overshoots a peak");
+            Check(Math.Abs(bounds.Left)<.001&&Math.Abs(bounds.Right-120)<.001,"Income curve preserves the complete observed interval");
+        }
+        var history=new LolGoldHistory();
+        var baseline=LolSnapshot.None with{State=LolState.Live,ChampionId="Ahri",Team="ORDER",GoldExact=500,GameTime=100,CapturedAt=DateTimeOffset.UtcNow};
+        var rate=history.Observe(baseline);
+        Check(rate.GoldPerSecond is null,"Income needs a measured interval, not a made-up starting balance");
+        for(int i=1;i<=15;i++)rate=history.Observe(baseline with{GameTime=100+i,GoldExact=500+5*i,CapturedAt=baseline.CapturedAt.AddSeconds(i)});
+        Check(rate.GoldPerSecond==5&&rate.GoldWindow==15,"A measured wallet gain of 75 over 15 seconds gives 5 gold/s");
+        Check(rate.GoldTrendTimes!.Length==15&&rate.GoldTrendTimes[0]==101&&rate.GoldTrendTimes[^1]==115,"Gold chart retains actual sample timestamps for constant-speed scrolling");
+        rate=history.Observe(rate with{GameTime=116,GoldExact=900,Inventory="sale",CapturedAt=baseline.CapturedAt.AddSeconds(16)});
+        Check(rate.GoldPerSecond is null,"An inventory change excludes sale proceeds");
+        rate=history.Observe(rate with{GameTime=117,GoldExact=100,CapturedAt=baseline.CapturedAt.AddSeconds(17)});
+        Check(rate.GoldPerSecond is null&&rate.GoldTrend!.Length==0,"A purchase cannot become negative income");
+        rate=history.Observe(rate with{GameTime=135,GoldExact=200,CapturedAt=baseline.CapturedAt.AddSeconds(35)});
+        Check(rate.GoldPerSecond is null,"A sampling gap resets income");
+        rate=history.Observe(rate with{GameTime=1,GoldExact=500,CapturedAt=baseline.CapturedAt.AddSeconds(36)});
+        Check(rate.GoldPerSecond is null,"A new game discards the old income window");
+        var participation=baseline with{Kills=4,Assists=6,Players=[new("Ahri","Ahri","ORDER",4,0,6,false),new("Lux","Lux","ORDER",16,0,0,false)]};
+        Check(participation.Participation==50&&baseline.Participation is null,"Kill participation uses team kills and preserves unknown data");
+        // LoL: rest state, synthetic reading, timers and the certificate predicate.
+        Check(LolTelemetry.IsLiveClientEndpoint("127.0.0.1",2999)&&!LolTelemetry.IsLiveClientEndpoint("localhost",2999)
+            &&!LolTelemetry.IsLiveClientEndpoint("127.0.0.1",3000)&&!LolTelemetry.IsLiveClientEndpoint("127.0.0.1.evil.test",2999),
+            "Only 127.0.0.1:2999 justifies accepting the live client certificate");
+        Check(LolTelemetry.Probe(true,true)&&!LolTelemetry.Probe(true,false)&&!LolTelemetry.Probe(false,true),
+            "The live client API is only read while a game process runs");
+        var reading=LolTelemetry.Parse(LiveGame,DateTimeOffset.UtcNow);
+        Check(reading.State==LolState.Live&&reading.Champion=="Ahri"&&reading.Level==7&&reading.Kills==4&&reading.Deaths==2&&reading.Assists==9&&reading.CreepScore==182&&reading.Gold==12480,
+            "The synthetic reading gives champion, level, KDA, CS and gold");
+        Check(reading.Blue.Dragons==1&&reading.Blue.Barons==1&&reading.Blue.Turrets==2&&reading.Blue.Inhibitors==1&&reading.Red.Dragons==1&&reading.Red.Turrets==3&&reading.Red.Inhibitors==0,
+            "Objectives are counted per team");
+        Check(reading.DragonIn is{} dragon&&Math.Abs(dragon-236)<.001&&reading.BaronIn is{} baron&&Math.Abs(baron-396)<.001,
+            "Dragon counts 5:00 and Baron 6:00 after the corresponding kill");
+        Check(reading.Respawn is{} respawn&&Math.Abs(respawn-7.5)<.001,"The respawn timer is read while the player is dead");
+        Check(reading.Team=="ORDER"&&reading.Streak==2&&reading.MultiKill=="DOUBLE KILL"&&reading.MultiKillAt is{} chain&&Math.Abs(chain-176)<.001,
+            "The events give the player's side, the kills since the last death and the multi-kill");
+        Check(reading.LastKillAt is{} lastKill&&Math.Abs(lastKill-176)<.001&&reading.LastDeathAt is{} lastDeath&&Math.Abs(lastDeath-90)<.001,
+            "The kill and the death keep the time the events published");
+        Check(reading.FirstBlood&&reading.AceAt is null,"The first blood of the player is read from its own event");
+        Check(reading.Blue.Dragon=="Fire"&&reading.Red.Dragon=="Ocean","The last dragon of each team keeps its element");
+        Check(reading.Streak<=reading.Kills,"A streak never exceeds the kills it completes");
+        bool refused=false;try{LolTelemetry.Parse("{}",DateTimeOffset.UtcNow);}catch(FormatException){refused=true;}
+        Check(refused,"A response without game data is refused");
+        var aram=LolTelemetry.Parse(AramGame,DateTimeOffset.UtcNow);
+        Check(aram.Aram&&aram.MapNumber==12&&aram.Mode=="ARAM","Howling Abyss is recognised from the map and the mode");
+        Check(aram.DragonIn is null&&aram.BaronIn is null,"ARAM exposes no dragon or baron timer to invent");
+        Check(aram.Events!.Contains("TurretKilled")&&aram.Events.Contains("GameStart"),"The received event names are published for verification");
+        using(var league=new LolSurface(station){Width=700,Height=220})
+        {
+            var telemetry=typeof(LolSurface).GetField("telemetry",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(league)!;
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,LolSnapshot.Idle(LolState.NoGame));
+            league.Poll();Render(league,Path.Combine(output,"lol-none.png"));
+            Check(Native.Panels[16]==new Rect(0,0,700,220),"LoL owns the glass slot 16");
+            Check(JsonSerializer.SerializeToElement(league.Inspect()).GetProperty("state").GetString()=="NoGame","The resting dock states that no game runs");
+            var none=Pixels(league);
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,reading);
+            league.Poll();Render(league,Path.Combine(output,"lol-live.png"));
+            Check(Different(none,Pixels(league)),"A live reading changes the dock");
+            var live=JsonSerializer.SerializeToElement(league.Inspect());
+            Check(live.GetProperty("state").GetString()=="Live"&&live.GetProperty("creepScore").GetInt32()==182&&live.GetProperty("blue").GetProperty("Dragons").GetInt32()==1,"inspect publishes the live reading and its objectives");
+            Check(live.GetProperty("streak").GetInt32()==2&&live.GetProperty("multiKill").GetString()=="DOUBLE KILL"&&live.GetProperty("team").GetString()=="ORDER","inspect publishes the streak, the multi-kill and the side");
+            // The dock only announces what the events carry: the same reading plus a
+            // triple kill must draw the banner, and nothing else.
+            var calm=Pixels(league);
+            var sector=new Size(700,220);
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,
+                reading with{Respawn=null,LastDeathAt=null,Kills=5,Streak=3,LastKillAt=200,MultiKill="TRIPLE KILL",MultiKillAt=200});
+            league.Poll();league.Tick(.05);
+            var streak=Pixels(league);Render(league,Path.Combine(output,"lol-multikill.png"));
+            Check(Diff(streak,calm,sector,new Rect(0,94,700,56))>400,"A detected kill streak draws its banner over the dock");
+            // A death is the other side of the same rule: the countdown replaces the
+            // counters instead of being written next to them.
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,
+                reading with{Respawn=null,LastDeathAt=null,Streak=3,MultiKill="",MultiKillAt=null,LastKillAt=null});
+            league.Poll();league.Tick(6);
+            var alive=Pixels(league);Render(league,Path.Combine(output,"lol-calm.png"));
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,
+                reading with{Respawn=12,LastDeathAt=205});
+            league.Poll();league.Tick(.05);
+            var dead=Pixels(league);Render(league,Path.Combine(output,"lol-dead.png"));
+            Check(Diff(dead,alive,sector,new Rect(280,56,140,110))>200,"A death draws the respawn countdown in the middle of the dock");
+            // An objective is announced on the side that took it, never in the middle.
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,
+                reading with{Respawn=null,Red=reading.Red with{Turrets=reading.Red.Turrets+1}});
+            league.Poll();league.Tick(.05);
+            Check(Diff(Pixels(league),alive,sector,new Rect(462,166,222,40))>100,"An objective change lights the band of the team that took it");
+            league.Tick(6);
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,LolSnapshot.Idle(LolState.Unavailable,"HttpRequestException"));
+            league.Poll();Render(league,Path.Combine(output,"lol-unavailable.png"));
+            Check(JsonSerializer.SerializeToElement(league.Inspect()).GetProperty("state").GetString()=="Unavailable","A failed reading is reported as unavailable");
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,aram);
+            league.Poll();
+            var aramImage=Pixels(league);Render(league,Path.Combine(output,"lol-aram.png"));
+            var aramInspect=JsonSerializer.SerializeToElement(league.Inspect());
+            Check(aramInspect.GetProperty("aram").GetBoolean()&&aramInspect.GetProperty("mode").GetString()=="ARAM","inspect publishes the ARAM mode");
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,reading);
+            league.Poll();
+            Check(Different(aramImage,Pixels(league)),"An ARAM reading does not draw the dragon and baron counters");
+        }
+        // Le dock vit aussi à sa taille minimale déclarée : les mêmes relevés y tiennent.
+        using(var small=new LolSurface(station){Width=440,Height=180})
+        {
+            var telemetry=typeof(LolSurface).GetField("telemetry",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(small)!;
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,reading with{Respawn=null});
+            small.Poll();
+            var compact=Pixels(small);Render(small,Path.Combine(output,"lol-compact.png"));
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,
+                reading with{Respawn=null,Red=reading.Red with{Turrets=reading.Red.Turrets+1}});
+            small.Poll();small.Tick(.05);
+            Check(Diff(Pixels(small),compact,new Size(440,180),new Rect(280,136,150,26))>20,"The compact dock keeps the per-team counters at its declared minimum");
+        }
+        // La scène Jeu affiche le bloc en 774 × 516 : la disposition haute garde les
+        // mêmes relevés, répartis dans la carte au lieu de rester tassés en haut.
+        using(var tall=new LolSurface(station){Width=774,Height=516})
+        {
+            var telemetry=typeof(LolSurface).GetField("telemetry",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(tall)!;
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,reading with{Respawn=null});
+            tall.Poll();
+            var laid=Pixels(tall);Render(tall,Path.Combine(output,"lol-tall.png"));
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,reading with{Respawn=null,Kills=9});
+            tall.Poll();
+            Check(Diff(Pixels(tall),laid,new Size(774,516),new Rect(266,46,484,114))>20,"The tall dock draws its scoreboard in the right column");
+            // Borne haute du coût d'une image : rendu WPF isolé, logiciel, hors
+            // compositeur du bureau et hors partie réelle.
+            var frame=System.Diagnostics.Stopwatch.StartNew();
+            for(int i=0;i<60;i++)Pixels(tall);
+            frame.Stop();
+            Console.WriteLine($"LoL live card: {frame.Elapsed.TotalMilliseconds/60:0.0} ms per isolated WPF render at 774 x 516 (software, not a live-game measure).");
+        }
+        using(var large=new LolSurface(station){Width=1640,Height=546})
+        {
+            var telemetry=typeof(LolSurface).GetField("telemetry",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(large)!;
+            var sample=reading with{ChampionId="Velkoz",Champion="Vel'Koz",Respawn=null,GoldPerSecond=8.4,GoldWindow=60,
+                GoldTrend=Enumerable.Range(0,60).Select(i=>3+Math.Sin(i*.3)*2+(i%13==0?30d:0)).ToArray(),
+                Players=new[]{"Ahri","Lux","Velkoz","Karthus","Garen","Caitlyn","Vex","Qiyana","Fiora","Illaoi"}.Select((id,i)=>new LolPlayer(id,id,i<5?"ORDER":"CHAOS",i,0,0,i==8)).ToArray()};
+            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,sample);
+            large.Poll();
+            ((Task)typeof(LolSurface).GetField("artworkLoad",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(large)!).GetAwaiter().GetResult();
+            Check(JsonSerializer.SerializeToElement(large.Inspect()).GetProperty("portrait").GetBoolean(),"Official Vel'Koz portrait loads locally");
+            Render(large,Path.Combine(output,"lol-dashboard.png"));
+            var chart=(LolSurface.IncomeVisual)typeof(LolSurface).GetField("incomeChart",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(large)!;
+            chart.Active=true;
+            double beforeTime=chart.ViewTime;
+            chart.Update(sample with{GameTime=sample.GameTime+1,GoldTrend=sample.GoldTrend!.Select(v=>v*.8).ToArray()},new Rect(608,300,980,130));
+            Check(chart.ViewTime==beforeTime&&chart.Opacity==1,"A new sample never fades or jumps the existing chart");
+            long parentFrames=large.RenderCount,chartFrames=chart.Frames;
+            chart.Tick(1/30d);
+            Check(chart.ViewTime>beforeTime&&chart.ViewTime-beforeTime<.07&&chart.Frames>chartFrames&&large.RenderCount==parentFrames,"Only the child graph advances continuously between readings");
+            var chartCost=System.Diagnostics.Stopwatch.StartNew();
+            for(int i=0;i<300;i++)chart.Tick(1/30d);
+            chartCost.Stop();
+            Console.WriteLine($"LoL chart only: {chartCost.Elapsed.TotalMilliseconds/300:0.000} ms per drawing update (without desktop rasterization).");
+            chart.Active=false;beforeTime=chart.ViewTime;chartFrames=chart.Frames;chart.Tick(.1);
+            Check(chart.ViewTime==beforeTime&&chart.Frames==chartFrames,"A hidden chart stops ticking and drawing");
+            large.Width=774;large.Height=516;large.Refresh();Render(large,Path.Combine(output,"lol-dashboard-tall.png"));
+            large.Width=700;large.Height=220;large.Refresh();Render(large,Path.Combine(output,"lol-dashboard-default.png"));
+        }
+        Console.WriteLine("PASS LoL: parsing, observed income, inventory/gap resets, participation, portraits, effects and responsive renders.");
+    }
+    static void NetworkChecks(Station station,string output)
+    {
+        foreach(var size in new[]{new Size(440,280),new Size(872,328),new Size(832,480)})
+        {
+            using var network=new NetworkSurface(station){Width=size.Width,Height=size.Height};
+            var samples=Enumerable.Range(0,60).Select(i=>new NetworkSample(Environment.TickCount64-(59-i)*1000,12000+Math.Sin(i*.22)*10000+i*800,4000+Math.Cos(i*.3)*3000)).ToArray();
+            typeof(NetworkSampler).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(network.Sampler,new NetworkSnapshot("fixture","Ethernet",samples,null,"1.1.1.1","",[new("fixture","Ethernet",true)]));
+            Render(network,Path.Combine(output,$"network-{size.Width}.png"));
+            Check(Has(network,"NetworkApplications")&&Has(network,"NetworkSettings"),"Network controls remain inside resized docks");
+            Check(NetworkSurface.Rate(null)=="—","Unavailable rates are never zero");
+            typeof(NetworkDetailClient).GetField("frame",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(network.Details,new NetworkDetailFrame(true,"TCP + UDP",Enumerable.Range(0,5).Select(i=>new NetworkAppRate("Application "+i,50000/(i+1),6000/(i+1),i+1)).ToArray()));
+            typeof(NetworkSurface).GetField("detailView",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(network,true);network.Refresh();
+            Render(network,Path.Combine(output,$"network-{size.Width}-apps.png"));
+        }
+        Console.WriteLine("NETWORK_CHECKS_PASS");
+    }
     [STAThread] static void Main(string[] args)
     {
         var app=new Application();
         string root=Path.GetFullPath(args[0]),output=Path.Combine(root,"artifacts/validation/dock-review");
         Directory.CreateDirectory(output);
         var station=new Station{Root=root};
+        if(args.Contains("--network-only")){NetworkChecks(station,output);return;}
+        if(args.Contains("--ai-only")){AiMeterChecks(station,output);return;}
+        if(args.Contains("--lol-only")){LolChecks(station,output);return;}
         if(args.Contains("--apps-only")){AppLayoutChecks(station,output);return;}
         if(args.Contains("--glass-only")){GlassChecks(station,output);return;}
         if(args.Contains("--gallery-only"))
@@ -267,8 +469,9 @@ static class DockReviewTests
                 var projects=new DeskSurface(station,DeskWidget.Projects){Width=size.Width,Height=size.Height};
                 typeof(DeskSurface).GetField("popup",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(projects,true);
                 Render(projects,Path.Combine(output,$"projects-menu-{size.Width}.png"));
-                Check(new[]{"Explorer","OpenCodex","OpenCodexDs","OpenKilo","CloseProject","FoldProject"}.All(name=>Has(projects,name)),"Every project launch and fold action remains reachable");
-                var buttons=Hits(projects).EnumerateArray().Where(h=>new[]{"Explorer","OpenCodex","OpenCodexDs","OpenKilo"}.Contains(h.GetProperty("name").GetString())).Select(h=>new Rect(h.GetProperty("x").GetDouble(),h.GetProperty("y").GetDouble(),h.GetProperty("width").GetDouble(),h.GetProperty("height").GetDouble())).ToArray();
+                Check(new[]{"Explorer","OpenCodex","OpenCodexDs","OpenKilo","OpenClaude","CloseProject","FoldProject"}.All(name=>Has(projects,name)),"Every project launch and fold action remains reachable");
+                var buttons=Hits(projects).EnumerateArray().Where(h=>new[]{"Explorer","OpenCodex","OpenCodexDs","OpenKilo","OpenClaude"}.Contains(h.GetProperty("name").GetString())).Select(h=>new Rect(h.GetProperty("x").GetDouble(),h.GetProperty("y").GetDouble(),h.GetProperty("width").GetDouble(),h.GetProperty("height").GetDouble())).ToArray();
+                Check(buttons.All(b=>new Rect(0,0,size.Width,size.Height).Contains(b)&&b.Height>=27),"Every project action stays inside the dock with a usable click target");
                 for(int i=0;i<buttons.Length;i++)for(int j=i+1;j<buttons.Length;j++)Check(!buttons[i].IntersectsWith(buttons[j]),"Project action targets never overlap");
                 var actions=(System.Collections.IEnumerable)typeof(Surface).GetField("hits",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(projects)!;
                 foreach(var value in actions){var hit=((Rect Rect,Action Action,string Name))value;if(hit.Name=="FoldProject"){hit.Action();break;}}
@@ -459,18 +662,7 @@ static class DockReviewTests
             Render(controller,Path.Combine(output,"dualsense-touch-trails.png"));
             Check(Has(controller,"DualSenseTrail")&&!Has(controller,"DualSenseRumble"),"Touch mode stays separate from removed vibration controls");
         }
-        foreach(var size in new[]{new Size(440,280),new Size(872,328),new Size(832,480)})
-        {
-            using var network=new NetworkSurface(station){Width=size.Width,Height=size.Height};
-            var samples=Enumerable.Range(0,60).Select(i=>new NetworkSample(Environment.TickCount64-(59-i)*1000,12000+Math.Sin(i*.22)*10000+i*800,4000+Math.Cos(i*.3)*3000)).ToArray();
-            typeof(NetworkSampler).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(network.Sampler,new NetworkSnapshot("fixture","Ethernet",samples,null,"1.1.1.1","",[new("fixture","Ethernet",true)]));
-            Render(network,Path.Combine(output,$"network-{size.Width}.png"));
-            Check(Has(network,"NetworkApplications")&&Has(network,"NetworkSettings"),"Network controls remain inside resized docks");
-            Check(NetworkSurface.Rate(null)=="—","Unavailable rates are never zero");
-            typeof(NetworkDetailClient).GetField("frame",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(network.Details,new NetworkDetailFrame(true,"TCP + UDP",Enumerable.Range(0,5).Select(i=>new NetworkAppRate("Application "+i,50000/(i+1),6000/(i+1),i+1)).ToArray()));
-            typeof(NetworkSurface).GetField("detailView",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(network,true);network.Refresh();
-            Render(network,Path.Combine(output,$"network-{size.Width}-apps.png"));
-        }
+        NetworkChecks(station,output);
         // Applications: one window state per icon, established by a single window list.
         var ranked=station.Apps.Take(4).ToArray();
         var rankedProcesses=ranked.Select((app,index)=>new AppProcessSnapshot(Path.GetFileNameWithoutExtension(app.Path),app.Path,true,700+index)).ToArray();
@@ -492,51 +684,7 @@ static class DockReviewTests
             Check(Different(front,Pixels(states)),"Leaving the foreground visibly changes the icon material");
         }
         states.Dispose();
-        // LoL: rest state, synthetic reading, timers and the certificate predicate.
-        Check(LolTelemetry.IsLiveClientEndpoint("127.0.0.1",2999)&&!LolTelemetry.IsLiveClientEndpoint("localhost",2999)
-            &&!LolTelemetry.IsLiveClientEndpoint("127.0.0.1",3000)&&!LolTelemetry.IsLiveClientEndpoint("127.0.0.1.evil.test",2999),
-            "Only 127.0.0.1:2999 justifies accepting the live client certificate");
-        Check(LolTelemetry.Probe(true,true)&&!LolTelemetry.Probe(true,false)&&!LolTelemetry.Probe(false,true),
-            "The live client API is only read while a game process runs");
-        var reading=LolTelemetry.Parse(LiveGame,DateTimeOffset.UtcNow);
-        Check(reading.State==LolState.Live&&reading.Champion=="Ahri"&&reading.Level==7&&reading.Kills==4&&reading.Deaths==2&&reading.Assists==9&&reading.CreepScore==182&&reading.Gold==12480,
-            "The synthetic reading gives champion, level, KDA, CS and gold");
-        Check(reading.Blue.Dragons==1&&reading.Blue.Barons==1&&reading.Blue.Turrets==2&&reading.Blue.Inhibitors==1&&reading.Red.Dragons==1&&reading.Red.Turrets==3&&reading.Red.Inhibitors==0,
-            "Objectives are counted per team");
-        Check(reading.DragonIn is{} dragon&&Math.Abs(dragon-236)<.001&&reading.BaronIn is{} baron&&Math.Abs(baron-396)<.001,
-            "Dragon counts 5:00 and Baron 6:00 after the corresponding kill");
-        Check(reading.Respawn is{} respawn&&Math.Abs(respawn-7.5)<.001,"The respawn timer is read while the player is dead");
-        bool refused=false;try{LolTelemetry.Parse("{}",DateTimeOffset.UtcNow);}catch(FormatException){refused=true;}
-        Check(refused,"A response without game data is refused");
-        var aram=LolTelemetry.Parse(AramGame,DateTimeOffset.UtcNow);
-        Check(aram.Aram&&aram.MapNumber==12&&aram.Mode=="ARAM","Howling Abyss is recognised from the map and the mode");
-        Check(aram.DragonIn is null&&aram.BaronIn is null,"ARAM exposes no dragon or baron timer to invent");
-        Check(aram.Events!.Contains("TurretKilled")&&aram.Events.Contains("GameStart"),"The received event names are published for verification");
-        using(var league=new LolSurface(station){Width=700,Height=220})
-        {
-            var telemetry=typeof(LolSurface).GetField("telemetry",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(league)!;
-            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,LolSnapshot.Idle(LolState.NoGame));
-            league.Poll();Render(league,Path.Combine(output,"lol-none.png"));
-            Check(Native.Panels[16]==new Rect(0,0,700,220),"LoL owns the glass slot 16");
-            Check(JsonSerializer.SerializeToElement(league.Inspect()).GetProperty("state").GetString()=="NoGame","The resting dock states that no game runs");
-            var none=Pixels(league);
-            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,reading);
-            league.Poll();Render(league,Path.Combine(output,"lol-live.png"));
-            Check(Different(none,Pixels(league)),"A live reading changes the dock");
-            var live=JsonSerializer.SerializeToElement(league.Inspect());
-            Check(live.GetProperty("state").GetString()=="Live"&&live.GetProperty("creepScore").GetInt32()==182&&live.GetProperty("blue").GetProperty("Dragons").GetInt32()==1,"inspect publishes the live reading and its objectives");
-            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,LolSnapshot.Idle(LolState.Unavailable,"HttpRequestException"));
-            league.Poll();Render(league,Path.Combine(output,"lol-unavailable.png"));
-            Check(JsonSerializer.SerializeToElement(league.Inspect()).GetProperty("state").GetString()=="Unavailable","A failed reading is reported as unavailable");
-            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,aram);
-            league.Poll();
-            var aramImage=Pixels(league);Render(league,Path.Combine(output,"lol-aram.png"));
-            var aramInspect=JsonSerializer.SerializeToElement(league.Inspect());
-            Check(aramInspect.GetProperty("aram").GetBoolean()&&aramInspect.GetProperty("mode").GetString()=="ARAM","inspect publishes the ARAM mode");
-            typeof(LolTelemetry).GetField("snapshot",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(telemetry,reading);
-            league.Poll();
-            Check(Different(aramImage,Pixels(league)),"An ARAM reading does not draw the dragon and baron counters");
-        }
+        LolChecks(station,output);
         // Météo: the hourly strip only exists from 190 px, the rain line everywhere.
         Native.Values["weatherTemp"]="21°";Native.Values["weatherCity"]="Aix-en-Provence";Native.Values["weatherCondition"]="Éclaircies";
         Native.Values["weatherIcon"]="weather-sun";Native.Values["weatherRange"]="↑ 24°   ↓ 13°";Native.Values["weatherWind"]="Vent · 12 km/h";
@@ -612,18 +760,69 @@ static class DockReviewTests
         station.Terminal=null;
         var plain=Pixels(new DeskSurface(station,DeskWidget.Projects){Width=720,Height=293});
         Check(Different(badge,plain),"An open terminal tab adds the neon badge to the project card");
-        Console.WriteLine("PASS: font, reminders, app packs and compact add button, audio bounds and meter smoothing, Bluetooth targets, native icon fallback, LoL telemetry, weather strip, project card. Render fixtures are not live click validation.");
+        // Quota hebdomadaire : page du dock Codex Meter, valeurs de fixture, aucun backend.
+        foreach(var key in new[]{"weekTitle","weekUsed","weekReset","weekValue","weekValueCost","weekValueState","weekDelta","weekSince","weekWindowCount","weekModelCount"})Native.Values[key]="";
+        var meter=new DashboardSurface(station,false){Width=680,Height=300};
+        var page=meter.Transition;
+        page.Settle(0);
+        // Un premier rendu enregistre les cibles de navigation avant de cliquer.
+        Pixels(meter);
+        Invoke(meter,"Quotas"); page.Settle(3); Pixels(meter);
+        Invoke(meter,"Week");
+        Check(page.Requested==6,"Le bouton SEMAINE ouvre la page hebdomadaire");
+        page.Settle(6); Pixels(meter); Invoke(meter,"Summary");
+        Check(page.Requested==0,"Synthèse referme la page hebdomadaire");
+        page.Settle(6);
+        var weekSize=new Size(meter.Width,meter.Height);
+        var weekList=new Rect(310,70,354,170);
+        var weekValue=new Rect(24,72,270,64);
+        var emptyWeek=Pixels(meter);
+        Render(meter,Path.Combine(output,"week-empty.png"));
+        Check(Hits(meter).GetArrayLength()==4,"AI Meter garde ses quatre cibles de navigation");
+        Native.Values["weekTitle"]="VALEUR DU QUOTA";Native.Values["weekUsed"]="19 %";Native.Values["weekReset"]="Reset jeu. 1 oct. · 12:33";
+        Native.Values["weekValue"]="2,61 Md";Native.Values["weekValueCost"]="12,40 $";Native.Values["weekValueState"]="mesuré sur 14 % · 96 relevés";
+        Native.Values["weekDelta"]="+32 % vs fenêtre préc.";Native.Values["weekSince"]="relevés depuis le 24 sept. 16:51";
+        Native.Values["weekWindowCount"]="3";Native.Values["weekModelCount"]="2";
+        var windows=new[]{("17 sept. → 1 oct.","2,61 Md","12,40 $",""),("10 sept. → 17 sept.","1,98 Md","9,10 $","-18 %"),("3 sept. → 10 sept.","2,42 Md","11,20 $","+22 %")};
+        for(int i=0;i<windows.Length;i++)
+        {
+            Native.Values[$"weekWindow:{i}:period"]=windows[i].Item1;Native.Values[$"weekWindow:{i}:value"]=windows[i].Item2;
+            Native.Values[$"weekWindow:{i}:cost"]=windows[i].Item3;Native.Values[$"weekWindow:{i}:delta"]=windows[i].Item4;
+            Native.Values[$"weekWindow:{i}:current"]=i==0?"1":"0";Native.Values[$"weekWindow:{i}:samples"]="96";
+        }
+        Native.Values["weekModel:0:name"]="gpt-6-astra";Native.Values["weekModel:0:ratio"]="6,1 Md";
+        Native.Values["weekModel:1:name"]="deepseek-flash";Native.Values["weekModel:1:ratio"]="2,9 M";
+        var measured=Pixels(meter);
+        Render(meter,Path.Combine(output,"week-measured.png"));
+        Check(Diff(emptyWeek,measured,weekSize,weekList)>300,"La liste des fenêtres est dessinée");
+        Check(Diff(emptyWeek,measured,weekSize,weekValue)>300,"La valeur du quota est affichée");
+        for(int i=0;i<windows.Length;i++)Native.Values[$"weekWindow:{i}:value"]="—";
+        var flat=Pixels(meter);
+        Check(Diff(measured,flat,weekSize,weekList)>300,"Chaque fenêtre affiche sa propre valeur");
+        Check(Diff(measured,flat,weekSize,weekValue)==0,"Vider les fenêtres ne touche pas la valeur en cours");
+        Native.Values["weekValue"]="9,99 Md";
+        var bumped=Pixels(meter);
+        Check(Diff(flat,bumped,weekSize,weekValue)>200&&Diff(flat,bumped,weekSize,weekList)==0,"La valeur 100 % se redessine seule");
+        foreach(var shape in new[]{new Size(779,209),new Size(520,168),new Size(460,132)})
+        {
+            meter.Width=shape.Width;meter.Height=shape.Height;
+            Render(meter,Path.Combine(output,$"week-{shape.Width}x{shape.Height}.png"));
+        }
+        Console.WriteLine("PASS: font, reminders, app packs and compact add button, audio bounds and meter smoothing, Bluetooth targets, native icon fallback, LoL telemetry, weather strip, project card, weekly quota page. Render fixtures are not live click validation.");
     }
 
     // One synthetic live client response: no game, no account and no engine is involved.
     const string LiveGame="""
         {"activePlayer":{"riotId":"Ayo#EUW","summonerName":"Ayo","level":7,"currentGold":12480,"isDead":true,"respawnTimer":7.5},
-         "gameData":{"gameMode":"CLASSIC","gameTime":164.0},
+         "gameData":{"gameMode":"CLASSIC","gameTime":164.0,"mapName":"Faille de l'invocateur"},
          "allPlayers":[
            {"riotId":"Ayo#EUW","summonerName":"Ayo","championName":"Ahri","level":7,"team":"ORDER","isDead":true,"respawnTimer":7.5,"scores":{"kills":4,"deaths":2,"assists":9,"creepScore":182}},
-           {"riotId":"EnemyMid#EUW","summonerName":"EnemyMid","championName":"Zed","level":9,"team":"CHAOS","isDead":false,"respawnTimer":0,"scores":{"kills":3,"deaths":4,"assists":5,"creepScore":150}}],
+           {"riotId":"EnemyMid#EUW","summonerName":"EnemyMid","championName":"Zed","level":9,"team":"CHAOS","isDead":false,"respawnTimer":0,"scores":{"kills":3,"deaths":4,"assists":5,"creepScore":150}},
+           {"riotId":"EnemyTop#EUW","summonerName":"EnemyTop","championName":"Darius","level":8,"team":"CHAOS","isDead":false,"respawnTimer":0,"scores":{"kills":1,"deaths":2,"assists":1,"creepScore":120}}],
          "events":{"Events":[
-           {"EventName":"DragonKill","EventTime":60.0,"KillerName":"EnemyMid"},
+           {"EventName":"FirstBlood","EventTime":28.0,"Recipient":"Ayo"},
+           {"EventName":"DragonKill","EventTime":60.0,"KillerName":"EnemyMid","DragonType":"Ocean"},
+           {"EventName":"ChampionKill","EventTime":90.0,"KillerName":"EnemyMid","VictimName":"Ayo","Assisters":["EnemyTop"]},
            {"EventName":"DragonKill","EventTime":100.0,"KillerName":"Ayo","DragonType":"Fire"},
            {"EventName":"BaronKill","EventTime":200.0,"KillerName":"Ayo"},
            {"EventName":"TurretKilled","EventTime":120.0,"KillerName":"Ayo"},
@@ -631,7 +830,9 @@ static class DockReviewTests
            {"EventName":"TurretKilled","EventTime":140.0,"KillerName":"EnemyMid"},
            {"EventName":"TurretKilled","EventTime":150.0,"KillerName":"EnemyMid"},
            {"EventName":"TurretKilled","EventTime":160.0,"KillerName":"EnemyMid"},
-           {"EventName":"InhibKilled","EventTime":161.0,"KillerName":"Ayo"}]}}
+           {"EventName":"InhibKilled","EventTime":161.0,"KillerName":"Ayo"},
+           {"EventName":"ChampionKill","EventTime":170.0,"KillerName":"Ayo","VictimName":"EnemyMid","Assisters":["EnemyTop"]},
+           {"EventName":"ChampionKill","EventTime":176.0,"KillerName":"Ayo","VictimName":"EnemyTop","Assisters":[]}]}}
         """;
 
     // Howling Abyss, same player: no dragon, no baron, only structures and the

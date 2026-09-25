@@ -25,8 +25,8 @@ internal sealed class DeskSurface : Surface
     readonly DeskWidget widget;
     int projectRow;
     Size cachedSize;
-    bool ProjectMenuColumns=>Width>=680;
-    Rect ProjectPopup=>new(16,48,Width-32,Math.Min(ProjectMenuColumns?164:236,Height-60));
+    int ProjectMenuColumns=>Width>=1100?5:Width>=680?3:2;
+    Rect ProjectPopup=>new(16,48,Width-32,Math.Min(ProjectMenuColumns==5?164:ProjectMenuColumns==3?236:308,Height-60));
     public DeskSurface(Station station,DeskWidget kind):base(station,kind switch{DeskWidget.Clock=>0,DeskWidget.Weather=>1,DeskWidget.Music=>3,_=>4}){widget=kind;Width=720;Height=kind switch{DeskWidget.Clock=>164,DeskWidget.Weather=>112,DeskWidget.Music=>168,_=>293};}
     public void TickAudio(bool reactive=false,bool visible=true)
     {
@@ -338,23 +338,26 @@ internal sealed class DeskSurface : Surface
         string selected=Native.Read("selectedPath");var status=Station.Projects.Read(selected);
         Text(ProjectStatus(status),32,rect.Y+42,9.6,ProjectStatusColor(status),width:Width-98);
         Button("CloseProject","⌃",Width-62,rect.Y+8,30,30,()=>popup=false);
-        int cols=ProjectMenuColumns?4:2,rows=4/cols;
+        int cols=ProjectMenuColumns,rows=(5+cols-1)/cols;
         double bw=(rect.Width-32-(cols-1)*10)/cols,bh=(rect.Height-82-(rows-1)*8)/rows;
         ProjectAction(0,"Explorer","Explorateur","Fichiers","folder","#F0C38B",()=>Native.DeskCommand("OpenSelected"));
         ProjectAction(1,"OpenCodex","Codex CLI","ChatGPT","codex","#D8BCF5",()=>Station.Terminal?.OpenCodex(Native.Read("selectedPath")));
         ProjectAction(2,"OpenCodexDs","Codex CLI","DeepSeek","deepseek","#97CFFF",()=>Station.OpenCodexDeepSeek(Native.Read("selectedPath")));
         ProjectAction(3,"OpenKilo","Kilo CLI","DeepSeek","kilo","#DFE8A3",()=>Station.OpenKilo(Native.Read("selectedPath")));
+        ProjectAction(4,"OpenClaude","Claude Code","Anthropic","claudecode","#E9B49C",()=>Station.OpenClaude(Native.Read("selectedPath")));
         void ProjectAction(int index,string id,string title,string provider,string icon,string accent,Action launch)
         {
             double x=rect.X+16+(index%cols)*(bw+10),y=rect.Y+68+(index/cols)*(bh+8);
             bool compact=bw<205||bh<65;
             Button(id,"",x,y,bw,bh,()=>{launch();popup=false;},radius:16,accent:accent);
-            double size=compact?36:52,ix=x+8,iy=y+(bh-size)/2;
+            bool shortRow=bh<48;
+            double size=shortRow?22:compact?36:52,ix=x+8,iy=y+(bh-size)/2;
             if(icon=="folder")Text("\uE8B7",ix+size/2,iy+size*.14,size*.48,accent,"Segoe Fluent Icons",align:"center");
             else Image(System.IO.Path.Combine(Station.Root,"dock/icons/neon",icon+".png"),ix,iy,size,size);
             double tx=ix+size+7,tw=bw-(tx-x)-10;
-            Text(title,tx,y+bh/2-20,compact?10:11,"#F4EDF9",bold:true,width:tw);
-            Text(provider,tx,y+bh/2+3,9,accent,width:tw);
+            string label=shortRow&&title=="Codex CLI"?(provider=="ChatGPT"?"Codex / GPT":"Codex / DS"):title;
+            Text(label,tx,y+bh/2-(shortRow?8:20),compact?10:11,"#F4EDF9",bold:true,width:tw);
+            if(!shortRow)Text(provider,tx,y+bh/2+3,9,accent,width:tw);
             // DeepSeek remains visible beside Kilo's harness mark as well.
             if(icon=="kilo"&&bw>=225)Image(System.IO.Path.Combine(Station.Root,"dock/icons/neon/deepseek.png"),x+bw-34,y+bh/2-12,24,24);
         }

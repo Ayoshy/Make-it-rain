@@ -6,7 +6,12 @@ chargé `battlestation-shopping-glass-01`. Les anciens noms de candidats cités
 plus bas décrivent leurs essais historiques, pas le pointeur de démarrage actuel.
 Les 17 contrôles Réseau et DockReview ont été relancés avec succès avant publication.
 
-Le dock affiche les débits descendant et montant de l’interface choisie, deux courbes sur la dernière minute et la latence ICMP vers une cible. La cible initiale est `1.1.1.1` ; elle figure dans l’infobulle et se modifie par le bouton `⋯`. Cette latence concerne la cible indiquée, pas un serveur de jeu.
+Le dock affiche les débits descendant et montant de l’interface choisie, deux courbes sur la dernière minute et la latence ICMP vers une cible. La cible initiale est `1.1.1.1` ; elle se consulte et se modifie par le bouton `⋯`. Cette latence concerne la cible indiquée, pas un serveur de jeu.
+
+Le titre, le nom de la connexion, la latence et le bouton de réglage partagent
+une seule ligne. Les données et le détail par application remontent de 20 px,
+avec la même hauteur de bandeau commune que Disques. Les courbes bénéficient
+de la place récupérée ; le bouton inférieur conserve sa position.
 
 L’interface automatique suit la route Windows par défaut, avec la métrique de route et celle de l’interface. Le sélecteur permet de choisir une interface configurée explicitement. Les compteurs sont lus chaque seconde sur un worker ; l’affichage est interpolé. Une première mesure, une interface indisponible ou une absence de réponse ne deviennent pas des valeurs nulles fictives.
 

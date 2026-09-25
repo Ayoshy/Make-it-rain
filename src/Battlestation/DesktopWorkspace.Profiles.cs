@@ -27,18 +27,23 @@ internal sealed partial class DesktopWorkspace
     }
     // A scene is applied while the desktop is dissolved: the request only states the
     // destination, and a choice made during the exit replaces the previous one.
-    void SelectProfile(string name)=>scene.Request(()=>SwitchScene(name));
+    void SelectProfile(string name){DesktopLifecycle.Write($"scene-request {profiles.Current} -> {name}; palette={palette?.IsVisible}");scene.Request(()=>SwitchScene(name));}
     void SwitchScene(string name)
     {
         try
         {
+            DesktopLifecycle.Write("scene-apply "+name);
             ClearEditHistory();
             settingsWindow?.Close();
             var next=profiles.Switch(name,station.Layout,station.Settings);
-            station.ApplyAppearance(next);SetEditing(false);ApplyAll();station.Layout.Save();
+            DesktopLifecycle.Write("scene-profile-loaded "+name);
+            station.ApplyAppearance(next);DesktopLifecycle.Write("scene-appearance "+name);
+            SetEditing(false);DesktopLifecycle.Write("scene-editing-cleared "+name);
+            ApplyAll();DesktopLifecycle.Write("scene-docks-applied "+name);
+            station.Layout.Save();DesktopLifecycle.Write("scene-saved "+name);
         }
         catch(Exception e) when(e is ArgumentException or InvalidOperationException or System.IO.IOException or UnauthorizedAccessException)
-        {MessageBox.Show(e.Message,"Scène",MessageBoxButton.OK,MessageBoxImage.Information);}
+        {DesktopLifecycle.Write("scene-error "+e);MessageBox.Show(e.Message,"Scène",MessageBoxButton.OK,MessageBoxImage.Information);}
     }
     void SaveUserProfile()
     {

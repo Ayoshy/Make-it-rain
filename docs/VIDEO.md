@@ -45,17 +45,18 @@ surface) ; la présentation sur le fil d'interface se limite à la copie dans la
 surface. Tant qu'un miroir est armé, le bureau passe le GC en `SustainedLowLatency`
 et rétablit le mode interactif à l'arrêt.
 
-La mémoire par image est réutilisée (tampon de lecture du pipe, tampon de décodage,
-surface) ; la présentation sur le fil d'interface se limite à la copie dans la
-surface. Tant qu'un miroir est armé, le bureau passe le GC en `SustainedLowLatency`
-et rétablit le mode interactif à l'arrêt.
-
-Version de l'extension : 0.4.0. La résolution suit le cadre du dock,
-jusqu'à 1920 × 1080, sans agrandir la source à la capture. Encodage JPEG dans un
-worker chargé depuis une page interne de l'extension, cadence plafonnée à
-30 images/s et deux images au maximum en attente
+Version de l'extension : 0.4.1. La résolution suit le cadre du dock,
+jusqu'à 1920 × 1080, sans agrandir la source à la capture. Encodage JPEG dans deux
+workers chargés depuis une page interne de l'extension (un encodage peut dépasser
+l'intervalle d'une image sous charge ; les images restent transmises dans l'ordre
+de capture, une image plus ancienne qu'une image déjà transmise est abandonnée),
+cadence plafonnée à
+30 images/s et deux images au maximum par worker en attente
 d'acquittement. L'affichage WPF est notifié dès l'arrivée d'une image. Les
 compteurs reçus/dessinés ne prouvent pas à eux seuls une vidéo en mouvement.
+`video-inspect` donne aussi `arrivalGapMaxMs` (plus long écart entre deux images
+reçues) et `presentDelayMaxMs` (plus longue attente du fil d'interface avant
+présentation) depuis l'inspection précédente.
 La redécouverte couvre la reconnexion, les onglets déjà ouverts et l'arrivée des
 données après les métadonnées. Le diagnostic n'expose que des étapes et noms
 d'erreurs bornés ; aucun texte de page ou message d'exception complet n'est transmis.
@@ -113,6 +114,11 @@ Un worker possède les ressources WGC/Direct3D. Un shader réduit l'image sur GP
 à la taille utile, au maximum 1920 × 1080, avant le transfert CPU. Deux tampons
 réutilisés transmettent la dernière image à WPF. L'interface ne patiente plus
 sur le transfert GPU et la réduction ne se fait plus pixel par pixel sur CPU.
+
+La recherche de la fenêtre Stremio (processus puis fenêtres, plusieurs
+millisecondes) tourne sur un worker, une fois par seconde, et seulement en mode
+Auto ou Stremio : un miroir YouTube/Twitch n'est plus interrompu chaque seconde
+sur le fil d'interface.
 
 Le fond vidéo est opaque et la fenêtre de support est en retrait, ombre comprise.
 L'image remplit le cadre sans déformation, avec un léger rognage possible suivant

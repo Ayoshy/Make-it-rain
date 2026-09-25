@@ -19,7 +19,47 @@ public sealed record ApiEquivalentEstimate(
     double ScaleFactor,
     bool UsesProxyPricing,
     IReadOnlyList<string> UnknownModels,
-    IReadOnlyList<ModelUsageBreakdown> Models);
+    IReadOnlyList<ModelUsageBreakdown> Models,
+    IReadOnlyList<DailyModelTokens>? DailyUsage = null)
+{
+    /// <summary>Réunit les compteurs locaux de plusieurs lecteurs (sessions Codex, Claude) en un seul rapport.</summary>
+    public static ApiEquivalentEstimate? Combine(params ApiEquivalentEstimate?[] parts)
+    {
+        var present = parts.Where(part => part is not null).Select(part => part!).ToArray();
+        return present.Length switch
+        {
+            0 => null,
+            1 => present[0],
+            _ => new ApiEquivalentEstimate(
+                present.Any(part => part.DollarAmount.HasValue) ? present.Sum(part => part.DollarAmount ?? 0) : null,
+                present.Any(part => part.TodayDollarAmount.HasValue) ? present.Sum(part => part.TodayDollarAmount ?? 0) : null,
+                present.Sum(part => part.ParsedTokens),
+                present.Any(part => part.TodayTokens.HasValue) ? present.Sum(part => part.TodayTokens ?? 0) : null,
+                present.Sum(part => part.ParsedSessions),
+                present.Max(part => part.ScaleFactor),
+                present.Any(part => part.UsesProxyPricing),
+                present.SelectMany(part => part.UnknownModels).Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+                present.SelectMany(part => part.Models).OrderByDescending(model => model.TotalTokens).ToArray(),
+                present.SelectMany(part => part.DailyUsage ?? []).ToArray())
+        };
+    }
+}
+
+public sealed record DailyModelTokens(DateOnly Day, string Model, long TotalTokens,
+    long? InputTokens = null, long? CachedInputTokens = null, long? OutputTokens = null, long? CacheCreationTokens = null);
+
+// Model identity is evidence of the model family, not of the account's billing plan.
+public static class ModelFamily
+{
+    public static string Of(string model) => model.ToLowerInvariant() switch
+    {
+        var name when name.StartsWith("deepseek-") => "deepseek",
+        var name when name.StartsWith("gpt-") || name.StartsWith("o1") || name.StartsWith("o3") || name.StartsWith("o4") => "openai",
+        var name when name.StartsWith("claude-") => "claude",
+        _ => "unknown"
+    };
+}
 
 public sealed record ModelUsageBreakdown(
     string Model,
@@ -30,7 +70,8 @@ public sealed record ModelUsageBreakdown(
     long TotalTokens,
     int Sessions,
     decimal? DollarAmount,
-    double TokenSharePercent);
+    double TokenSharePercent,
+    long CacheCreationTokens = 0);
 
 public sealed class GetAccountRateLimitsResponse
 {

@@ -12,7 +12,6 @@ public sealed class ShoppingService : IShoppingEngine
     readonly IVerdictEngine engine;
     readonly PromoCalendar calendar;
     readonly HttpClient http;
-    readonly string eventPath;
     readonly string settingsPath;
     readonly string ntfyEndpoint;
     readonly Lock gate=new();
@@ -51,7 +50,6 @@ public sealed class ShoppingService : IShoppingEngine
         this.http=http??Shared;
         this.parser=parser??new ShoppingSpecParser(Llm(this.settings,this.http,this.reasoning));
         this.advisor=advisor??new ShoppingAdvisor(Llm(this.settings,this.http,this.reasoning));
-        eventPath=Path.Combine(dataDirectory,ShoppingSettingsStore.EventsFileName);
         settingsPath=Path.Combine(dataDirectory,ShoppingSettingsStore.FileName);
         this.ntfyEndpoint=ntfyEndpoint.TrimEnd('/');
         foreach(var source in sources.OfType<IShoppingProgressSource>())source.Progress+=SourceProgress;

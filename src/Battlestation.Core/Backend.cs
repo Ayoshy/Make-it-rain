@@ -10,13 +10,18 @@ internal sealed partial class Backend : IDisposable
 {
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     readonly CancellationTokenSource shutdown = new();
-    readonly SemaphoreSlim refresh = new(0, 1), deepseekRefresh = new(0, 1), gpuGate = new(1, 1);
+    readonly SemaphoreSlim refresh = new(0, 1), deepseekRefresh = new(0, 1), claudeRefresh = new(0, 1), gpuGate = new(1, 1);
     readonly NativeGpuControlService gpu = new();
-    readonly Task sensorsTask, codexTask, deepseekTask;
+    readonly Task sensorsTask, codexTask, deepseekTask, claudeTask;
+    readonly ClaudeSessionEstimator claudeSessions = new();
     readonly string directory;
     volatile TemperatureSnapshot? sensors;
     volatile MeterState meter = new(null, false, null, 15);
+    volatile QuotaWeekReport weekReport = QuotaWeekReport.Empty;
+    volatile AiUsageReport aiUsage = AiUsageReport.Empty;
+    volatile string? aiError;
     volatile DeepSeekState deepseek = new(null, false, null);
+    volatile ClaudeState claude = new(null, false, null);
     volatile string? hardwareError, gpuError;
     volatile bool gpuBusy, heatwave;
     public string Display => $"CPU {SensorFormatting.Temperature(sensors?.CpuPackageCelsius)}  ·  GPU {SensorFormatting.Temperature(sensors?.GpuCelsius)}\nCodex {QuotaText()}";
@@ -27,10 +32,11 @@ internal sealed partial class Backend : IDisposable
         sensorsTask = Task.Run(ReadSensors);
         codexTask = Task.Run(ReadCodex);
         deepseekTask = Task.Run(ReadDeepSeek);
+        claudeTask = Task.Run(ReadClaude);
     }
     public int Revision(bool hardware)=>hardware
         ? HashCode.Combine(sensors?.FetchedAt,hardwareError,gpuError,gpuBusy,heatwave,controls,Volatile.Read(ref writePending),sensors is {} sample&&DateTimeOffset.Now-sample.FetchedAt>TimeSpan.FromSeconds(15))
-        : HashCode.Combine(meter,meter.Snapshot is {} usage&&DateTimeOffset.Now-usage.FetchedAt>TimeSpan.FromMinutes(16),deepseek,deepseek.Snapshot is {} balance&&DateTimeOffset.Now-balance.FetchedAt>TimeSpan.FromMinutes(16));
+        : HashCode.Combine(meter,meter.Snapshot is {} usage&&DateTimeOffset.Now-usage.FetchedAt>TimeSpan.FromMinutes(16),deepseek,deepseek.Snapshot is {} balance&&DateTimeOffset.Now-balance.FetchedAt>TimeSpan.FromMinutes(16),claude,claude.Snapshot is {} account&&DateTimeOffset.Now-account.FetchedAt>TimeSpan.FromMinutes(16),aiUsage,aiError);
     string QuotaText()
     {
         var value = meter.Snapshot?.Limits.FirstOrDefault()?.Primary?.UsedPercent;
@@ -59,23 +65,59 @@ internal sealed partial class Backend : IDisposable
     {
         await using var client = new CodexAppServerClient();
         var estimator = new ApiEquivalentEstimator(cachePath: Path.Combine(directory, "api-equivalent-cache-v1.json"));
-        try { do { await UpdateCodex(client, estimator); } while (await refresh.WaitAsync(TimeSpan.FromMinutes(15), shutdown.Token) || !shutdown.IsCancellationRequested); }
+        var weeks = new QuotaWeekStore(Path.Combine(directory, "quota-weeks.json"));
+        try { do { await UpdateCodex(client, estimator, weeks); } while (await refresh.WaitAsync(TimeSpan.FromMinutes(15), shutdown.Token) || !shutdown.IsCancellationRequested); }
         catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { }
     }
-    async Task UpdateCodex(CodexAppServerClient client, ApiEquivalentEstimator estimator)
+    async Task UpdateCodex(CodexAppServerClient client, ApiEquivalentEstimator estimator, QuotaWeekStore weeks)
     {
         meter = meter with { Refreshing = true, Error = null };
+        UsageSnapshot? usage = null;
         try
         {
-            var usage = await client.ReadUsageAsync(shutdown.Token);
+            usage = await client.ReadUsageAsync(shutdown.Token);
             meter = new(MeterUsage.From(usage), true, null, 15);
-            try { usage = usage with { ApiEquivalent = await estimator.EstimateAsync(null, shutdown.Token) }; }
-            catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { throw; }
-            catch { meter = meter with { Error = "Estimation locale indisponible." }; }
-            meter = meter with { Snapshot = MeterUsage.From(usage), Refreshing = false };
         }
         catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { throw; }
-        catch { meter = meter with { Refreshing = false, Error = "Codex indisponible. Dernière mesure conservée." }; }
+        catch { meter = meter with { Error = "Codex indisponible. Dernière mesure conservée." }; }
+        // Local counters must still refresh when the Codex account reader is unavailable.
+        try
+        {
+            var estimate = ApiEquivalentEstimate.Combine(
+                await estimator.EstimateAsync(null, shutdown.Token),
+                await ClaudeSessionsAsync());
+            aiUsage = new AiUsageReport(estimate, DateTimeOffset.Now);
+            aiError = null;
+            if (usage is not null)
+            {
+                usage = usage with { ApiEquivalent = estimate };
+                meter = meter with { Snapshot = MeterUsage.From(usage) };
+                try { weekReport = weeks.Record(usage); }
+                catch { /* the previous report stays until the next refresh */ }
+            }
+        }
+        catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { throw; }
+        catch { aiError = "Compteurs locaux indisponibles. Dernière mesure conservée."; }
+        meter = meter with { Refreshing = false };
+    }
+    // Une lecture Claude en panne ne doit pas effacer les compteurs Codex locaux.
+    async Task<ApiEquivalentEstimate?> ClaudeSessionsAsync()
+    {
+        try { return await claudeSessions.EstimateAsync(shutdown.Token); }
+        catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { throw; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException) { return null; }
+    }
+    async Task ReadClaude()
+    {
+        try { do { await UpdateClaude(); } while (await claudeRefresh.WaitAsync(TimeSpan.FromMinutes(15), shutdown.Token) || !shutdown.IsCancellationRequested); }
+        catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { }
+    }
+    async Task UpdateClaude()
+    {
+        claude = claude with { Refreshing = true, Error = null };
+        try { claude = new(await ClaudeUsageReader.ReadAsync(shutdown.Token), false, null); }
+        catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { throw; }
+        catch (Exception e) { claude = claude with { Refreshing = false, Error = e is InvalidOperationException ? e.Message : "API Claude indisponible." }; }
     }
     async Task ReadDeepSeek()
     {
@@ -93,6 +135,7 @@ internal sealed partial class Backend : IDisposable
     {
         if (refresh.CurrentCount == 0 && !meter.Refreshing) { try { refresh.Release(); } catch (SemaphoreFullException) { } }
         if (deepseekRefresh.CurrentCount == 0 && !deepseek.Refreshing) { try { deepseekRefresh.Release(); } catch (SemaphoreFullException) { } }
+        if (claudeRefresh.CurrentCount == 0 && !claude.Refreshing) { try { claudeRefresh.Release(); } catch (SemaphoreFullException) { } }
     }
     public async Task<object> RequestAsync(string channel, string path, JsonElement body)
     {
@@ -137,7 +180,7 @@ internal sealed partial class Backend : IDisposable
     public void Dispose()
     {
         shutdown.Cancel();
-        try { Task.WaitAll([sensorsTask, codexTask, deepseekTask], TimeSpan.FromSeconds(8)); } catch { }
+        try { Task.WaitAll([sensorsTask, codexTask, deepseekTask, claudeTask], TimeSpan.FromSeconds(8)); } catch { }
         gpu.Dispose();
     }
 }

@@ -18,7 +18,7 @@ onmessage=async ({data})=>{
     const blob=await canvas.convertToBlob({type:'image/jpeg',quality:.9});if(!running||epoch!==captureId)return;
     const bytes=new Uint8Array(await blob.arrayBuffer());if(bytes.length>2*1024*1024)return;
     let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
-    const id=++sequence;pending.set(id,performance.now());
+    const id=Number.isInteger(data.sequence)?data.sequence:++sequence;pending.set(id,performance.now());
     postMessage({type:'frame',captureId,sequence:id,width,height,jpeg:btoa(binary),encodeMs:performance.now()-began,sourceTimestamp:data.sourceTimestamp});
   }catch(error){postMessage({type:'error',captureId,code:'capture-unavailable',stage:'encoding',reason:error.name});}
   finally{bitmap.close();busy=false;consumed();}

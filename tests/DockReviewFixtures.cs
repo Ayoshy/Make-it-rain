@@ -17,6 +17,7 @@ internal sealed class TerminalSession
 }
 internal sealed class Station
 {
+    internal void OpenClaude(string project)=>throw new InvalidOperationException("No terminal during render tests");
     public string Root {get;set;}="";
     public string Error=>"";
     public string M(string key)=>Native.Read(key);

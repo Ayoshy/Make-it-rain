@@ -1,0 +1,332 @@
+Nous reprenons le projet Battlestation et la recherche d’un lecteur des améliorations d’ARAM Mayhem dans League of Legends. Cette conversation sert à revenir aux pistes possibles après plusieurs essais infructueux, puis à choisir une expérimentation courte et décisive.
+
+Travaille dans :
+C:\Users\Ayo\Documents\Project\Battlestation
+
+Lis AGENTS.md, puis README.md et les documents utiles cités ci-dessous. Ne recommence pas toute l’exploration déjà faite.
+
+1. CE QUE JE VEUX ACCOMPLIR
+
+Battlestation est mon bureau personnel Windows, en .NET/WPF, avec un dock LoL déjà fonctionnel pour la télémétrie classique.
+
+Je veux pouvoir détecter automatiquement, pendant une partie ARAM Mayhem :
+- les trois améliorations actuellement proposées ;
+- les changements de propositions après chaque reroll ;
+- idéalement l’amélioration finalement choisie ;
+- les données assez rapidement pour les exploiter dans Battlestation pendant la phase de choix.
+
+La priorité est de démontrer une lecture fiable. L’interface finale, les recommandations et une éventuelle source de statistiques viennent après.
+
+Le critère de réussite est concret : les trois noms/identifiants récupérés correspondent aux cartes visibles, puis se mettent correctement à jour après un vrai reroll. Un catalogue statique, les améliorations déjà choisies ou un historique de fin de partie ne suffisent pas.
+
+Le fonctionnement doit être autonome pendant la partie. Je ne veux pas devoir prévenir l’agent à chaque choix ou reroll, et les interruptions de conversation ne doivent pas arrêter la collecte.
+
+2. MES PRÉFÉRENCES ET DÉCISIONS
+
+- Application personnelle sur mon PC, pas un produit public.
+- Je préfère une solution locale, peu intrusive, sans abonnement ni appels IA payants à chaque lecture.
+- J’ai exprimé des inquiétudes sur le risque de ban lié à la lecture mémoire et sur la confidentialité d’Overwolf.
+- J’ai finalement autorisé la piste Overwolf, avec préférence pour une variante autonome, comme CurseForge sans client Overwolf complet.
+- Ne présente donc plus Overwolf comme exclu par principe.
+- En revanche, ne transforme pas Battlestation en application publique ou monétisée pour satisfaire leurs conditions.
+- Je distingue une politique d’approbation d’une impossibilité technique. J’ai explicitement fait remarquer que « ils n’approuvent plus les applications privées » ne prouve pas que tout usage local soit techniquement impossible.
+- Évite aussi l’erreur inverse : une possibilité théorique ou un exemple GitHub ne constitue pas une solution validée.
+- N’annonce pas de risque de ban nul pour une approche non vérifiée.
+
+3. SOURCES LOCALES À LIRE EN PRIORITÉ
+
+Documents :
+- docs/LOL_AUGMENT_RESEARCH.md
+- docs/LOL.md
+
+Outils et preuves, ignorés par Git :
+- artifacts/validation/lol-direct/
+- artifacts/validation/lol-continuous/
+- artifacts/validation/lol-continuous/run-20260925-105824/
+- artifacts/validation/lol-overwolf/
+- artifacts/validation/lol-polish/OcrProbe.cpp
+
+Pour l’ancien incident de scènes, seulement si nécessaire :
+- artifacts/validation/scene-crash-20260925-102330/INVESTIGATION.md
+
+Commence par les comptes rendus courts, les schémas et les extraits ciblés. Ne charge pas intégralement les gros JSONL.
+
+4. CE QUI FONCTIONNE DÉJÀ
+
+Le dock LoL sait récupérer les données classiques via :
+https://127.0.0.1:2999/liveclientdata/allgamedata
+
+Cela couvre notamment champion, temps de jeu, niveau, K/D/A, CS, or disponible, capacités et runes. Des effets et un graphique de revenu ont déjà été développés.
+
+Le client LoL possède aussi une API locale LCU. Son port et son secret sont récupérés depuis le lockfile, sans afficher ni sauvegarder le secret.
+
+Installation LoL observée :
+E:\LoL\Riot Games\League of Legends
+
+Version du client observée le 25 septembre 2026 :
+16.19.820.7193
+
+Un catalogue statique est accessible :
+GET /lol-game-data/assets/v1/cherry-augments.json
+
+Nous avons récupéré 554 identifiants distincts, avec noms, raretés et chemins d’icônes. Copie locale :
+artifacts/validation/lol-direct/cherry-augments.json
+
+Attention : ce catalogue n’indique pas les cartes proposées dans la partie. Le préfixe ARAM_ ne suffit pas non plus à définir exhaustivement les améliorations Mayhem.
+
+5. ÉCHECS ET LIMITES DES API DIRECTES
+
+API du processus de jeu :
+- Son OpenAPI présente douze endpoints liveclientdata.
+- L’aide complète du port 2999 contient 27 fonctions, 24 types et un événement technique OnCallback.
+- Aucun champ de propositions d’améliorations identifié.
+- Les recherches dans les noms de champs et les chaînes des définitions n’ont pas trouvé augment, kiwi, reroll ou cherry.
+
+API LCU :
+- Aide complète examinée : 1 473 fonctions, 897 événements, 3 605 types.
+- Les références aux améliorations trouvées concernent notamment historique, replays, TFT et cosmétiques.
+- Aucun flux de sélection Mayhem en direct identifié.
+
+Endpoints tentés :
+- /lol-inventory/v1/cherry-inventory : 404 au salon.
+- /lol-game-data/assets/v1/kiwi-augments.json : 400.
+- Endpoints eog-stats-block : 404 au salon, puis données disponibles en fin de partie.
+- Historique des matchs : contient les améliorations prises, pas les alternatives proposées.
+
+Ne transforme pas un 404 au salon en preuve que l’endpoint serait toujours inutilisable pendant une partie.
+
+Premiers essais ponctuels :
+- Je signalais « choix maintenant », puis « reroll », puis « encore ».
+- Les interruptions de tours ont empêché de relever correctement les deux premiers instants.
+- Une lecture ultérieure sans champ candidat ne prouve pas ce qui était disponible à l’instant précis du reroll.
+- C’est précisément pourquoi un enregistreur indépendant de la conversation a ensuite été créé.
+
+Capture continue suivante, partie Brand :
+- Enregistreur .NET autonome sous artifacts/validation/lol-continuous/.
+- Interrogation Live Client Data visée toutes les 250 ms.
+- Écoute WebSocket LCU parallèle, avec filtrage des routes et données enregistrées.
+- 5 357 réponses live réussies.
+- Couverture de 00:33,50 à 23:56,94 de jeu.
+- Intervalle moyen : 262 ms.
+- Les 33 premières secondes ne sont pas couvertes.
+- Un trou de 9,99 secondes existe entre 20:08,57 et 20:18,57 ; cause non établie.
+- Un autre intervalle atteint 650 ms.
+- Aucun champ candidat de propositions/rerolls identifié.
+- 18 instantanés capacités/runes, mais une seule configuration de runes distincte.
+- 13 événements LCU reçus, tous en fin de partie.
+
+Résultat réellement récupéré à la fin :
+/lol-end-of-game/v1/eog-stats-block
+localPlayer.stats PLAYER_AUGMENT_1 à 4 :
+- 1308 : FireFox
+- 1388 : Infinite Recursion
+- 1415 : Twin Fire
+- 2137 : Pat On The Back
+Emplacements 5 et 6 : zéro.
+
+Ces données prouvent les quatre améliorations prises, pas les offres ni les rerolls. Le booléen gameTypeConfig/reroll trouvé dans la configuration n’est pas un événement de reroll d’amélioration.
+
+IMPORTANT : « capture continue » désignait ici une collecte d’API, PAS une vidéo ni des captures d’écran. Nous n’avons donc pas constitué un corpus visuel synchronisé des choix et rerolls.
+
+Les résultats sont filtrés, pas une archive exhaustive de toutes les données brutes. Leur absence de candidats ne prouve pas l’absence universelle de toute source exploitable.
+
+6. JOURNAUX ET ACCESSIBILITÉ : ESSAIS NÉGATIFS MAIS BORNÉS
+
+Journaux :
+- Quatre r3dlog de parties précédentes examinés.
+- Aucun événement augment/reroll/kiwi identifié.
+- Une occurrence Cherry désignait une plante.
+- r3dlog, netlog et netstats de la partie Sona également examinés sans résultat pertinent.
+- Recherche principalement lexicale, pas analyse exhaustive de tous les formats possibles.
+
+Piège rencontré : taille de fichier affichée à zéro ou périmée pendant l’écriture. Lire réellement le flux en partage ; ne pas conclure depuis les métadonnées du répertoire.
+
+Accessibilité Windows :
+- Un relevé exposait uniquement ControlType.Pane / RiotWindowClass.
+- Aucun enfant ni TextPattern exploitable.
+- L’écran de choix n’était pas confirmé à cet instant.
+- Un test ciblé pendant les trois cartes reste éventuellement pertinent, mais cette piste n’a encore livré aucun texte.
+
+7. OVERWOLF : POSSIBILITÉ DOCUMENTÉE, BLOCAGE RÉEL OBSERVÉ
+
+Overwolf documente une fonctionnalité GEP « augments » pour ARAM Mayhem :
+- trois propositions, avec augment_1 / augment_2 / augment_3 ;
+- picked_augment pour le choix effectué.
+
+Cela correspond à notre besoin sur le papier. Nous n’avons reçu aucun de ces événements en pratique.
+
+Deux variantes existent :
+- Overwolf Native, avec le client complet ;
+- Overwolf Electron, autonome, sans client Native obligatoire.
+
+La variante autonome reste fondée sur des composants propriétaires Overwolf. Elle ne garantit pas l’absence de télémétrie.
+
+Politiques consultées :
+- approbation/autorisation demandée pour les applications ;
+- applications privées et passerelles vers un autre service explicitement concernées par leur refus actuel d’approbation ;
+- ne pas confondre cette politique avec un résultat de test technique.
+
+Nous avons donc fait un vrai essai autonome :
+Dossier : artifacts/validation/lol-overwolf/
+Application : Battlestation Mayhem Probe
+Auteur : Ayo
+Runtime officiel @overwolf/ow-electron : 42.7.1
+Gestionnaire de modules : 5.0.14
+Seul module demandé : gep
+
+Le code appelle avant app.ready :
+- disableAdsOptimization()
+- disableAnonymousAnalytics()
+
+La documentation indique qu’une télémétrie minimale subsiste malgré cette dernière option.
+
+Résultat du test de 60 secondes :
+- l’application atteint app-ready ;
+- le gestionnaire bloque le chargement GEP ;
+- aucun package-ready ;
+- aucun événement de jeu reçu.
+
+Messages exacts :
+[SECURITY] Dev mode missing credentials
+[SECURITY] Dev credentials invalid
+[SECURITY] Package cache cleared for blocked app
+closing package manager: 'invalid verification'
+
+Le jeu n’a pas été lancé pour cet essai. La sonde s’est arrêtée automatiquement. Le client Overwolf complet n’a pas été installé. Le runtime autonome et ses fichiers sont conservés dans le dossier de validation.
+
+Authentification documentée :
+- OW_CLI_EMAIL + OW_CLI_API_KEY ;
+- ou OW_DEV_KEY.
+
+Dernière information fournie par moi :
+J’ai créé un compte Overwolf. La page montre :
+- Developer status : Pending ;
+- aucune Developer Key ;
+- bouton Generate Key ;
+- erreur « Something went wrong. Please try again. »
+
+La documentation réserve la génération OW_DEV_KEY au statut Approved. Le statut Pending est cohérent avec l’échec, mais le message générique seul n’en prouve pas la cause interne.
+
+Aucune clé obtenue, aucune demande d’approbation envoyée par l’agent, aucun accès développeur valide démontré.
+
+La voie Native n’a pas été testée sur le PC ; sa documentation demande elle aussi un compte développeur autorisé pour charger une extension locale.
+
+Ne dis donc ni « Overwolf est prêt », ni « tout Overwolf est techniquement impossible ».
+
+8. PISTES À COMPARER SANS LES VENDRE COMME ACQUISES
+
+A. Capture visuelle locale + OCR ciblé
+C’est une piste sérieuse restant à démontrer en conditions réelles.
+- Détecter l’ouverture des cartes.
+- Capturer leurs zones.
+- Reconnaître les noms français.
+- Les rapprocher du catalogue.
+- Repérer les changements après reroll, puis la fermeture/sélection.
+- Mesurer latence, erreurs et coût sur ce PC.
+
+Un prototype Windows OCR existe :
+artifacts/validation/lol-polish/OcrProbe.cpp
+Sur une image fournie de 1628 × 558 :
+- initialisation/décodage : environ 63 ms ;
+- cinq lectures : 35 à 56 ms ;
+- mémoire : environ 23 Mo.
+Ces mesures sont historiques, sur image fixe. Elles ne prouvent ni capture du jeu, ni suivi automatique, ni impact FPS.
+
+Projet externe à examiner comme référence :
+https://github.com/zp96-cmd/mayhem-overlay
+Son auteur décrit de l’OCR local avec tesseract.js et rapprochement des noms au catalogue. La détection de reroll décrite utilise notamment le passage du curseur dans une zone puis un délai avant relecture.
+Ce n’est pas une solution que nous avons installée ou validée. Étudier code, licence et limites avant réutilisation ; ne pas reprendre aveuglément ses fonctions de statistiques.
+
+B. Reconnaissance visuelle des icônes/cartes
+Piste non testée : comparer les icônes visibles aux ressources du catalogue, seule ou en complément de l’OCR. À évaluer face aux animations, couleurs, cadrages et ambiguïtés.
+
+C. Corpus visuel pour développer hors partie
+Piste de méthode : enregistrer localement les séquences utiles de choix/rerolls, avec horodatages, pour pouvoir tester et rejouer les cas sans me faire lancer une partie à chaque modification.
+Définir une capture limitée au jeu, un volume borné et un arrêt explicite. Rien de tel n’a encore été validé.
+
+D. Overwolf via un accès développeur réellement disponible
+Vérifier ce qui est effectivement accessible à notre compte et distinguer authentification, approbation du projet et publication.
+Les anciennes versions, anciens modes locaux ou autres chemins ne sont pas établis comme solutions ; ne pas promettre qu’un downgrade réglera le problème.
+
+E. Application existante avec export ou interface locale
+Piste non étudiée : une application déjà disponible pourrait éventuellement exposer les événements utiles via une interface prévue pour cela. Ne pas supposer que les apps Overwolf possèdent un tel export. Installer une app tierce ne signifie pas automatiquement pouvoir alimenter Battlestation.
+
+F. Autres sources locales
+À rouvrir seulement avec une hypothèse précise et un essai discriminant. Ne pas refaire une partie entière de polling des mêmes endpoints sans raison nouvelle.
+
+G. Mode semi-manuel
+Éventuel repli à discuter : déclenchement par raccourci ou saisie assistée. Ce serait un compromis, pas la réalisation de l’objectif automatique.
+
+H. Lecture mémoire
+Évoquée, jamais implémentée ni testée.
+Les sondes précédentes lisaient des API locales, pas la mémoire du jeu.
+Mes inquiétudes sur Vanguard, la maintenance et le risque de ban restent importantes. Ne pas présenter « lecture seule » comme une garantie d’autorisation ou d’innocuité.
+
+9. STATISTIQUES ET RECOMMANDATIONS : CHANTIER DISTINCT
+
+Détecter les cartes et obtenir une bonne source de statistiques sont deux problèmes différents.
+
+Aucune intégration de statistiques Mayhem n’est validée. Ne pas confondre :
+- taux de choix ;
+- taux de victoire ;
+- données Arena et Mayhem ;
+- patchs, régions et tailles d’échantillon.
+
+Les documents locaux signalent également des restrictions Riot concernant les statistiques d’améliorations : vérifier précisément leur formulation et leur portée actuelles avant de concevoir une fonctionnalité. Ne pas recopier une conclusion réglementaire ancienne sans vérification.
+
+10. ÉTAT DU BUREAU ET ANCIEN INCIDENT À PRÉSERVER
+
+Un crash/disparition avait été reproduit lors de Jeu → Bureau, via palette de commandes + clic sur Bureau, sur le candidat lol-flow-01. L’ancien terminal-palettes-01 ne présentait pas le problème selon mon observation.
+
+Un candidat scene-diagnostic-01 a ajouté des traces de cycle de vie. J’ai ensuite confirmé plusieurs transitions et une partie sans crash.
+
+Attention : la cause n’a PAS été établie, et aucune correction fonctionnelle identifiée ne permet d’affirmer que le bug est définitivement corrigé. L’instrumentation se trouve notamment dans :
+- src/Battlestation/DesktopLifecycle.cs
+- src/Battlestation/Program.cs
+- src/Battlestation/DesktopWorkspace.Profiles.cs
+
+À la dernière vérification de cette conversation :
+- build/current.txt : build/battlestation-terminal-palettes-01 ;
+- bureau réellement chargé : terminal-palettes-01 ;
+- hôte terminal séparé : terminal-bg-01 ;
+- pont vidéo : cache-tabs-08.
+Le candidat diagnostic n’était donc plus le bureau actif. La raison de ce changement n’a pas été établie ici.
+
+Revérifier les processus au début : les PID sont périssables.
+Ne jamais tuer tous les Battlestation.exe. Préserver les hôtes terminal, le pont vidéo et les réglages personnels.
+
+Un échec Computer Use « native pipe unavailable / os error 2 » avait empêché les clics automatisés Windows. Ne pas confondre commandes IPC et validation des gestes réels.
+
+Git est sale sur main, avec de nombreux travaux existants LoL, quotas Codex, terminal et diagnostics. Aucun commit de livraison n’a été effectué pour ces sondes. Préserver tout ce travail et inspecter le diff avant modification.
+
+Les anciens atelier-trial.json / atelier-feedback.json peuvent être historiques : lire docs/ATELIER.md pour le mécanisme actuel. Ne pas fabriquer d’acceptation ou promouvoir un candidat depuis un ancien verdict.
+
+11. CE QUE J’ATTENDS DE CETTE NOUVELLE CONVERSATION
+
+Reviens réellement à l’étude des options, avec les preuves précédentes.
+
+Commence par :
+- résumer brièvement ce qui est acquis et ce qui bloque ;
+- comparer les pistes encore crédibles selon faisabilité, fiabilité, confidentialité, risque pour le compte, coût de maintenance et effort ;
+- distinguer résultats constatés, hypothèses et inconnues ;
+- proposer le plus petit essai permettant de trancher la meilleure piste.
+
+Ne développe pas un gros dock ni une architecture générique avant d’avoir validé la source.
+
+Si un essai nécessite une partie, prépare et vérifie le dispositif avant que je lance le jeu :
+- processus indépendant de la conversation ;
+- indicateur fiable que la capture tourne ;
+- timestamps, erreurs et trous de couverture ;
+- preuves visuelles synchronisées si nécessaires ;
+- arrêt et limites de stockage.
+Ne m’annonce pas « on capture tout » sans mesure de couverture.
+
+Références utiles à vérifier au besoin :
+- https://developer.riotgames.com/docs/lol
+- https://dev.overwolf.com/ow-electron/live-game-data-gep/supported-games/league-of-legends/#augments
+- https://dev.overwolf.com/ow-electron/guides/dev-tools/dev-mode/
+- https://dev.overwolf.com/ow-electron/getting-started/project-roadmap/
+- https://dev.overwolf.com/ow-electron/getting-started/onboarding-resources/frameworks-overview/
+- https://github.com/zp96-cmd/mayhem-overlay
+
+Ne demande pas une nouvelle autorisation pour les lectures et petits essais locaux déjà couverts par cet objectif. En revanche, ne contacte personne, ne publie pas le projet et ne change pas sa nature personnelle sans instruction explicite.

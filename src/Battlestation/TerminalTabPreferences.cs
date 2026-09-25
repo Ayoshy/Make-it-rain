@@ -26,12 +26,16 @@ internal sealed class TerminalTabPreferences
     public static string? Color(string? value)=>value is not null&&Regex.IsMatch(value,"^#[0-9a-fA-F]{6}$")?value.ToUpperInvariant():null;
     public static string Clean(string? value)=>new((value??"").Where(c=>!char.IsControl(c)&&c is not ('\u202a' or '\u202b' or '\u202c' or '\u202d' or '\u202e' or '\u2066' or '\u2067' or '\u2068' or '\u2069')).Take(160).ToArray());
     static TerminalTabPreference Normalize(TerminalTabPreference value){string name=Clean(value.Name).Trim();return value with{Name=name.Length==0?null:name,Color=Color(value.Color)};}
-    public TerminalTabInfo Decorate(TerminalTabInfo tab,ConsoleTitleInfo? metadata,TerminalCacheState cache=default)
+    public TerminalTabInfo Decorate(TerminalTabInfo tab,ConsoleTitleInfo? metadata,TerminalCacheState cache=default,ClaudeSessionInfo? claude=null)
     {
-        var preference=Get(tab.Id);bool cli=metadata?.Codex==true||metadata?.Kilo==true;
-        var parsed=TerminalTitle.Parse(metadata?.Title,metadata?.Codex==true,metadata?.Kilo==true);
+        var preference=Get(tab.Id);bool claudeSession=metadata?.Claude==true;
+        bool cli=metadata?.Codex==true||metadata?.Kilo==true||claudeSession;
+        var parsed=TerminalTitle.Parse(metadata?.Title,metadata?.Codex==true,metadata?.Kilo==true,claudeSession);
+        // Claude Code publie lui-même son état : le titre de console ne sert que de repli.
+        if(claudeSession&&claude is {} session)
+            parsed=(string.IsNullOrWhiteSpace(parsed.Title)&&session.Name is {} name?name:parsed.Title,session.Activity);
         string automatic=!cli||string.IsNullOrWhiteSpace(parsed.Title)?tab.Title:parsed.Title;
-        return tab with{Title=preference.AutomaticTitle?automatic:preference.Name??tab.Title,Accent=preference.Color,Activity=parsed.Activity,Effects=preference.Effects,AutomaticTitle=preference.AutomaticTitle,SourceTitle=metadata?.Title,Badge=cache.Badge,CacheHint=cache.Hint,CacheDetail=cache.Detail};
+        return tab with{Title=preference.AutomaticTitle?automatic:preference.Name??tab.Title,Accent=preference.Color,Activity=parsed.Activity,Effects=preference.Effects,AutomaticTitle=preference.AutomaticTitle,SourceTitle=metadata?.Title,Badge=cache.Badge,CacheHint=cache.Hint,CacheDetail=cache.Detail,Detail=claudeSession?claude?.Detail:null};
     }
 }
 internal static class TerminalTitle
@@ -45,10 +49,14 @@ internal static class TerminalTitle
         ("\u2713",TerminalActivity.Ready),("\u2705",TerminalActivity.Ready),
     ];
     const string KiloBase="Kilo CLI";
-    public static (string Title,TerminalActivity Activity) Parse(string? title,bool codex,bool kilo=false)
+    // Claude Code écrit son titre de console comme « <marqueur> <titre> » ; le
+    // marqueur peut être l'astérisque de Claude ou une frame d'attente animée.
+    static readonly char[] ClaudeMarkers=['\u00b7','\u2722','\u2733','\u2736','\u273b','\u273d','*'];
+    public static (string Title,TerminalActivity Activity) Parse(string? title,bool codex,bool kilo=false,bool claude=false)
     {
         string clean=TerminalTabPreferences.Clean(title).Trim();
         if(kilo)return Kilo(clean);
+        if(claude)return Claude(clean);
         if(!codex)return(clean,TerminalActivity.Unknown);
         var parts=clean.Split(" | ",StringSplitOptions.TrimEntries);
         if(parts.Length<2)return(clean,TerminalActivity.Unknown);
@@ -70,6 +78,19 @@ internal static class TerminalTitle
         if(!rest.StartsWith(KiloBase+" | ",StringComparison.Ordinal))return(string.Empty,TerminalActivity.Unknown);
         string name=rest[(KiloBase.Length+3)..].Trim();
         return(string.IsNullOrWhiteSpace(name)?KiloBase:name,activity);
+    }
+    static (string Title,TerminalActivity Activity) Claude(string clean)
+    {
+        int start=0;
+        while(start<clean.Length&&(ClaudeMarkers.Contains(clean[start])||clean[start] is >= '\u2800' and <= '\u28ff'))start++;
+        if(start==0)return(clean,TerminalActivity.Unknown);
+        int end=start;
+        while(end<clean.Length&&char.IsWhiteSpace(clean[end]))end++;
+        // Seules les frames d'attente prouvent un travail en cours ; l'astérisque
+        // de Claude apparaît aussi au repos, l'état vient du registre des sessions.
+        var activity=clean[..start].Any(character=>character is >= '\u2800' and <= '\u28ff')?TerminalActivity.Working:TerminalActivity.Unknown;
+        string name=clean[end..].Trim();
+        return(string.IsNullOrWhiteSpace(name)?clean:name,activity);
     }
     static bool Spinner(string value)=>value.Length==1&&(value[0] is >= '\u2800' and <= '\u28ff'||"◐◓◑◒◴◷◶◵⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏".Contains(value));
     static TerminalActivity State(string value)=>value.Trim().ToLowerInvariant() switch

@@ -42,6 +42,12 @@ public sealed class ApiEquivalentEstimator
             // 23/08 au 21/09/2026, entrée hors cache / entrée en cache / sortie.
             ["deepseek-flash"] = new(0.15m, 0.003m, 0.60m),
             ["deepseek-v4-pro"] = new(0.66m, 0.022m, 1.98m),
+            // Tarifs API Anthropic par famille de modÃ¨le. La version exacte du
+            // modÃ¨le ne change pas le tarif public : entrÃ©e, entrÃ©e lue en cache,
+            // sortie, Ã©criture en cache (1,25 x l'entrÃ©e).
+            ["claude-opus"] = new(15m, 1.50m, 75m, 18.75m),
+            ["claude-sonnet"] = new(3m, 0.30m, 15m, 3.75m),
+            ["claude-haiku"] = new(1m, 0.10m, 5m, 1.25m),
             // No proxy price for Spark, auto-review, or unknown models.
         };
 
@@ -116,12 +122,25 @@ public sealed class ApiEquivalentEstimator
             var pricedToday = false;
             var unknownModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var modelTotals = new Dictionary<ModelEffortKey, ModelTotals>();
+            var dailyUsage = new Dictionary<(DateOnly Day, string Model), DailyEstimate>();
 
             var today = DateOnly.FromDateTime(DateTime.Now);
             foreach (var item in _cache.Values)
             {
                 foreach (var daily in item.Daily ?? new Dictionary<string, DailyEstimate>())
                 {
+                    if (daily.Key.Length > 11 &&
+                        DateOnly.TryParseExact(daily.Key.AsSpan(0, 10), "yyyy-MM-dd", out var day))
+                    {
+                        var key = (day, daily.Key[11..]);
+                        var before = dailyUsage.GetValueOrDefault(key);
+                        dailyUsage[key] = new DailyEstimate(
+                            (before?.InputTokens ?? 0) + daily.Value.InputTokens,
+                            (before?.CachedInputTokens ?? 0) + daily.Value.CachedInputTokens,
+                            (before?.OutputTokens ?? 0) + daily.Value.OutputTokens,
+                            (before?.TotalTokens ?? 0) + daily.Value.TotalTokens);
+                    }
+
                     if (!daily.Key.StartsWith(today.ToString("yyyy-MM-dd") + "|", StringComparison.Ordinal)) continue;
                     todayTokens += daily.Value.TotalTokens;
                     var cost = CalculateCost(daily.Key[11..], daily.Value.InputTokens, daily.Value.CachedInputTokens, daily.Value.OutputTokens);
@@ -143,16 +162,12 @@ public sealed class ApiEquivalentEstimator
                     totals.TotalTokens += model.TotalTokens;
                     totals.Sessions++;
 
-                    if (!Prices.TryGetValue(model.Model, out var price))
+                    if (CalculateCost(model.Model, model.InputTokens, model.CachedInputTokens, model.OutputTokens) is not { } itemCost)
                     {
                         unknownModels.Add(model.Model);
                         continue;
                     }
 
-                    var uncachedInput = Math.Max(0, model.InputTokens - model.CachedInputTokens);
-                    var itemCost = (uncachedInput / 1_000_000m * price.InputPerMillion) +
-                                   (model.CachedInputTokens / 1_000_000m * price.CachedInputPerMillion) +
-                                   (model.OutputTokens / 1_000_000m * price.OutputPerMillion);
                     totals.HasPrice = true;
                     totals.RawCost += itemCost;
                     rawCost += itemCost;
@@ -204,7 +219,13 @@ public sealed class ApiEquivalentEstimator
                 ScaleFactor: scale,
                 UsesProxyPricing: usesProxy,
                 UnknownModels: unknownModels.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
-                Models: models);
+                Models: models,
+                DailyUsage: dailyUsage
+                    .Select(pair => new DailyModelTokens(pair.Key.Day, pair.Key.Model, pair.Value.TotalTokens,
+                        pair.Value.InputTokens, pair.Value.CachedInputTokens, pair.Value.OutputTokens))
+                    .OrderBy(item => item.Day)
+                    .ThenBy(item => item.Model, StringComparer.Ordinal)
+                    .ToArray());
         }
         finally
         {
@@ -212,21 +233,56 @@ public sealed class ApiEquivalentEstimator
         }
     }
 
+    /// <summary>
+    /// Valeur API équivalente d'un compteur. <paramref name="inputTokens"/> couvre toute
+    /// l'entrée facturée : hors cache, lue en cache et écrite en cache.
+    /// </summary>
     public static decimal? CalculateCost(
         string model,
         long inputTokens,
         long cachedInputTokens,
-        long outputTokens)
+        long outputTokens,
+        long cacheCreationTokens = 0)
     {
-        if (!Prices.TryGetValue(model, out var price))
+        if (!TryPrice(model, out var price))
         {
             return null;
         }
 
-        var uncachedInput = Math.Max(0, inputTokens - cachedInputTokens);
+        var uncachedInput = Math.Max(0, inputTokens - cachedInputTokens - cacheCreationTokens);
         return (uncachedInput / 1_000_000m * price.InputPerMillion) +
+               (cacheCreationTokens / 1_000_000m * (price.CacheCreationPerMillion ?? price.InputPerMillion)) +
                (cachedInputTokens / 1_000_000m * price.CachedInputPerMillion) +
                (outputTokens / 1_000_000m * price.OutputPerMillion);
+    }
+
+    /// <summary>Un nom exact gagne ; sinon la famille Claude donne le tarif public.</summary>
+    public static bool IsPriced(string model) => TryPrice(model, out _);
+
+    static bool TryPrice(string model, out ModelPrice price)
+    {
+        if (Prices.TryGetValue(model, out var exact) && exact is not null)
+        {
+            price = exact;
+            return true;
+        }
+
+        var name = model.ToLowerInvariant();
+        if (name.StartsWith("claude-", StringComparison.Ordinal))
+        {
+            foreach (var family in new[] { "opus", "sonnet", "haiku" })
+            {
+                if (name.Contains(family, StringComparison.Ordinal) &&
+                    Prices.TryGetValue("claude-" + family, out var familyPrice) && familyPrice is not null)
+                {
+                    price = familyPrice;
+                    return true;
+                }
+            }
+        }
+
+        price = null!;
+        return false;
     }
 
     /// <summary>Removes only Codex Meter's derived estimate cache, never Codex sessions.</summary>
@@ -549,7 +605,8 @@ public sealed class ApiEquivalentEstimator
     private sealed record ModelPrice(
         decimal InputPerMillion,
         decimal CachedInputPerMillion,
-        decimal OutputPerMillion);
+        decimal OutputPerMillion,
+        decimal? CacheCreationPerMillion = null);
 
     private sealed record FileEstimate(
         long Length,

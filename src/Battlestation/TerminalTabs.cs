@@ -6,7 +6,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Threading;
 
 namespace Battlestation;
-internal sealed record TerminalTabInfo(Guid Id,string Title,bool Active,string? Accent=null,TerminalActivity Activity=TerminalActivity.Unknown,bool Effects=true,bool AutomaticTitle=true,string? SourceTitle=null,string? Badge=null,TerminalCacheHint CacheHint=TerminalCacheHint.None,string? CacheDetail=null);
+internal sealed record TerminalTabInfo(Guid Id,string Title,bool Active,string? Accent=null,TerminalActivity Activity=TerminalActivity.Unknown,bool Effects=true,bool AutomaticTitle=true,string? SourceTitle=null,string? Badge=null,TerminalCacheHint CacheHint=TerminalCacheHint.None,string? CacheDetail=null,string? Detail=null);
 internal enum TerminalTabAction { Rename,Color,CustomColor,AutomaticTitle,Effects,Reset,StatusHelp }
 internal sealed class TerminalTabs : Grid
 {
@@ -112,7 +112,7 @@ internal sealed class TerminalTabs : Grid
             select.MaxWidth=data.Badge is null?280:320;
             string color=data.Activity switch{TerminalActivity.Working=>"#9FD5F1",TerminalActivity.Ready=>"#A8E5CD",TerminalActivity.Attention=>"#FFCE8C",TerminalActivity.Error=>"#FFA3B4",_=>"#D2BDF1"};
             indicator.SetState(data.Activity,data.Effects);glow.BorderBrush=B(color);
-            Root.ToolTip=data.Title+"\n"+Status(data.Activity)+(data.Badge is null?"":"\n"+data.Badge)+(data.CacheDetail is null?"":"\n"+data.CacheDetail);
+            Root.ToolTip=data.Title+"\n"+Status(data.Activity)+(data.Badge is null?"":"\n"+data.Badge)+(data.CacheDetail is null?"":"\n"+data.CacheDetail)+(data.Detail is null?"":"\n"+data.Detail);
             if(changed)Animate();
         }
         public void Stop(){glow.BeginAnimation(OpacityProperty,null);glow.Opacity=0;}

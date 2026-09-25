@@ -1,12 +1,12 @@
 (() => {
-  const version='0.4.0';
+  const version='0.4.1';
   const sourceKind=location.hostname==='www.youtube.com'?'youtube':location.hostname==='www.twitch.tv'||location.hostname==='clips.twitch.tv'?'twitch':'';
   if(!sourceKind)return;
   if(globalThis.__battlestationVideoInstalled===version){globalThis.__battlestationVideoAnnounce?.();return;}
   globalThis.__battlestationVideoDispose?.();
   globalThis.__battlestationVideoInstalled=version;
   let desired=false,epoch='',current,stream,track,worker,frame,reader,revision=0,width=1280,height=720;
-  let recoveryQueued=false;
+  let recoveryQueued=false,frameSequence=0;
   let lastAnnouncement='';
   const events=new AbortController();
   const send=message=>{try{chrome.runtime.sendMessage({...message,kind:sourceKind,version}).catch(()=>{});}catch{}};
@@ -61,7 +61,7 @@
           const w=Math.max(1,Math.round(videoFrame.displayWidth*scale)),h=Math.max(1,Math.round(videoFrame.displayHeight*scale));
           stage='image-transfer';const bitmap=await createImageBitmap(videoFrame,{resizeWidth:w,resizeHeight:h,resizeQuality:'high'});
           if(!desired||mine!==revision){bitmap.close();break;}
-          try{owned.postMessage({type:'bitmap',captureId,bitmap,sourceTimestamp:videoFrame.timestamp},[bitmap]);inFlight++;due=Math.max(now,(Number.isFinite(due)?due:now)+1000/30);}
+          try{owned.postMessage({type:'bitmap',captureId,bitmap,sequence:++frameSequence,sourceTimestamp:videoFrame.timestamp},[bitmap]);inFlight++;due=Math.max(now,(Number.isFinite(due)?due:now)+1000/30);}
           catch(error){bitmap.close();throw error;}
         }finally{videoFrame.close();}
       }

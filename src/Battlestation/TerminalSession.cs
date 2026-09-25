@@ -16,6 +16,7 @@ internal sealed class TerminalSession : IDisposable
     TerminalTabInfo[] rawTabs=[];
     ConsoleTitleInfo[] titles=[];
     Dictionary<Guid,TerminalCacheState> cacheStates=[];
+    Dictionary<Guid,ClaudeSessionInfo> claudeStates=[];
     HashSet<Guid> seen=[];
     bool cacheBusy,cachePending;
     int x=2700,y=760,w=1464,h=660;
@@ -48,7 +49,27 @@ internal sealed class TerminalSession : IDisposable
         preferences.Set(id,preference);RefreshTabPresentation();
     }
     Dictionary<Guid,int> shellPids=[];
-    void RefreshTabPresentation(){var next=rawTabs.Select(tab=>preferences.Decorate(tab,titles.FirstOrDefault(t=>t.Pid==shellPids.GetValueOrDefault(tab.Id)),cacheStates.GetValueOrDefault(tab.Id))).ToArray();if(!Tabs.SequenceEqual(next)){Tabs=next;Revision++;}}
+    void RefreshTabPresentation(){var next=rawTabs.Select(tab=>preferences.Decorate(tab,titles.FirstOrDefault(t=>t.Pid==shellPids.GetValueOrDefault(tab.Id)),cacheStates.GetValueOrDefault(tab.Id),claudeStates.GetValueOrDefault(tab.Id))).ToArray();if(!Tabs.SequenceEqual(next)){Tabs=next;Revision++;}}
+    // L'etat Claude est publie par le CLI lui-meme, dans son registre de sessions :
+    // la lecture se fait hors du fil d'interface, comme celle des rollouts Codex.
+    async Task ReadClaudeStates()
+    {
+        var queries=new Dictionary<Guid,int>();
+        foreach(var tab in rawTabs)
+        {
+            var metadata=titles.FirstOrDefault(t=>t.Pid==shellPids.GetValueOrDefault(tab.Id));
+            if(metadata?.Claude==true&&metadata.ClaudePid>0)queries[tab.Id]=metadata.ClaudePid;
+        }
+        var next=new Dictionary<Guid,ClaudeSessionInfo>();
+        if(queries.Count>0)
+        {
+            var records=await Task.Run(()=>ClaudeSessions.Read(queries.Values));
+            foreach(var (id,pid) in queries)
+                if(records.TryGetValue(pid,out var record))next[id]=record;
+        }
+        if(disposed||claudeStates.Count==next.Count&&next.All(pair=>claudeStates.TryGetValue(pair.Key,out var state)&&state==pair.Value))return;
+        claudeStates=next;
+    }
     bool TrackTabs()
     {
         var ids=rawTabs.Select(tab=>tab.Id).ToArray();
@@ -92,7 +113,7 @@ internal sealed class TerminalSession : IDisposable
         catch(Exception e) when(e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException){cacheStates.Clear();RefreshTabPresentation();}
         finally{cacheBusy=false;if(cachePending&&!disposed){cachePending=false;RefreshCache();}}
     }
-    public object InspectTabMetadata()=>new{helperPid=metadata.Pid,tabs=Tabs.Select(tab=>new{tab.Id,tab.Title,tab.Accent,activity=tab.Activity.ToString(),tab.AutomaticTitle,tab.Effects,badge=tab.Badge,hint=tab.CacheHint.ToString()})};
+    public object InspectTabMetadata()=>new{helperPid=metadata.Pid,tabs=Tabs.Select(tab=>new{tab.Id,tab.Title,tab.Accent,activity=tab.Activity.ToString(),tab.AutomaticTitle,tab.Effects,badge=tab.Badge,hint=tab.CacheHint.ToString(),detail=tab.Detail})};
     async Task<string> Send(string command)
     {
         await requests.WaitAsync();
@@ -168,9 +189,11 @@ internal sealed class TerminalSession : IDisposable
             shellPids=sessions.ToDictionary(tab=>tab.GetProperty("id").GetGuid(),tab=>tab.GetProperty("pid").GetInt32());
             bool tabset=TrackTabs();
             var nextTitles=await metadata.Read(shellPids.Values);
-            bool processesChanged=!titles.Select(t=>(t.Pid,t.CodexPid)).SequenceEqual(nextTitles.Select(t=>(t.Pid,t.CodexPid)));
+            bool processesChanged=!titles.Select(t=>(t.Pid,t.CodexPid,t.ClaudePid)).SequenceEqual(nextTitles.Select(t=>(t.Pid,t.CodexPid,t.ClaudePid)));
             titles=nextTitles;
-            if(processesChanged)cacheStates.Clear();
+            if(processesChanged){cacheStates.Clear();claudeStates.Clear();}
+            if(disposed)return;RefreshTabPresentation();
+            await ReadClaudeStates();
             if(disposed)return;RefreshTabPresentation();
             if(tabset||processesChanged)RefreshCache();
             bool external=root.TryGetProperty("chromeVersion",out var version)&&version.GetInt32()>=1;

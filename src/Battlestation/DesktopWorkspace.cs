@@ -37,7 +37,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
             ["apps"]=new DockSurface(station),["music"]=new DeskSurface(station,DeskWidget.Music),["projects"]=new DeskSurface(station,DeskWidget.Projects),
             ["terminal"]=new TerminalSurface(station),["countdown"]=new CountdownSurface(station),
             ["hardware"]=new DashboardSurface(station,true),["usage"]=new DashboardSurface(station,false),["reminders"]=new ReminderSurface(station),["video"]=new VideoSurface(station),["audio"]=new AudioSurface(station),["bluetooth"]=new BluetoothSurface(station),["dualsense"]=new DualSenseSurface(station),["network"]=new NetworkSurface(station),
-            ["lol"]=new LolSurface(station),["shopping"]=new ShoppingSurface(station),["notes"]=new NotesSurface(station),["atelier"]=new AtelierSurface(station)};
+            ["lol"]=new LolSurface(station),["shopping"]=new ShoppingSurface(station),["notes"]=new NotesSurface(station),["atelier"]=new AtelierSurface(station),["disks"]=new DisksSurface(station),["gmail"]=new GmailSurface(station)};
         for(int i=0;i<DesktopTheme.Definitions.Length;i++)
         {
             var theme=DesktopTheme.Definitions[i];
@@ -148,6 +148,8 @@ internal sealed partial class DesktopWorkspace : IDisposable
     void ClearGlass(string id)
     {
         int[] slots=id switch{"clock"=>[0],"weather"=>[1],"apps"=>[2],"music"=>[3],"projects"=>[4,8],"terminal"=>[5],"hardware"=>[6],"usage"=>[7],"video"=>[9],"audio"=>[10],"reminders"=>[11],"bluetooth"=>[12],"dualsense"=>[13],"network"=>[14],"lol"=>[16],"shopping"=>[18],"notes"=>[19],"atelier"=>[20],_=>[]};
+        if(id=="disks")slots=[21];
+        if(id=="gmail")slots=[22];
         foreach(int slot in slots)Native.BackgroundPanel(slot,0,0,0,0);
     }
     void Apply(string id,bool arrange=true,bool refresh=true)
@@ -162,6 +164,8 @@ internal sealed partial class DesktopWorkspace : IDisposable
         if(surface is AudioSurface mixer)mixer.SetActive(block.Visible&&!editing);
         if(surface is DualSenseSurface controller)controller.SetActive(block.Visible&&!editing&&exposed.Contains(id));
         if(surface is NetworkSurface network)network.SetActive(block.Visible&&!editing&&exposed.Contains(id));
+        if(surface is DisksSurface disks)disks.SetActive(block.Visible&&!editing&&exposed.Contains(id));
+        if(surface is GmailSurface gmail)gmail.SetActive(block.Visible&&!editing&&exposed.Contains(id));
         if(surface is LolSurface league)league.SetActive(block.Visible&&!editing&&exposed.Contains(id));
         if(id=="projects"){Native.DeskProjectsActive(block.Visible?1:0);station.Projects.Watch(station.ProjectRoot,block.Visible,name=>Native.DeskCommand("ProjectChanged:"+name));}
         if(id=="terminal")
@@ -189,6 +193,8 @@ internal sealed partial class DesktopWorkspace : IDisposable
         ((NetworkSurface)surfaces["network"]).SetActive(exposed.Contains("network")&&!value);
         ((LolSurface)surfaces["lol"]).SetActive(exposed.Contains("lol")&&!value);
         ((AtelierSurface)surfaces["atelier"]).SetActive(exposed.Contains("atelier")&&!value);
+        ((DisksSurface)surfaces["disks"]).SetActive(exposed.Contains("disks")&&!value);
+        ((GmailSurface)surfaces["gmail"]).SetActive(exposed.Contains("gmail")&&!value);
         station.Terminal?.SetVisible(station.Layout["terminal"].Visible&&!editing);
         if(value){var screen=station.Layout.AvailableScreens.Last();toolbar.Left=screen.Left+(screen.Width-toolbar.Width)/2;toolbar.Top=screen.Top+(screen.Height-toolbar.Height)*.54;toolbar.Show();toolbar.Activate();}else{toolbar.Hide();station.Layout.Save();}
     }
@@ -197,6 +203,9 @@ internal sealed partial class DesktopWorkspace : IDisposable
     {
         if(command=="inspect")return JsonSerializer.Serialize(Inspect());
         if(command=="atelier-inspect")return JsonSerializer.Serialize(((AtelierSurface)surfaces["atelier"]).Inspect());
+        if(command=="disks-inspect")return JsonSerializer.Serialize(((DisksSurface)surfaces["disks"]).Inspect());
+        if(command=="gmail-inspect")return JsonSerializer.Serialize(((GmailSurface)surfaces["gmail"]).Inspect());
+        if(command=="usage-inspect")return JsonSerializer.Serialize(((DashboardSurface)surfaces["usage"]).InspectAi());
         if(command=="terminal-tabs-inspect")return JsonSerializer.Serialize(station.Terminal?.InspectTabMetadata());
         if(command=="audio-inspect"){((AudioSurface)surfaces["audio"]).Mixer.Poll();return JsonSerializer.Serialize(new{mixer=((AudioSurface)surfaces["audio"]).Mixer,spectrum=new{((DeskSurface)surfaces["music"]).Audio.Running,((DeskSurface)surfaces["music"]).Audio.DeviceId,((DeskSurface)surfaces["music"]).Audio.Error,bands=((DeskSurface)surfaces["music"]).Audio.Bands},reactive=station.ReactiveAudio,intensity=station.AudioIntensity});}
         if(command=="video-inspect")return JsonSerializer.Serialize(((VideoSurface)surfaces["video"]).Inspect());
@@ -327,6 +336,8 @@ internal sealed partial class DesktopWorkspace : IDisposable
         ((LolSurface)surfaces["lol"]).SetActive(exposed.Contains("lol")&&!editing);
         ((VideoSurface)surfaces["video"]).SetOccluded(!exposed.Contains("video"));
         ((AtelierSurface)surfaces["atelier"]).SetActive(exposed.Contains("atelier")&&!editing);
+        ((DisksSurface)surfaces["disks"]).SetActive(exposed.Contains("disks")&&!editing);
+        ((GmailSurface)surfaces["gmail"]).SetActive(exposed.Contains("gmail")&&!editing);
         bool listen=station.ReactiveAudio&&monitorMask!=0||exposed.Contains("music")&&Native.Read("playing")=="1";
         if(listen){if(!audio.IsEnabled)audio.Start();}else{audio.Stop();((DeskSurface)surfaces["music"]).Audio.Stop();Native.BackgroundAudio(0,0,0,0);}
     }
@@ -345,6 +356,8 @@ internal sealed partial class DesktopWorkspace : IDisposable
         ((ShoppingSurface)surfaces["shopping"]).Dispose();
         ((NotesSurface)surfaces["notes"]).Dispose();
         ((AtelierSurface)surfaces["atelier"]).Dispose();
+        ((DisksSurface)surfaces["disks"]).Dispose();
+        ((GmailSurface)surfaces["gmail"]).Dispose();
         mediaClipboard.Dispose();reserveWindow?.Close();
         Native.BackgroundStop();station.Terminal?.Detach();
     }

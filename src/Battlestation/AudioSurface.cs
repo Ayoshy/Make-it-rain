@@ -27,6 +27,9 @@ internal sealed class AudioSurface : Surface,IDisposable
     void Animate(object? sender,EventArgs e)
     {
         if(e is not RenderingEventArgs frame||frame.RenderingTime==lastFrame)return;
+        // 30 Hz, like Network: redrawing this dock on every 144 Hz frame starved
+        // the shared UI thread (84 redraws/s measured) during video mirroring.
+        if(lastFrame!=default&&(frame.RenderingTime-lastFrame).TotalSeconds<1/30d-.001)return;
         double elapsed=lastFrame==default?1/60d:Math.Clamp((frame.RenderingTime-lastFrame).TotalSeconds,0,.1);lastFrame=frame.RenderingTime;
         var apps=Mixer.Apps;bool changed=false;
         foreach(var app in apps)

@@ -12,6 +12,7 @@ internal static class DockAppearance
     public static FontFamily UiFont {get;}=new(TextFont);
     internal const string Ink="#DAD2E7",Muted="#AE9FBD",ButtonRim="#22DACDEC";
     internal const double HeaderPoints=14,HeaderTracking=1.8,PanelRadius=24,ButtonRadius=15;
+    internal const double HeaderContentTop=50,HeaderSecondaryLine=26;
     public static readonly LinearGradientBrush ButtonFill=Fill(false),ButtonHover=Fill(true);
     static readonly Pen pointerRim=new(PointerLight(),1.5);
     static RadialGradientBrush PointerLight()

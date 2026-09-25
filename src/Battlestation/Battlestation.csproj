@@ -18,6 +18,7 @@
     <ProjectReference Include="../Battlestation.Shopping/Battlestation.Shopping.csproj" />
     <PackageReference Include="CI.Microsoft.Terminal.Wpf" Version="1.25.260303002" />
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="Google.Apis.Auth" Version="1.76.0" />
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
   </ItemGroup>

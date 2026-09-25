@@ -208,6 +208,7 @@ Après essai, **Atelier → Garder cette version** conserve le candidat.
 | Explorer l'implémentation | [Architecture](docs/ARCHITECTURE.md) · [Terminal](docs/TERMINAL_TABS.md) · [Vidéo](docs/VIDEO.md) |
 | Retrouver les intégrations | [Audio](docs/AUDIO.md) · [Bluetooth](docs/BLUETOOTH.md) · [DualSense](docs/DUALSENSE.md) · [Réseau](docs/NETWORK.md) |
 | Gérer les versions | [Atelier](docs/ATELIER.md) |
+| Connecter sa boîte Gmail | [Gmail et configuration OAuth](docs/GMAIL.md) |
 | Contribuer au projet | [Contrat du dépôt](AGENTS.md) · [Provenance et crédits](docs/PROVENANCE.md) |
 
 ---

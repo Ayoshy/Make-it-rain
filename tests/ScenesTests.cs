@@ -93,6 +93,7 @@ internal static class ScenesTests
             SingleScreenTests.Run(temp,Check);
             ScreenFitTests.Run(temp,Check);
             SceneTransitionTests.Run(Check);
+            ThemeTransitionTests.Run(Check);
             var app=new Application();app.Resources.MergedDictionaries.Add(new GlassMenus());
             var brush=DesktopTheme.Brush("#DAD2E7");var error=DesktopTheme.Brush("#F4B7CA");var originalError=error.Color;
             Check(!brush.CanFreeze,"Les styles ne figent pas la palette partagée");

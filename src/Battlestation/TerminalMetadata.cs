@@ -6,7 +6,7 @@ using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
 
 namespace Battlestation;
-internal sealed record ConsoleTitleInfo(int Pid,string? Title,bool Codex,int Error=0,bool Kilo=false,int CodexPid=0);
+internal sealed record ConsoleTitleInfo(int Pid,string? Title,bool Codex,int Error=0,bool Kilo=false,int CodexPid=0,bool Claude=false,int ClaudePid=0);
 
 internal static class TerminalMetadataWorker
 {
@@ -54,8 +54,8 @@ internal static class TerminalMetadataWorker
             if(!AttachConsole((uint)pid))return new(pid,null,false,Marshal.GetLastWin32Error());
             try
             {
-            var title=new StringBuilder(512);GetConsoleTitle(title,512);bool codex=false,kilo=false;
-            int codexPid=0,codexCount=0;
+            var title=new StringBuilder(512);GetConsoleTitle(title,512);bool codex=false,kilo=false,claude=false;
+            int codexPid=0,codexCount=0,claudePid=0,claudeCount=0;
             var processes=new uint[128];uint count=GetConsoleProcessList(processes,(uint)processes.Length);
             foreach(uint id in processes.Take((int)Math.Min(count,(uint)processes.Length)))
             {
@@ -64,11 +64,13 @@ internal static class TerminalMetadataWorker
                     using var process=Process.GetProcessById((int)id);string name=process.ProcessName;
                     if(name.Equals("codex",StringComparison.OrdinalIgnoreCase)){codex=true;codexPid=(int)id;codexCount++;}
                     else if(name.Equals("kilo",StringComparison.OrdinalIgnoreCase))kilo=true;
+                    else if(name.Equals("claude",StringComparison.OrdinalIgnoreCase)){claude=true;claudePid=(int)id;claudeCount++;}
                 }
                 catch(Exception e) when(e is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception){}
             }
 
-            return new(pid,TerminalTabPreferences.Clean(title.ToString()),codex,0,kilo,codexCount==1?codexPid:0);
+            return new(pid,TerminalTabPreferences.Clean(title.ToString()),codex,0,kilo,codexCount==1?codexPid:0,
+                claude,claudeCount==1?claudePid:0);
         }
             finally{FreeConsole();}
         }

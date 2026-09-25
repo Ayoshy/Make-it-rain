@@ -38,17 +38,17 @@ internal sealed class NetworkSurface : Surface,IDisposable
     {
         var snapshot=Sampler.Snapshot;var current=snapshot.History.LastOrDefault();
         Header("RÉSEAU");Button("NetworkSettings","⋯",Width-58,9,34,28,OpenSettings,14);
-        Text(snapshot.Name,24,45,9,Muted,width:Width-180);
-        Text(snapshot.Latency is null?"— ms":snapshot.Latency<1?"< 1 ms":$"{snapshot.Latency:0} ms",Width-24,44,10,snapshot.Latency is null?Muted:Ink,align:"right");
-        ToolTip=$"Aller-retour ICMP vers {snapshot.Target} · latence de cette cible, pas du serveur de jeu.";
+        Text(snapshot.Name,140,19,9,Muted,width:Width-294);
+        Text(snapshot.Latency is null?"— ms":snapshot.Latency<1?"< 1 ms":$"{snapshot.Latency:0} ms",Width-76,19,9,snapshot.Latency is null?Muted:Ink,align:"right");
         if(detailView)Applications();
         else
         {
             var downColor=DesktopTheme.Current.Active[3];var upColor=DesktopTheme.Current.Active[0];
-            Text("↓ RÉCEPTION",24,72,8,downColor);Text("↑ ENVOI",Width/2+12,72,8,upColor);
-            Text(Rate(current?.Received is null?null:shownDown),24,90,19,downColor,font:DockAppearance.NumberFont);
-            Text(Rate(current?.Sent is null?null:shownUp),Width/2+12,90,19,upColor,font:DockAppearance.NumberFont);
-            var chart=new Rect(24,132,Width-48,Math.Max(32,Height-200));
+            double top=DockAppearance.HeaderContentTop+2;
+            Text("↓ RÉCEPTION",24,top,8,downColor);Text("↑ ENVOI",Width/2+12,top,8,upColor);
+            Text(Rate(current?.Received is null?null:shownDown),24,top+18,19,downColor,font:DockAppearance.NumberFont);
+            Text(Rate(current?.Sent is null?null:shownUp),Width/2+12,top+18,19,upColor,font:DockAppearance.NumberFont);
+            var chart=new Rect(24,top+60,Width-48,Math.Max(32,Height-top-128));
             Box(chart.X,chart.Y,chart.Width,chart.Height,"#102D203B",radius:8);
             double max=Math.Max(1024,snapshot.History.Select(s=>Math.Max(s.Received??0,s.Sent??0)).DefaultIfEmpty().Max()*1.12);
             Curve(snapshot.History,chart,max,true,downColor);
@@ -75,12 +75,13 @@ internal sealed class NetworkSurface : Surface,IDisposable
     void Applications()
     {
         var frame=Details.Frame;
-        Text("APPLICATIONS · TRAFIC DU PC",24,72,8,Muted);
+        double top=DockAppearance.HeaderContentTop+2;
+        Text("APPLICATIONS · TRAFIC DU PC",24,top,8,Muted);
         if(!frame.Active||frame.Apps.Length==0){Text(frame.Active?"Aucun trafic attribué":frame.Status,Width/2,Height/2,11,Muted,align:"center",width:Width-48);return;}
-        double rowHeight=Math.Min(44,(Height-132)/5),max=frame.Apps.Max(a=>a.Received+a.Sent);
+        double rowHeight=Math.Min(44,(Height-top-72)/5),max=frame.Apps.Max(a=>a.Received+a.Sent);
         for(int i=0;i<frame.Apps.Length;i++)
         {
-            var item=frame.Apps[i];double y=96+i*rowHeight;
+            var item=frame.Apps[i];double y=top+24+i*rowHeight;
             Box(24,y-3,(Width-48)*Math.Clamp((item.Received+item.Sent)/Math.Max(1,max),0,1),rowHeight-5,"#706E4093",radius:6);
             Text(item.Name,34,y,10,Ink,width:Math.Max(80,Width-310));
             Text("↓ "+Rate(item.Received),Width-154,y,9,DesktopTheme.Current.Active[3],align:"right");

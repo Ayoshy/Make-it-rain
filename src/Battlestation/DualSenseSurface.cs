@@ -15,7 +15,7 @@ internal sealed class DualSenseSurface : Surface,IDisposable
     double seconds;
     string palette="";
     DualSenseArtwork? artwork;
-    public DualSenseSurface(Station station):base(station,13){Width=720;Height=440;ToolTip="DualSense · lecture des entrées en arrière-plan. Axes SDL bruts de −32768 à 32767, sans correction. Bouge chaque stick une fois pour initialiser les petites variations.";}
+    public DualSenseSurface(Station station):base(station,13){Width=720;Height=440;}
     internal void SetActive(bool value)
     {
         Reader.SetTouchEnabled(Station.Settings.DualSenseTouchTrail);

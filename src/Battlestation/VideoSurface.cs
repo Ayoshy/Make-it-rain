@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Runtime;
 using System.Text.Json;
@@ -18,7 +19,10 @@ internal sealed class VideoSurface : Surface,IDisposable
     VideoSource? source,stremio,leasedSource;
     StremioControlState controls=new(false,null);
     string mode="auto",kind="",wanted="",transportError="";
-    bool visible,editing,armed,disposed,readingControls,transportBusy,occluded;
+    bool visible,editing,armed,disposed,readingControls,scanningStremio,transportBusy,occluded;
+    // Worst gaps since the previous inspection: between frame arrivals, and from
+    // arrival to presentation on the UI thread. Timestamps only, no content.
+    long lastArrival,queuedAt,arrivalGapMax,presentDelayMax;
     public void SetOccluded(bool value){if(occluded==value)return;occluded=value;if(value){timer.Stop();Release();}else if(visible&&!editing){timer.Start();nextScan=0;Update();}}
     long nextScan,lastBrowserFrame;
     long nextBrowserRetry;
@@ -34,8 +38,11 @@ internal sealed class VideoSurface : Surface,IDisposable
     }
     void BrowserFrame()
     {
+        long now=Stopwatch.GetTimestamp(),previous=Interlocked.Exchange(ref lastArrival,now);
+        if(previous!=0&&now-previous>Interlocked.Read(ref arrivalGapMax))Interlocked.Exchange(ref arrivalGapMax,now-previous);
         if(Interlocked.Exchange(ref renderQueued,1)!=0)return;
-        Dispatcher.BeginInvoke(()=>{Interlocked.Exchange(ref renderQueued,0);if(!disposed&&visible&&!editing&&armed){if(kind=="stremio")capture.Read();if(VideoSelection.IsBrowserKind(kind))browser.Read();Refresh();}},DispatcherPriority.Render);
+        Interlocked.Exchange(ref queuedAt,now);
+        Dispatcher.BeginInvoke(()=>{Interlocked.Exchange(ref renderQueued,0);long delay=Stopwatch.GetTimestamp()-Interlocked.Read(ref queuedAt);if(delay>presentDelayMax)presentDelayMax=delay;if(!disposed&&visible&&!editing&&armed){if(kind=="stremio")capture.Read();if(VideoSelection.IsBrowserKind(kind))browser.Read();Refresh();}},DispatcherPriority.Render);
     }
     public void SetActive(bool value,bool organizing)
     {
@@ -77,8 +84,8 @@ internal sealed class VideoSurface : Surface,IDisposable
         {
             nextScan=Environment.TickCount64+1000;scanned=true;
             if(web.Tabs.Length==0||!web.Tabs.Any(t=>t.Ready))browser.Discover();
-            var candidates=VideoSources.Find().Where(s=>s.Kind=="stremio").ToArray();
-            stremio=candidates.FirstOrDefault(s=>s.Foreground)??candidates.FirstOrDefault(s=>s.Handle==source?.Handle)??candidates.FirstOrDefault();
+            // A manual browser source never uses Stremio: skip its window scan.
+            if(mode is "auto" or "stremio"){if(!scanningStremio)_=ScanStremio();}else stremio=null;
             wanted=Resolve(web);if(stremio is not null&&!readingControls)_=ReadControls(stremio);
             if(armed)Reconcile(web);
         }
@@ -116,6 +123,21 @@ internal sealed class VideoSurface : Surface,IDisposable
         }
         else if(kind!="")Release(true);
     }
+    // The process and window enumeration costs several milliseconds: it runs on
+    // a worker so mirrored frames keep their cadence. A changed result is applied
+    // at once; otherwise the next one-second pass uses it.
+    async Task ScanStremio()
+    {
+        scanningStremio=true;
+        try
+        {
+            var candidates=await Task.Run(VideoSources.FindStremio);if(disposed)return;
+            var found=candidates.FirstOrDefault(s=>s.Foreground)??candidates.FirstOrDefault(s=>s.Handle==source?.Handle)??candidates.FirstOrDefault();
+            bool changed=found?.Handle!=stremio?.Handle||found?.Foreground!=stremio?.Foreground;stremio=found;
+            if(changed&&mode is "auto" or "stremio"){nextScan=0;Update();}
+        }
+        finally{scanningStremio=false;}
+    }
     async Task ReadControls(VideoSource target)
     {
         readingControls=true;
@@ -145,7 +167,8 @@ internal sealed class VideoSurface : Surface,IDisposable
     public object Inspect()
     {
         var web=browser.State;
-        return new{mode,visible,armed,kind,wanted,sourceHwnd=(long)(source?.Handle??0),sourcePid=source?.Pid,maintaining=lease?.Maintaining==true,nativeFrames=capture.Frames,nativeWidth=capture.Image?.PixelWidth,nativeHeight=capture.Image?.PixelHeight,nativeAgeMs=capture.Age,nativeError=capture.Error,
+        double arrivalGapMaxMs=Stopwatch.GetElapsedTime(0,Interlocked.Exchange(ref arrivalGapMax,0)).TotalMilliseconds,presentDelayMaxMs=Stopwatch.GetElapsedTime(0,presentDelayMax).TotalMilliseconds;presentDelayMax=0;
+        return new{mode,arrivalGapMaxMs=Math.Round(arrivalGapMaxMs,1),presentDelayMaxMs=Math.Round(presentDelayMaxMs,1),visible,armed,kind,wanted,sourceHwnd=(long)(source?.Handle??0),sourcePid=source?.Pid,maintaining=lease?.Maintaining==true,nativeFrames=capture.Frames,nativeWidth=capture.Image?.PixelWidth,nativeHeight=capture.Image?.PixelHeight,nativeAgeMs=capture.Age,nativeError=capture.Error,
             browser=new{web.Connected,web.Kind,web.TabId,web.Frames,drawnFrames=browserDrawn,web.DecodedFrames,web.EncodeMs,web.Visibility,web.Version,web.Diagnostic,width=web.Image?.PixelWidth,height=web.Image?.PixelHeight,frameAgeMs=web.LastFrame==0?(long?)null:Environment.TickCount64-web.LastFrame,web.Playing,web.Error,available=web.Tabs.Count(t=>t.Ready)},playing=Playing,transportError};
     }
     protected override void Paint()

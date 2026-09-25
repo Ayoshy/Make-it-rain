@@ -6,6 +6,7 @@
     <Compile Include="SingleScreenTests.cs"/>
     <Compile Include="ScreenFitTests.cs"/>
     <Compile Include="SceneTransitionTests.cs"/>
+    <Compile Include="ThemeTransitionTests.cs"/>
     <Compile Include="SettingsFixtures.cs"/>
     <Compile Include="../src/Battlestation/SettingsWindow.cs"/>
     <Compile Include="../src/Battlestation/OverlayStyle.cs"/>

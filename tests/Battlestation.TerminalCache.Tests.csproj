@@ -7,6 +7,7 @@
     <Compile Include="../src/Battlestation/TerminalTabs.cs"/>
     <Compile Include="../src/Battlestation/TerminalActivityIndicator.cs"/>
     <Compile Include="../src/Battlestation/TerminalTabPreferences.cs"/>
+    <Compile Include="../src/Battlestation/ClaudeSessionState.cs"/>
     <Compile Include="../src/Battlestation/TerminalMetadata.cs"/>
     <Compile Include="../src/Battlestation/DockAppearance.cs"/>
     <Compile Include="../src/Battlestation/DesktopTheme.cs"/>

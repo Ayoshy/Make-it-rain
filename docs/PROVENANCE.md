@@ -1,5 +1,11 @@
 # Provenance et droits
 
+## Portraits LoL
+
+173 portraits officiels Riot Games issus de Data Dragon 16.19.1, conservés dans
+`assets/LoL/champions` pour cet usage personnel. [Source et version](../assets/LoL/SOURCE.md),
+[documentation Riot](https://developer.riotgames.com/docs/lol#data-dragon).
+
 Les sauvegardes historiques ne font pas partie de la livraison courante.
 
 Les sources et intégrations suivies viennent des répertoires réels. `.git`, les
@@ -21,6 +27,7 @@ positionx=85 et scale=104 ; les autres valeurs viennent du config.js récupéré
 | HTML/CSS/JS du fond | Sources locales de personnalisation ; provenance exacte conservée, aucune licence libre déduite |
 | LibreHardwareMonitorLib 0.9.6 | MPL-2.0, paquet NuGet officiel ; sources upstream référencées dans le manifeste NuGet |
 | .NET 10 / WPF | Runtime et SDK Microsoft, MIT pour dotnet/runtime |
+| Google.Apis.Auth 1.76.0 | Client OAuth officiel Google, Apache-2.0 ; [sources](https://github.com/googleapis/google-api-dotnet-client) |
 | MSI / NVIDIA | DLL et pilote déjà installés, non copiés dans les assets |
 | Simple Icons | Silhouettes des cinq applications ; licence conservée dans `dock/icons/source/LICENSE.md`, déclinaison nacrée générée localement |
 | Open-Meteo | Prévisions publiques pour Aix-en-Provence, [API et attribution](https://open-meteo.com/en/docs), marque et heure de mesure affichées dans le widget |

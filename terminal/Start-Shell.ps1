@@ -6,6 +6,8 @@ $env:TERM='xterm-256color'
 $env:COLORTERM='truecolor'
 $env:FORCE_COLOR='1'
 $env:CLICOLOR='1'
+$claudeExecutable=Join-Path $env:USERPROFILE '.local\bin\claude.exe'
+if(Test-Path -LiteralPath $claudeExecutable){Set-Alias -Name claude -Value $claudeExecutable -Scope Global}
 function global:codex {
     & $env:BATTLESTATION_CODEX_EXE -c 'tui.animations=false' -c 'tui.theme="catppuccin-mocha"' -c "tui.terminal_title=['run-state','activity','thread-name','project-name']" @args
 }
@@ -19,6 +21,24 @@ if([string]::IsNullOrWhiteSpace($env:DEEPSEEK_API_KEY)){$env:DEEPSEEK_API_KEY=[E
 $env:BATTLESTATION_DS_CATALOG=(Join-Path $PSScriptRoot 'codex-deepseek-models.json') -replace '\\','/'
 function global:codex-ds {
     & $env:BATTLESTATION_CODEX_EXE -c 'tui.animations=false' -c 'tui.theme="catppuccin-mocha"' -c "tui.terminal_title=['run-state','activity','thread-name','project-name']" -c 'model_provider="deepseek"' -c 'model="deepseek-flash"' -c 'model_reasoning_effort="high"' -c 'web_search="disabled"' -c "model_catalog_json=`"$env:BATTLESTATION_DS_CATALOG`"" -c 'model_providers.deepseek.name="DeepSeek"' -c 'model_providers.deepseek.base_url="https://api.deepseek.com/"' -c 'model_providers.deepseek.wire_api="responses"' -c 'model_providers.deepseek.env_key="DEEPSEEK_API_KEY"' @args
+}
+$claudeRequestPath=Join-Path $env:LOCALAPPDATA 'Battlestation\claude-request.json'
+if(Test-Path -LiteralPath $claudeRequestPath)
+{
+    try
+    {
+        $request=Get-Content -LiteralPath $claudeRequestPath -Raw | ConvertFrom-Json
+        Remove-Item -LiteralPath $claudeRequestPath -Force
+        $project=[string]$request.project;$command=[string]$request.command
+        if(!(Test-Path -LiteralPath $project -PathType Container)){throw 'Projet introuvable.'}
+        if(!(Test-Path -LiteralPath $command -PathType Leaf)){throw 'Claude Code introuvable.'}
+        Set-Location -LiteralPath $project
+        $Host.UI.RawUI.WindowTitle='Claude Code · '+[IO.Path]::GetFileName($project)
+        & $command
+        if($LASTEXITCODE -ne 0){Write-Host ('Claude Code terminé avec le code '+$LASTEXITCODE+'.') -ForegroundColor Yellow}
+    }
+    catch{Write-Host ('Claude Code : '+$_.Exception.Message) -ForegroundColor Red}
+    return
 }
 $kiloRequestPath=Join-Path $env:LOCALAPPDATA 'Battlestation\kilo-request.json'
 if(Test-Path -LiteralPath $kiloRequestPath)

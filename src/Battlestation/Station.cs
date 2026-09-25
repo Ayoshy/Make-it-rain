@@ -109,7 +109,9 @@ internal sealed class Station : IDisposable
     {
         var next=(Settings with{AnimateBackground=profile.Animate,ReactiveAudio=profile.Reactive,AudioIntensity=profile.Intensity,GlassOpacity=profile.Glass,ThemeId=profile.ThemeId}).Validate(false);
         next.Save(Path.Combine(Data,"preferences.json"));Settings=next;
-        PreviewAppearance(next.ThemeId,next.AnimateBackground,next.GlassOpacity);SettingsChanged?.Invoke();
+        // SceneTransition already conceals the docks. Set their final colors now;
+        // avoid brush animation updates while WPF detaches/resizes render targets.
+        PreviewAppearance(next.ThemeId,next.AnimateBackground,next.GlassOpacity,animateTheme:false);SettingsChanged?.Invoke();
     }
     public void ApplySettings(DesktopSettings next,string target)
     {
@@ -128,9 +130,9 @@ internal sealed class Station : IDisposable
         PreviewAppearance(next.ThemeId,next.AnimateBackground,next.GlassOpacity);
         SettingsChanged?.Invoke();
     }
-    internal void PreviewAppearance(string themeId,bool animate,double opacity)
+    internal void PreviewAppearance(string themeId,bool animate,double opacity,bool animateTheme=true)
     {
-        DesktopTheme.Select(themeId);
+        DesktopTheme.Select(themeId,animateTheme);
         Native.BackgroundTheme(Array.FindIndex(DesktopTheme.Definitions,t=>t.Id==themeId),0);
         Native.BackgroundAppearance(animate?1:0,(float)opacity);
     }
@@ -143,6 +145,14 @@ internal sealed class Station : IDisposable
         if(!Directory.Exists(project))throw new DirectoryNotFoundException("Ce projet a été déplacé ou supprimé.");
         DesktopSettings.Write(Path.Combine(Data,"kilo-request.json"),JsonSerializer.Serialize(new{project,command=Kilo}));
         Terminal?.OpenKilo();
+    }
+    public void OpenClaude(string project)
+    {
+        if(!Directory.Exists(project))throw new DirectoryNotFoundException("Ce projet a été déplacé ou supprimé.");
+        var command=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".local","bin","claude.exe");
+        if(!File.Exists(command))throw new FileNotFoundException("Claude Code n'est pas installé.",command);
+        DesktopSettings.Write(Path.Combine(Data,"claude-request.json"),JsonSerializer.Serialize(new{project,command}));
+        Terminal?.Command("NewShell");
     }
     public void OpenCodexDeepSeek(string project)
     {

@@ -26,7 +26,7 @@ internal static class TerminalHost
 }
 internal sealed class NativeTerminalWindow : IDisposable
 {
-    sealed record Tab(Guid Id,string Title,TerminalView View);
+    sealed record Tab(Guid Id,string Title,TerminalView View,Color Background);
     readonly Window window;
     readonly Grid content=new();
     readonly TerminalTabs header=new();
@@ -60,12 +60,22 @@ internal sealed class NativeTerminalWindow : IDisposable
         clipboard=new TerminalClipboard(()=>Handle,Paste);
         window.PreviewKeyDown+=(_,e)=>{if(Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift)&&e.Key==Key.C){Copy();e.Handled=true;}if(Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift)&&e.Key==Key.V){Paste();e.Handled=true;}};
     }
-    static uint ColorValue(string value){var c=(Color)ColorConverter.ConvertFromString(value);return (uint)(c.R|(c.G<<8)|(c.B<<16));}
-    static TerminalTheme Theme()
+    static uint Packed(Color color)=>(uint)(color.R|(color.G<<8)|(color.B<<16));
+    static uint Themed(string color)=>Packed(DesktopTheme.Color(color));
+    static Color Mix(Color from,Color to,double amount)=>Color.FromRgb((byte)Math.Round(from.R+(to.R-from.R)*amount),(byte)Math.Round(from.G+(to.G-from.G)*amount),(byte)Math.Round(from.B+(to.B-from.B)*amount));
+    static readonly string[] ConsoleBackgrounds=["#21182B","#1D2034","#1D293A","#172F35","#1B302B","#273026","#342D24","#38262A","#342333","#282A35"];
+    int consoleBackgroundIndex;
+    Color NextConsoleBackground()
     {
-        uint Color(string color)=>ColorValue(color);
-        return new TerminalTheme{DefaultBackground=Color(DesktopTheme.Color("#21182B").ToString()),DefaultForeground=Color(DesktopTheme.Color("#DAD2E7").ToString()),DefaultSelectionBackground=Color(DesktopTheme.Color("#665077").ToString()),CursorStyle=CursorStyle.BlinkingBar,
-            ColorTable=new[]{"#45475A","#F38BA8","#A6E3A1","#F9E2AF","#89B4FA","#F5C2E7","#94E2D5","#BAC2DE","#585B70","#F38BA8","#A6E3A1","#F9E2AF","#89B4FA","#F5C2E7","#94E2D5","#CDD6F4"}.Select(Color).ToArray()};
+        var color=DesktopTheme.Color(ConsoleBackgrounds[consoleBackgroundIndex]);
+        consoleBackgroundIndex=(consoleBackgroundIndex+1)%ConsoleBackgrounds.Length;
+        return color;
+    }
+    static TerminalTheme Theme(Color background)
+    {
+        var foreground=DesktopTheme.Color("#DAD2E7");
+        return new TerminalTheme{DefaultBackground=Packed(background),DefaultForeground=Packed(foreground),DefaultSelectionBackground=Packed(Mix(background,foreground,0.38)),CursorStyle=CursorStyle.BlinkingBar,
+            ColorTable=new[]{"#45475A","#F38BA8","#A6E3A1","#F9E2AF","#89B4FA","#F5C2E7","#94E2D5","#BAC2DE","#585B70","#F38BA8","#A6E3A1","#F9E2AF","#89B4FA","#F5C2E7","#94E2D5","#CDD6F4"}.Select(Themed).ToArray()};
     }
     void Add(string? project=null)
     {
@@ -75,14 +85,16 @@ internal sealed class NativeTerminalWindow : IDisposable
         var command=project is null
             ?"powershell.exe -NoLogo -NoProfile -NoExit -File "+Quote(Path.Combine(root,"terminal",file))+" -CodexPath "+Quote(codex)
             :"powershell.exe -NoLogo -NoProfile -File "+Quote(Path.Combine(root,"terminal",file))+" -CodexPath "+Quote(codex)+" -ProjectPath "+Quote(directory);
-        var view=new TerminalView(command,directory,Theme());
+        var background=NextConsoleBackground();
+        var view=new TerminalView(command,directory,Theme(background));
         var title=project is null?"PowerShell "+(++shellNumber):string.Equals(project,root,StringComparison.OrdinalIgnoreCase)?"Battlestation":Path.GetFileName(project);
-        var tab=new Tab(Guid.NewGuid(),title,view);
+        var tab=new Tab(Guid.NewGuid(),title,view,background);
         tabs.Add(tab);content.Children.Add(view);Select(tab);
     }
     void Select(Tab tab)
     {
         active=tab;foreach(var item in tabs)item.View.Visibility=item==tab?Visibility.Visible:Visibility.Collapsed;
+        window.Background=new SolidColorBrush(tab.Background);
         RefreshTabs();window.Dispatcher.BeginInvoke(()=>tab.View.Terminal.Focus(),System.Windows.Threading.DispatcherPriority.Input);
     }
     Tab FindTab(Guid id)=>tabs.FirstOrDefault(tab=>tab.Id==id)??throw new InvalidOperationException("Cet onglet n'existe plus.");
@@ -115,7 +127,7 @@ internal sealed class NativeTerminalWindow : IDisposable
     public string Command(string command)
     {
         if(command=="inspect")return JsonSerializer.Serialize(Inspect());
-        if(command.StartsWith("theme:")){DesktopTheme.Select(command[6..]);foreach(var tab in tabs)tab.View.ApplyTheme(Theme());header.InvalidateVisual();return "OK";}
+        if(command.StartsWith("theme:")){DesktopTheme.Select(command[6..]);foreach(var tab in tabs)tab.View.ApplyTheme(Theme(tab.Background));header.InvalidateVisual();return "OK";}
         if(command=="chrome:external"||command=="chrome:internal"){SetExternalChrome(command.EndsWith("external"));return "OK";}
         if(command.StartsWith("select:")&&Guid.TryParse(command[7..],out var select)){Select(FindTab(select));return "OK";}
         if(command.StartsWith("close-tab:")&&Guid.TryParse(command[10..],out var close)){CloseTab(FindTab(close));return "OK";}

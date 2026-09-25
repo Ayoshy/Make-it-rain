@@ -19,6 +19,10 @@ toucher au reste.
 
 ## Applications et disposition
 
+**Gmail** : non-lus, derniers messages et ouverture dans le navigateur. La
+connexion utilise ton propre client OAuth Google en lecture seule.
+[Configurer Gmail →](GMAIL.md)
+
 - **Applications** : cliquer une app déjà lancée réaffiche sa fenêtre existante,
   en la restaurant si elle est réduite. Les clics rapprochés pendant le démarrage
   ne lancent pas plusieurs instances. Une icône en cours précise aussi la fenêtre :
@@ -41,6 +45,17 @@ toucher au reste.
 - L'icône Battlestation dans la zone de notification permet de réorganiser ou
   réafficher les blocs, même lorsque tous sont masqués.
 - **Terminer** quitte l’édition. La disposition est sauvegardée automatiquement.
+## Disques
+
+Les docks n'affichent plus d'infobulles au survol, y compris DualSense, Réseau et LoL.
+
+**Réorganiser → Ajouter → Disques** affiche les volumes et leur espace libre.
+Un clic entre dans la mosaïque. La molette avant zoome dans le dossier survolé,
+la molette arrière remonte ; le clic gauche ouvre le dossier dans l'Explorateur.
+Les disques déjà ouverts gardent leur index et suivent les modifications : revenir
+sur un disque ne relance pas son analyse. Le bouton ↻ force une nouvelle analyse.
+[Données, animations et limites](DISKS.md).
+
 ## Scènes et apparence
 
 - **Scènes**, dans la palette, les réglages, le menu de notification et Réorganiser :
@@ -155,6 +170,10 @@ toucher au reste.
 - Les onglets Codex portent un compte à rebours estimé du cache de prompt (« ⏳ ≈ 12 min »
   puis « cache incertain ») et leur fond se teinte tant qu'aucune couleur n'est
   choisie ; les onglets Codex (DS) affichent le taux de hit du cache.
+- Les onglets Claude Code prennent le titre publié par le CLI et son état réel
+  (`idle`, travail en cours, attente de permission ou de dialogue) : l'indicateur
+  d'onglet suit cet état, l'infobulle précise l'attente en cours. Kilo, Codex et
+  Claude Code restent distingués par leurs propres formats de titre.
 - Le terminal dispose de ses propres onglets PowerShell/Codex ; retirer son bloc
   masque son affichage et conserve ses sessions.
 - **Projets** : le statut Git est vert quand le dépôt est propre, ambre avec des
@@ -163,9 +182,13 @@ toucher au reste.
   commit ; un point néon signale qu'un onglet terminal porte le nom du dossier du
   projet (indice, pas une preuve d'activité). Cliquer une carte ouvre un menu sous verre
   avec icônes nacrées : Explorateur, Codex CLI / ChatGPT, Codex CLI / DeepSeek et
-  Kilo CLI / DeepSeek. Il se replie par son chevron ou un clic hors du menu ; ses
-  quatre tuiles passent sur deux lignes dans un dock étroit. Kilo ouvre un nouvel
-  onglet du terminal sur le projet sélectionné et y démarre `kilo`.
+  Kilo CLI / DeepSeek et Claude Code / Anthropic. Il se replie par son chevron ou un
+  clic hors du menu ; ses cinq tuiles passent sur plusieurs lignes dans un dock étroit.
+  Kilo et Claude Code ouvrent un nouvel onglet du terminal dans le projet sélectionné.
+  Claude utilise l'installation native `%USERPROFILE%\.local\bin\claude.exe` ;
+  sa connexion se fait dans le CLI, sans modifier les comptes Codex ou Kilo.
+  Le registre `%USERPROFILE%\.claude\sessions` fournit à l'onglet terminal le nom,
+  l'état et l'attente de la session ; aucun contenu de conversation n'est lu.
 - **Ctrl+Espace** ouvre la palette : recherche d’applications et projets,
   flèches pour choisir, Entrée pour ouvrir, Échap pour revenir/fermer. Le préfixe
   **>** limite la recherche aux commandes. Un projet propose Explorateur, Codex CLI (ChatGPT),
@@ -178,13 +201,17 @@ toucher au reste.
   compteur, transparence du verre et animation du fond. L’apparence est prévisualisée
   immédiatement ; **Enregistrer** la conserve. Fermer restaure l’apparence enregistrée.
   La visibilité des blocs et l’éditeur d’applications s’appliquent séparément.
-- Les boutons Conrad/Codex remplacent les informations à l’intérieur du dock par
+- Les boutons Conrad et AI Meter remplacent les informations à l’intérieur du dock par
   une transition sous verre : glissement, fondu, flou doux ou facettes, alternés
-  dans un ordre mélangé, chacun une fois par cycle. Recliquez le bouton actif pour revenir au résumé.
+  dans un ordre mélangé, chacun une fois par cycle. AI Meter revient aux comptes avec **Synthèse**.
   Le cadre et les boutons restent fixes ; quotas, modèles et solde DeepSeek se
   consultent par page, les listes défilant à la molette.
-  **DEEPSEEK** lit le solde du compte via l’API et `DEEPSEEK_API_KEY`, gardée dans
-  l’environnement utilisateur ; Actualiser relit Codex et DeepSeek.
+  La carte **DeepSeek** affiche le solde du compte via l'API et `DEEPSEEK_API_KEY`, gardée dans
+  l'environnement utilisateur ; la carte **Claude** affiche le quota de l'abonnement Claude Code
+  (jeton de Claude Code lu en mémoire, jamais recopié) ; Actualiser relit Codex, DeepSeek et Claude.
+  **Quotas → 100 % ≈** montre la valeur de la fenêtre ; **Coûts** sépare les familles
+  de modèles et les compteurs locaux des sessions Codex et Claude Code, en cumul ou par jour.
+  [Sources et limites](AI_METER.md).
   Voir [les transitions internes](DOCK_PAGE_TRANSITIONS.md).
 - Fermer explicitement son dernier onglet termine l'hôte terminal ; la prochaine
   ouverture utilise le build du bureau courant. Les anciennes sessions d'avant
