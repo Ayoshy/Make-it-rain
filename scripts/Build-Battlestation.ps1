@@ -12,6 +12,8 @@ $vs=& 'C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe' -la
 if(!$vs){throw 'Visual C++ x64 required'}
 @"
 @echo off
+rem vcvars64.bat cherche vswhere dans le PATH ; sans l'installeur VS, il imprime une erreur sans conséquence.
+set "PATH=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer;%PATH%"
 call "$vs\VC\Auxiliary\Build\vcvars64.bat" >nul
 cl /nologo /O2 /LD /std:c++20 /EHsc /utf-8 /MT "$root\src\Battlestation.Native\Background.cpp" "$root\src\Battlestation.Native\NativeBackground.cpp" User32.lib D2d1.lib Windowscodecs.lib Ole32.lib /link /OUT:"$out\Battlestation.Graphics.dll"
 if errorlevel 1 exit /b 1

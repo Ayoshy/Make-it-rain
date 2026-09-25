@@ -18,5 +18,12 @@
     <Project Path="tests/Battlestation.Shopping.Tests.csproj" />
     <Project Path="tests/Battlestation.Network.Tests.csproj" />
     <Project Path="tests/Battlestation.TerminalCache.Tests.csproj" />
+    <Project Path="tests/Battlestation.AiUsage.Tests.csproj" />
+    <Project Path="tests/Battlestation.AppLauncher.Tests.csproj" />
+    <Project Path="tests/Battlestation.Atelier.Tests.csproj" />
+    <Project Path="tests/Battlestation.CodexWeeks.Tests.csproj" />
+    <Project Path="tests/Battlestation.Disks.Tests.csproj" />
+    <Project Path="tests/Battlestation.Gmail.Tests.csproj" />
+    <Project Path="tests/Battlestation.Notes.Tests.csproj" />
   </Folder>
 </Solution>
