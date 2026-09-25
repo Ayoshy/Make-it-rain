@@ -164,6 +164,7 @@ internal static class DisksTests
                     var liquid=Field<Dictionary<string,QuotaLiquid>>(surface,"liquids")[root];
                     Check(!Field<bool>(surface,"liquidHooked")&&!liquid.Awake&&liquid.Level>.3,"Dock masqué : le liquide se pose à son niveau, sans boucle d'images");
                     surface.SetActive(true);Render(surface,"io-loaded");
+                    surface.Width=560;surface.Height=180;Render(surface,"io-loaded-row");
                 }
                 var automatic=Enumerable.Range(0,4).Select(i=>new DiskVolume(Path.Combine(root,"Auto"+i),"Volume "+i,10000,9000)).ToArray();
                 foreach(var volume in automatic){Directory.CreateDirectory(volume.Path);Write(Path.Combine(volume.Path,"fixture.bin"),100);}
