@@ -320,7 +320,8 @@ internal sealed partial class DesktopWorkspace : IDisposable
             if(pair.Key is "audio" or "video" or "dualsense" or "network" or "lol")continue;
             if(!renderRevisions.TryGetValue(pair.Key,out var previous)||revision!=previous){renderRevisions[pair.Key]=revision;pair.Value.Refresh();}
         }
-        if(ticks%20==0)Battlestation.Core.DiagnosticFile.Write(Path.Combine(station.Data,"host-state.json"),JsonSerializer.Serialize(Inspect()));
+        // Instantané post-mortem sans lecteur : toutes les 30 s, pas à chaque seconde de rendu.
+        if(ticks%120==0)Battlestation.Core.DiagnosticFile.Write(Path.Combine(station.Data,"host-state.json"),JsonSerializer.Serialize(Inspect()));
     }
     void SessionSwitch(object sender,Microsoft.Win32.SessionSwitchEventArgs e)
     {

@@ -46,6 +46,7 @@ internal sealed partial class Backend : IDisposable
     async Task ReadSensors()
     {
         using var hardware = new HardwareSensorReader();
+        long samples = 0;
         try
         {
             while (!shutdown.IsCancellationRequested)
@@ -53,8 +54,9 @@ internal sealed partial class Backend : IDisposable
                 try { sensors = hardware.Read(); hardwareError = null; }
                 catch (Exception e) { sensors = null; hardwareError = e.GetType().Name; }
                 var state = new { processId = Environment.ProcessId, runtime = Environment.Version.ToString(), sampledAt = DateTimeOffset.Now, sensors, hardwareError, codex = meter, deepseek, gpuControl = controls, heatwaveActive = heatwave, gpuError, transport = "in-process + app-server stdio" };
-                var file = Path.Combine(directory, "probe.json");
-                DiagnosticFile.TryWrite(file, JsonSerializer.Serialize(state, Json));
+                // Les docks lisent les sondes toutes les 2 s ; probe.json n'est qu'un instantané
+                // de diagnostic, sans lecteur : 10 s suffisent et évitent ~18 Ko réécrits en continu.
+                if (samples++ % 5 == 0) DiagnosticFile.TryWrite(Path.Combine(directory, "probe.json"), JsonSerializer.Serialize(state, Json));
                 await Task.Delay(2000, shutdown.Token);
             }
         }
