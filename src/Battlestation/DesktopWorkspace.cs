@@ -33,6 +33,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
     {
         app=application;station=state;station.Terminal=new TerminalSession(station);
         placement=new DesktopPlacement(app.Dispatcher);
+        DiskIndex.ScanTrace=DesktopLifecycle.Write;
         surfaces=new(){["clock"]=new DeskSurface(station,DeskWidget.Clock),["weather"]=new DeskSurface(station,DeskWidget.Weather),
             ["apps"]=new DockSurface(station),["music"]=new DeskSurface(station,DeskWidget.Music),["projects"]=new DeskSurface(station,DeskWidget.Projects),
             ["terminal"]=new TerminalSurface(station),["countdown"]=new CountdownSurface(station),

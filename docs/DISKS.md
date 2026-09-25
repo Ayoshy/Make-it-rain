@@ -9,8 +9,11 @@ cadre liquid glass commun et les palettes de la scène active.
   « utilisé / capacité » indique les tailles. Elle reprend la couleur de la
   jauge : cyan/vert doux, puis ambre et corail à mesure que le disque se remplit.
   Aucun compteur de disques ni détail supplémentaire en pied de carte.
-  Chaque carte indique l'analyse en cours, l'attente, ou l'heure du dernier scan
-  terminé. « Scan partiel » signale les accès refusés ou chemins non suivis.
+  Chaque carte indique l'analyse en cours ou l'heure du dernier scan terminé.
+  Les accès refusés et chemins non suivis (présents sur tout volume NTFS, comme
+  System Volume Information) restent visibles au survol (« · partiel ») et dans
+  l'inspection, pas sur la carte. Une réconciliation différée ne s'affiche pas :
+  les deltas gardent les données fraîches entre deux scans complets.
 - Clic sur un volume : entrée animée dans sa mosaïque.
 - Molette avant : zoom dans le dossier sous le pointeur ; arrière : niveau précédent.
 - Clic gauche sur un dossier : ouverture dans l'Explorateur. Sur un fichier,
@@ -50,10 +53,13 @@ Les notifications Windows sont regroupées toutes les 8 secondes. Seuls les
 dossiers signalés sont relus ; leurs ancêtres sont recalculés en mémoire et leurs
 sous-arbres inchangés réutilisés. Ce suivi reste actif pour les volumes déjà
 analysés, même lorsque l'accueil ou un autre volume est affiché. Un débordement de
-notifications (une compilation suffit sur C:) marque le volume en attente : sa
-nouvelle analyse complète attend au moins 20 minutes après la précédente, car un
-scan de C: occupe environ un cœur pendant plusieurs minutes. Le bouton ↻ la
-demande immédiatement.
+notifications (une compilation suffit sur C:, et une session Claude Code active
+le provoque en continu) marque le volume pour réconciliation : la nouvelle
+analyse complète attend au moins 6 heures après la précédente, car un scan de C:
+occupe environ un cœur pendant plusieurs minutes — les deltas assurent déjà la
+fraîcheur réelle. Le bouton ↻ la demande immédiatement. Chaque scan complet
+journalise son déclencheur (initial, manuel, réconciliation) dans le journal de
+cycle de vie et l'expose via `disks-inspect` (`trigger`).
 Le masquage suspend l'énumération, mais conserve les notifications pour la reprise.
 La liste et l'espace libre sont relus toutes les cinq secondes quand le dock est
 actif. Aucune promesse de délai maximal pendant une grosse copie ou l'analyse initiale.

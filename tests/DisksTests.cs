@@ -153,7 +153,12 @@ internal static class DisksTests
                     Check(auto.Snapshot is null,"L'indexation automatique ne change pas la vue sélectionnée");
                     var info=auto.Info(automatic[0].Path)!;
                     Check(!info.Pending&&!info.Scanning&&DisksSurface.ScanLabel(info).StartsWith("Scan · "),"La carte affiche l'heure du scan terminé");
-                    Check(DisksSurface.ScanLabel(info with{Partial=true}).StartsWith("Scan partiel · "),"Un scan partiel reste identifié");
+                    // Tout volume NTFS a des zones refusées (System Volume Information) : le
+                    // suffixe « partiel » permanent ne portait aucun signal sur la carte.
+                    Check(DisksSurface.ScanLabel(info with{Partial=true})==DisksSurface.ScanLabel(info),"Les zones inaccessibles restent au survol, pas sur la carte");
+                    // Incident réel : le watcher C: déborde en continu (sessions Claude), la
+                    // réconciliation différée affichait « En attente » en permanence.
+                    Check(DisksSurface.ScanLabel(info with{Pending=true}).StartsWith("Scan · "),"Une réconciliation différée n'affiche pas En attente");
                     Write(Path.Combine(automatic[0].Path,"fixture.bin"),200);
                     auto.Select(automatic[0].Path);await Wait(()=>auto.Snapshot?.Bytes==200,"Delta après indexation automatique");
                     Check(auto.Info(automatic[0].Path)!.CompletedAt==info.CompletedAt,"Un delta ne modifie pas l'heure du scan complet");

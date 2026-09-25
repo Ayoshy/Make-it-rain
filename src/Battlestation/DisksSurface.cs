@@ -198,12 +198,14 @@ internal sealed class DisksSurface : Surface,IDisposable
     {
         if(scan is null)return "En attente";
         if(scan.Scanning)return "Analyse…";
-        if(scan.Pending)return "En attente";
         if(scan.Status.Length>0)return scan.Status;
-        if(scan.CompletedAt is not {} completed)return "Non analysé";
+        // Une réconciliation différée n'est pas une attente visible : les deltas gardent
+        // les données fraîches. De même, les zones système refusées (présentes sur tout
+        // volume NTFS) restent au survol et dans l'inspection, pas sur la carte.
+        if(scan.CompletedAt is not {} completed)return scan.Pending?"En attente":"Non analysé";
         var local=completed.ToLocalTime();
         string stamp=local.Date==DateTime.Today?local.ToString("HH:mm"):local.ToString("dd/MM HH:mm");
-        return $"Scan{(scan.Partial?" partiel":"")} · {stamp}";
+        return $"Scan · {stamp}";
     }
     void DriveColumn(DiskVolume drive,Rect r,double used,string accent)
     {

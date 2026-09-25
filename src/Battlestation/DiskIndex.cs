@@ -19,6 +19,9 @@ internal sealed record DiskNode(string Path,string Name,long Bytes,bool Director
 // Navigation selects a retained index, never the lifetime of its watcher.
 internal sealed class DiskIndex : IDisposable
 {
+    // Trace des scans complets, branchée par le bureau sur le journal de cycle de
+    // vie ; les tests la laissent vide pour ne pas écrire dans le journal réel.
+    internal static Action<string>? ScanTrace;
     readonly Dictionary<string,DiskVolumeIndex> indexes=new(StringComparer.OrdinalIgnoreCase);
     readonly object gate=new();
     readonly SemaphoreSlim scans=new(3,3);
@@ -55,7 +58,7 @@ internal sealed class DiskIndex : IDisposable
     }
     internal void Rescan()=>selected?.Rescan();
     internal DiskScanInfo? Info(string path){lock(gate)return indexes.TryGetValue(path,out var index)?index.Info:null;}
-    internal object InspectIndexes(){lock(gate)return indexes.Select(pair=>new{path=pair.Key,bytes=pair.Value.Snapshot?.Bytes,status=pair.Value.Status,fullScans=pair.Value.FullScans,metadataReads=pair.Value.MetadataReads,scan=pair.Value.Info}).ToArray();}
+    internal object InspectIndexes(){lock(gate)return indexes.Select(pair=>new{path=pair.Key,bytes=pair.Value.Snapshot?.Bytes,status=pair.Value.Status,fullScans=pair.Value.FullScans,metadataReads=pair.Value.MetadataReads,trigger=pair.Value.LastTrigger,scan=pair.Value.Info}).ToArray();}
     async Task PollVolumes()
     {
         try
@@ -99,8 +102,12 @@ internal sealed class DiskVolumeIndex : IDisposable
     readonly SemaphoreSlim scans;
     // Un débordement du suivi ne relance pas aussitôt un scan complet : sur C:,
     // la moindre compilation le provoque et un scan coûte un cœur pendant minutes.
-    const long DeltaMilliseconds=8000,AutomaticRescanMilliseconds=20*60*1000;
+    // Les deltas (8 s) assurent la fraîcheur réelle ; le scan complet n'est qu'une
+    // réconciliation des événements perdus. Décision Ayo 25/09 : rare plutôt que
+    // 30 % de CPU — toutes les 6 h, et ↻ reste immédiat.
+    const long DeltaMilliseconds=8000,AutomaticRescanMilliseconds=6*60*60*1000;
     volatile bool rescan=true,manualRescan;
+    volatile string lastTrigger="";
     long lastFullScan,lastDelta;
     volatile bool scanning;
     volatile DiskNode? snapshot;
@@ -112,6 +119,7 @@ internal sealed class DiskVolumeIndex : IDisposable
     public long Scanned=>Interlocked.Read(ref scanned);
     public long MetadataReads=>Interlocked.Read(ref metadataReads);
     public int FullScans=>Volatile.Read(ref fullScans);
+    public string LastTrigger=>lastTrigger;
     internal DiskScanInfo Info
     {
         get{long ticks=Interlocked.Read(ref completedTicks);return new(ticks==0?null:new DateTimeOffset(ticks,TimeSpan.Zero),scanning,rescan, snapshot?.Partial??false,Scanned,Status);}
@@ -160,7 +168,10 @@ internal sealed class DiskVolumeIndex : IDisposable
                     await scans.WaitAsync(stop.Token);
                     try
                     {
-                        Check();rescan=manualRescan=false;scanning=true;scanned=0;status="Analyse en cours…";
+                        Check();
+                        lastTrigger=manualRescan?"manuel":lastFullScan==0?"initial":"reconciliation";
+                        DiskIndex.ScanTrace?.Invoke($"disk-scan {rootPath} {lastTrigger}");
+                        rescan=manualRescan=false;scanning=true;scanned=0;status="Analyse en cours…";
                         Interlocked.Increment(ref fullScans);Notify();directories.Clear();
                         snapshot=Scan(target,true,true);Interlocked.Exchange(ref completedTicks,DateTimeOffset.UtcNow.Ticks);
                         status=watcher is null?"Suivi indisponible · actualisation manuelle":"";
