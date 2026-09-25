@@ -161,13 +161,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
         window.Left=surface.DesktopX=block.X;window.Top=surface.DesktopY=block.Y;
         window.Width=surface.Width=block.Width;window.Height=surface.Height=block.Height;
         if(block.Visible){if(!window.IsVisible)window.Show();if(refresh)surface.Refresh();else surface.UpdateGlassBounds();}else{window.Hide();ClearGlass(id);}
-        if(surface is VideoSurface video)video.SetActive(block.Visible,editing);
-        if(surface is AudioSurface mixer)mixer.SetActive(block.Visible&&!editing);
-        if(surface is DualSenseSurface controller)controller.SetActive(block.Visible&&!editing&&exposed.Contains(id));
-        if(surface is NetworkSurface network)network.SetActive(block.Visible&&!editing&&exposed.Contains(id));
-        if(surface is DisksSurface disks)disks.SetActive(block.Visible&&!editing&&exposed.Contains(id));
-        if(surface is GmailSurface gmail)gmail.SetActive(block.Visible&&!editing&&exposed.Contains(id));
-        if(surface is LolSurface league)league.SetActive(block.Visible&&!editing&&exposed.Contains(id));
+        ApplyActivity(id);
         if(id=="projects"){Native.DeskProjectsActive(block.Visible?1:0);station.Projects.Watch(station.ProjectRoot,block.Visible,name=>Native.DeskCommand("ProjectChanged:"+name));}
         if(id=="terminal")
         {
@@ -176,6 +170,23 @@ internal sealed partial class DesktopWorkspace : IDisposable
             station.Terminal.SetVisible(block.Visible&&!editing);
         }
         if(arrange)placement.Arrange();
+    }
+    // Seule règle d'activité des docks animés ou sondés, appelée par Apply, l'édition et
+    // la visibilité : trois listes recopiées avaient divergé (Atelier oublié par Apply).
+    void ApplyActivity(string id)
+    {
+        bool visible=station.Layout[id].Visible,shown=visible&&exposed.Contains(id),active=shown&&!editing;
+        switch(surfaces[id])
+        {
+            case VideoSurface video:video.SetActive(visible,editing);video.SetOccluded(!shown);break;
+            case AudioSurface mixer:mixer.SetActive(active);break;
+            case DualSenseSurface controller:controller.SetActive(active);break;
+            case NetworkSurface network:network.SetActive(active);break;
+            case LolSurface league:league.SetActive(active);break;
+            case AtelierSurface atelier:atelier.SetActive(active);break;
+            case DisksSurface disks:disks.SetActive(active);break;
+            case GmailSurface gmail:gmail.SetActive(active);break;
+        }
     }
     void ApplyAll(){Native.BackgroundWallpaperRotation(profiles?.Current=="Jeu"?1:0);foreach(string id in surfaces.Keys)Apply(id,false);placement.Arrange();}
     void HideBlock(string id){ClearEditHistory();station.Layout.SetVisible(id,false);Apply(id);station.Layout.Save();UpdateEditGrids();if(id=="music")((DeskSurface)surfaces[id]).Audio.Stop();}
@@ -188,14 +199,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
         editing=value;foreach(var overlay in overlays.Values)overlay.Visibility=value?Visibility.Visible:Visibility.Collapsed;
         CompositionTarget.Rendering-=RenderGesture;if(value)CompositionTarget.Rendering+=RenderGesture;
         UpdateEditGrids();
-        ((VideoSurface)surfaces["video"]).SetActive(station.Layout["video"].Visible,value);
-        ((AudioSurface)surfaces["audio"]).SetActive(station.Layout["audio"].Visible&&!value);
-        ((DualSenseSurface)surfaces["dualsense"]).SetActive(exposed.Contains("dualsense")&&!value);
-        ((NetworkSurface)surfaces["network"]).SetActive(exposed.Contains("network")&&!value);
-        ((LolSurface)surfaces["lol"]).SetActive(exposed.Contains("lol")&&!value);
-        ((AtelierSurface)surfaces["atelier"]).SetActive(exposed.Contains("atelier")&&!value);
-        ((DisksSurface)surfaces["disks"]).SetActive(exposed.Contains("disks")&&!value);
-        ((GmailSurface)surfaces["gmail"]).SetActive(exposed.Contains("gmail")&&!value);
+        foreach(string id in surfaces.Keys)ApplyActivity(id);
         station.Terminal?.SetVisible(station.Layout["terminal"].Visible&&!editing);
         if(value){var screen=station.Layout.AvailableScreens.Last();toolbar.Left=screen.Left+(screen.Width-toolbar.Width)/2;toolbar.Top=screen.Top+(screen.Height-toolbar.Height)*.54;toolbar.Show();toolbar.Activate();}else{toolbar.Hide();station.Layout.Save();}
     }
@@ -331,14 +335,7 @@ internal sealed partial class DesktopWorkspace : IDisposable
             pair.Value.Visibility=active?Visibility.Visible:Visibility.Hidden;
         }
         bool projects=exposed.Contains("projects");Native.DeskProjectsActive(projects?1:0);station.Projects.Watch(station.ProjectRoot,projects,name=>Native.DeskCommand("ProjectChanged:"+name));
-        ((AudioSurface)surfaces["audio"]).SetActive(exposed.Contains("audio")&&!editing);
-        ((DualSenseSurface)surfaces["dualsense"]).SetActive(exposed.Contains("dualsense")&&!editing);
-        ((NetworkSurface)surfaces["network"]).SetActive(exposed.Contains("network")&&!editing);
-        ((LolSurface)surfaces["lol"]).SetActive(exposed.Contains("lol")&&!editing);
-        ((VideoSurface)surfaces["video"]).SetOccluded(!exposed.Contains("video"));
-        ((AtelierSurface)surfaces["atelier"]).SetActive(exposed.Contains("atelier")&&!editing);
-        ((DisksSurface)surfaces["disks"]).SetActive(exposed.Contains("disks")&&!editing);
-        ((GmailSurface)surfaces["gmail"]).SetActive(exposed.Contains("gmail")&&!editing);
+        foreach(string id in surfaces.Keys)ApplyActivity(id);
         bool listen=station.ReactiveAudio&&monitorMask!=0||exposed.Contains("music")&&Native.Read("playing")=="1";
         if(listen){if(!audio.IsEnabled)audio.Start();}else{audio.Stop();((DeskSurface)surfaces["music"]).Audio.Stop();Native.BackgroundAudio(0,0,0,0);}
     }
