@@ -9,6 +9,8 @@
     <Compile Include="../src/Battlestation/DiskIndex.cs" />
     <Compile Include="../src/Battlestation/DiskMap.cs" />
     <Compile Include="../src/Battlestation/DisksSurface.cs" />
+    <Compile Include="../src/Battlestation/DiskActivity.cs" />
+    <Compile Include="../src/Battlestation/QuotaLiquid.cs" />
     <Compile Include="../src/Battlestation/Surface.cs" />
     <Compile Include="../src/Battlestation/DesktopTheme.cs" />
     <Compile Include="../src/Battlestation/DockAppearance.cs" />

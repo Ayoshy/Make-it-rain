@@ -144,6 +144,27 @@ internal static class DisksTests
                     Check(Math.Abs((Field<DrawingGroup>(surface,"drawing").Transform?.Value.M11??1)-1)<.001,"Le retour restaure une carte à pleine taille");
                     Invoke(surface,"Navigate",folder,first.Bounds,true);surface.SetActive(false);Check(!Field<bool>(surface,"animating"),"Masquage arrête les transitions");
                 }
+                Check(DiskActivity.Busy((0,0),(30,100)) is {} busy&&Math.Abs(busy-.7)<1e-9,"Un volume inactif 30 % du temps est actif à 70 %");
+                Check(DiskActivity.Busy((50,100),(50,100)) is null,"Un intervalle nul ne donne aucune charge");
+                var counters=new System.Collections.Concurrent.ConcurrentDictionary<string,(long,long)>();
+                using(var io=new DiskActivity(()=>[new(root,"Fixture",100000,50000)],path=>counters.TryGetValue(path,out var counter)?counter:null))
+                using(var surface=new DisksSurface(new Station(root),new DiskIndex(()=>[new(root,"Fixture",100000,50000)]),io))
+                {
+                    surface.SetDisplayed(true);surface.SetActive(true);var source=Field<DiskIndex>(surface,"index");await Wait(()=>source.Volumes.Length>0,"Volumes détectés pour la charge d'E/S");
+                    surface.Width=780;surface.Height=492;Render(surface,"io-idle");
+                    // Incident mesuré : C: oscille entre 0 et 6 % au repos (sessions Claude Code)
+                    // et tenait l'onde éveillée la moitié du temps.
+                    counters[root]=(0,0);io.Sample();counters[root]=(94,100);io.Sample();surface.PourActivity();
+                    Check(!Field<bool>(surface,"liquidHooked"),"Un disque à 6 % d'activité laisse le liquide au repos");
+                    counters[root]=(194,200);io.Sample();surface.PourActivity();
+                    Check(!Field<bool>(surface,"liquidHooked"),"Le retour à 0 % d'un disque calme ne relance pas de vague");
+                    counters[root]=(224,300);io.Sample();surface.PourActivity();
+                    Check(Field<bool>(surface,"liquidHooked"),"Une vraie charge d'E/S fait monter le liquide");
+                    surface.SetActive(false);
+                    var liquid=Field<Dictionary<string,QuotaLiquid>>(surface,"liquids")[root];
+                    Check(!Field<bool>(surface,"liquidHooked")&&!liquid.Awake&&liquid.Level>.3,"Dock masqué : le liquide se pose à son niveau, sans boucle d'images");
+                    surface.SetActive(true);Render(surface,"io-loaded");
+                }
                 var automatic=Enumerable.Range(0,4).Select(i=>new DiskVolume(Path.Combine(root,"Auto"+i),"Volume "+i,10000,9000)).ToArray();
                 foreach(var volume in automatic){Directory.CreateDirectory(volume.Path);Write(Path.Combine(volume.Path,"fixture.bin"),100);}
                 using(var auto=new DiskIndex(()=>automatic))

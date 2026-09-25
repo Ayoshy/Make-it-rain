@@ -11,6 +11,20 @@ namespace Battlestation;
 internal sealed class DisksSurface : Surface,IDisposable
 {
     readonly DiskIndex index;
+    readonly DiskActivity activity;
+    // Charge d'E/S de chaque volume, versée comme de l'eau dans sa carte. Mesuré sur
+    // ce PC : C: oscille entre 0 et 6 % au repos (sessions Claude Code), ce qui tenait
+    // l'onde éveillée la moitié du temps. Sous 8 % le disque est calme ; ensuite, seuls
+    // 5 points d'écart relancent une vague.
+    const double QuietLoad=.08,PourThreshold=.05;
+    readonly Dictionary<string,QuotaLiquid> liquids=new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string,double> poured=new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string,Rect> wells=new(StringComparer.OrdinalIgnoreCase);
+    readonly List<(string Path,double X,double Y,string Align)> loadLabels=new();
+    string loadText="";
+    TimeSpan liquidFrame;
+    bool liquidHooked;
+    int activityQueued;
     readonly DispatcherTimer settle=new(){Interval=TimeSpan.FromMilliseconds(380)};
     readonly Stack<string?> history=new();
     DrawingGroup? drawing,outgoing;
@@ -26,17 +40,71 @@ internal sealed class DisksSurface : Surface,IDisposable
     bool PathNeedsLine=>path is not null&&Paragraph(path,10,Ink,Math.Max(1,Width-292)).Height>20;
     double ContentTop=>DockAppearance.HeaderContentTop+(PathNeedsLine?DockAppearance.HeaderSecondaryLine:0);
     Rect MapBounds=>new(20,ContentTop,Math.Max(1,Width-40),Math.Max(1,Height-ContentTop-(path is null?20:46)));
-    internal DisksSurface(Station station,DiskIndex? index=null):base(station,21)
+    internal DisksSurface(Station station,DiskIndex? index=null,DiskActivity? activity=null):base(station,21)
     {
         this.index=index??new();
-        Width=560;Height=600;this.index.Changed+=Changed;
+        this.activity=activity??new(()=>this.index.Volumes);
+        Width=560;Height=600;this.index.Changed+=Changed;this.activity.Changed+=ActivityChanged;
         settle.Tick+=(_,_)=>{settle.Stop();animating=false;outgoing=null;drawing=null;UpdateTree();Refresh();};
         SizeChanged+=(_,_)=>{StopAnimation();drawing=null;Refresh();};
     }
     internal void SetActive(bool value)
     {
-        if(active==value)return;active=value;index.SetActive(value);
-        if(!value)StopAnimation();else{UpdateTree();Refresh();}
+        if(active==value)return;active=value;index.SetActive(value);activity.SetActive(value);
+        if(!value){StopAnimation();SleepLiquids(true);}else{UpdateTree();Refresh();}
+    }
+    void ActivityChanged()
+    {
+        if(disposed||Interlocked.Exchange(ref activityQueued,1)!=0)return;
+        Dispatcher.BeginInvoke(DispatcherPriority.Background,()=>{Interlocked.Exchange(ref activityQueued,0);if(!disposed&&active)PourActivity();});
+    }
+    internal void PourActivity()
+    {
+        foreach(var (volume,well) in wells)
+        {
+            double load=activity.Load(volume) is {} value&&value>=QuietLoad?value:0;
+            double last=poured.GetValueOrDefault(volume);
+            if(Math.Abs(load-last)<PourThreshold&&!(load==0&&last>0))continue;
+            poured[volume]=load;Liquid(volume).Layout(well,16,load*100,WaterColor);
+        }
+        WakeLiquids();
+        string text=string.Join('|',loadLabels.Select(label=>LoadText(label.Path)));
+        if(text!=loadText){loadText=text;Refresh();}
+    }
+    QuotaLiquid Liquid(string volume){if(!liquids.TryGetValue(volume,out var liquid))liquids[volume]=liquid=new();return liquid;}
+    static Color WaterColor=>DesktopTheme.Color("#8EC5EA");
+    string LoadText(string volume)=>activity.Load(volume) is {} load?$"Activité {load*100:0} %":"";
+    void WakeLiquids()
+    {
+        if(!liquids.Values.Any(liquid=>liquid.Awake)||liquidHooked)return;
+        if(!active||path is not null||animating){SleepLiquids(true);return;}
+        liquidHooked=true;liquidFrame=default;CompositionTarget.Rendering+=LiquidFrame;
+    }
+    void SleepLiquids(bool calm)
+    {
+        if(liquidHooked){CompositionTarget.Rendering-=LiquidFrame;liquidHooked=false;}
+        if(calm)foreach(var liquid in liquids.Values)liquid.Settle();
+    }
+    void LiquidFrame(object? sender,EventArgs e)
+    {
+        if(e is not RenderingEventArgs frame||frame.RenderingTime==liquidFrame)return;
+        // 30 images/s suffisent à une surface d'eau ; les autres passages ne calculent rien.
+        if(liquidFrame!=default&&(frame.RenderingTime-liquidFrame).TotalSeconds<1/32d)return;
+        double elapsed=liquidFrame==default?1/30d:(frame.RenderingTime-liquidFrame).TotalSeconds;
+        liquidFrame=frame.RenderingTime;
+        if(!active||path is not null||animating){SleepLiquids(true);return;}
+        bool awake=false;
+        foreach(var volume in wells.Keys)awake|=Liquid(volume).Step(elapsed);
+        if(!awake)SleepLiquids(false);
+    }
+    protected override void OnPointer(MouseEventArgs e)=>StirLiquids(e.GetPosition(this));
+    protected override void OnMouseLeave(MouseEventArgs e){StirLiquids(new(-1,-1));base.OnMouseLeave(e);}
+    void StirLiquids(Point pointer)
+    {
+        if(path is not null||animating)return;
+        long now=Environment.TickCount64;
+        foreach(var volume in wells.Keys)Liquid(volume).Stir(pointer,now);
+        WakeLiquids();
     }
     void Changed()
     {
@@ -100,6 +168,7 @@ internal sealed class DisksSurface : Surface,IDisposable
         D.DrawDrawing(drawing);D.Pop();
         if(!animating)
         {
+            foreach(var label in loadLabels)Text(LoadText(label.Path),label.X,label.Y,8,Muted,align:label.Align);
             foreach(var tile in tiles)
             {
                 if(tile.Bounds.Width<3||tile.Bounds.Height<3)continue;
@@ -117,6 +186,7 @@ internal sealed class DisksSurface : Surface,IDisposable
     DrawingGroup BuildDrawing()
     {
         var group=new DrawingGroup();var before=D;
+        wells.Clear();loadLabels.Clear();
         using(var dc=group.Open())
         {
             D=dc;
@@ -141,6 +211,9 @@ internal sealed class DisksSurface : Surface,IDisposable
             var drive=drives[i];var rect=new Rect(bounds.X+i%columns*(w+12),bounds.Y+i/columns*(h+12),w,h);
             result.Add(new(new(drive.Path,drive.Name,drive.Total,true,false,[]),rect,i));
             D.DrawRoundedRectangle(DockAppearance.ButtonFill,new Pen(B(DockAppearance.ButtonRim),1),rect,16,16);
+            // Le groupe du liquide est retenu : chaque image ne réécrit que lui, pas la carte.
+            var liquid=Liquid(drive.Path);wells[drive.Path]=rect;
+            liquid.Layout(rect,16,poured.GetValueOrDefault(drive.Path)*100,WaterColor);D.DrawDrawing(liquid.Drawing);
             double used=Math.Clamp(1-drive.Free/(double)Math.Max(1,drive.Total),0,1);
             string accent=UsageAccent(used);
             if(h>=250&&w>=200)DriveColumn(drive,rect,used,accent);
@@ -185,6 +258,7 @@ internal sealed class DisksSurface : Surface,IDisposable
         Text($"{used*100:0} % occupés",x,cy-3,9,accent,width:detailsWidth);
         Text(ScanLabel(index.Info(drive.Path)),x,cy+15,7,Muted,width:detailsWidth);
         Text(Capacity(drive),r.Right-18,cy-10,roomy?15:11,accent,font:DockAppearance.NumberFont,align:"right");
+        loadLabels.Add((drive.Path,r.Right-18,cy+12,"right"));
     }
     static string Capacity(DiskVolume drive)=>$"{Bytes(drive.Total-drive.Free)} / {Bytes(drive.Total)}";
     static string UsageAccent(double used)
@@ -212,6 +286,7 @@ internal sealed class DisksSurface : Surface,IDisposable
         Text(drive.Path.TrimEnd('\\'),r.X+20,r.Y+17,22,Ink,font:DockAppearance.NumberFont);
         Text(drive.Name,r.X+78,r.Y+24,11,Muted,width:r.Width-98);
         Text(ScanLabel(index.Info(drive.Path)),r.X+20,r.Y+48,8,Muted,width:r.Width-40);
+        loadLabels.Add((drive.Path,r.X+20,r.Y+62,"left"));
         double radius=Math.Clamp(Math.Min(r.Width*.32,(r.Height-178)/2),26,124);
         double cx=r.X+r.Width/2,cy=r.Y+(r.Height-16)/2;
         Occupancy(new(cx,cy),radius,used,accent,Math.Clamp(radius*.068,4,8));
@@ -284,6 +359,7 @@ internal sealed class DisksSurface : Surface,IDisposable
         if(folder is null)return;
         _=Task.Run(()=>{try{Process.Start(new ProcessStartInfo("explorer.exe"){ArgumentList={folder},UseShellExecute=false});}catch(Exception e) when(e is IOException or System.ComponentModel.Win32Exception){}});
     }
-    internal object Inspect()=>new{active,path,animating,status=index.Status,scanned=index.Scanned,bytes=shown?.Bytes,partial=shown?.Partial,volumes=index.Volumes,indexes=index.InspectIndexes(),tiles=tiles.Select(t=>new{t.Node.Path,t.Node.Bytes,t.Node.Directory,t.Bounds})};
-    public void Dispose(){disposed=true;StopAnimation();index.Changed-=Changed;index.Dispose();}
+    internal object Inspect()=>new{active,path,animating,liquidHooked,
+        activity=wells.Keys.Select(volume=>new{path=volume,load=activity.Load(volume),poured=poured.GetValueOrDefault(volume),level=Liquid(volume).Level,awake=Liquid(volume).Awake}),status=index.Status,scanned=index.Scanned,bytes=shown?.Bytes,partial=shown?.Partial,volumes=index.Volumes,indexes=index.InspectIndexes(),tiles=tiles.Select(t=>new{t.Node.Path,t.Node.Bytes,t.Node.Directory,t.Bounds})};
+    public void Dispose(){disposed=true;StopAnimation();SleepLiquids(false);index.Changed-=Changed;index.Dispose();activity.Changed-=ActivityChanged;activity.Dispose();}
 }

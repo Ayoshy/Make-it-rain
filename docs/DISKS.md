@@ -14,6 +14,9 @@ cadre liquid glass commun et les palettes de la scène active.
   System Volume Information) restent visibles au survol (« · partiel ») et dans
   l'inspection, pas sur la carte. Une réconciliation différée ne s'affiche pas :
   les deltas gardent les données fraîches entre deux scans complets.
+- Chaque carte de l'accueil se remplit d'eau selon la **charge d'E/S** du volume
+  (« Activité NN % », même mesure que le temps d'activité du Gestionnaire des
+  tâches). Le liquide réutilise celui d'AI Meter et ondule au survol.
 - Clic sur un volume : entrée animée dans sa mosaïque.
 - Molette avant : zoom dans le dossier sous le pointeur ; arrière : niveau précédent.
 - Clic gauche sur un dossier : ouverture dans l'Explorateur. Sur un fichier,
@@ -64,6 +67,15 @@ Le masquage suspend l'énumération, mais conserve les notifications pour la rep
 La liste et l'espace libre sont relus toutes les cinq secondes quand le dock est
 actif. Aucune promesse de délai maximal pendant une grosse copie ou l'analyse initiale.
 
+`DiskActivity` lit une fois par seconde, sur un fil de fond et seulement quand
+le dock est exposé, les compteurs noyau de chaque volume (`IOCTL_DISK_PERFORMANCE`,
+sans droits ni accès au disque). La charge est la part du temps avec au moins
+une requête en cours, lissée sur ~2 s. Sous 8 % le liquide reste vide et immobile
+(C: oscille entre 0 et 6 % au repos avec une session Claude Code active) ; au-delà,
+seuls 5 points d'écart relancent une vague. Un disque calme ne coûte donc aucune
+boucle d'images. Pendant une charge réelle, l'onde tourne à 30 images/s au plus ; masquage,
+navigation dans un volume et transitions l'arrêtent et posent l'eau à son niveau.
+
 La mosaïque représente les **tailles logiques des fichiers**, pas une mesure exacte
 des blocs physiques alloués : compression, fichiers creux et liens physiques
 peuvent expliquer un écart avec l'espace occupé du volume. Les points de réanalyse
@@ -76,6 +88,8 @@ est regroupé dans **Autres fichiers**, sans perdre ses octets du total.
 `dotnet run --project tests/Battlestation.Disks.Tests.csproj -c Release` vérifie
 les surfaces proportionnelles, le suivi réel des fichiers d'une fixture, le
 masquage/reprise, la conservation des index, les deltas hors sélection, l'absence
-de lectures lors des allers-retours et les transitions internes. Les PNG sous
+de lectures lors des allers-retours, les transitions internes et le liquide d'E/S
+(disque calme sans boucle d'images, charge qui le remplit, masquage qui le pose).
+Les PNG sous
 `artifacts/validation/disks/` sont des rendus WPF isolés : ils ne prouvent ni les
 gestes réels ni la fluidité perçue sur le bureau.
