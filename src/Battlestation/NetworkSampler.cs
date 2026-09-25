@@ -86,7 +86,9 @@ internal sealed class NetworkSampler : IDisposable
                 }
                 catch(Exception e) when(e is NetworkInformationException or DllNotFoundException or EntryPointNotFoundException){status="Mesures indisponibles";}
                 if(nic is null||status.Length>0)previousAt=0;
-                history.Add(new(Environment.TickCount64,received,sent));if(history.Count>60)history.RemoveAt(0);
+                // 62 relevés : les deux plus anciens sortent sous le bord gauche des
+                // courbes qui défilent, au lieu d'y disparaître d'un coup.
+                history.Add(new(Environment.TickCount64,received,sent));if(history.Count>62)history.RemoveAt(0);
                 Volatile.Write(ref snapshot,new(nic?.Id??"",nic?.Name??"Interface",history.ToArray(),latency,settings.Target,status,options));
                 Sampled?.Invoke();
                 int delay=Math.Max(1,1000-(int)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
